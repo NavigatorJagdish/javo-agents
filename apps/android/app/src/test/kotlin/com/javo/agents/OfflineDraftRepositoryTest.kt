@@ -46,8 +46,10 @@ class OfflineDraftRepositoryTest {
     fun createOfflineDraft_staysQueuedWhenDesktopOffline_thenSyncsWhenOnline() = runTest {
         val store = FakeDraftStore()
         var desktopOnline = false
-        val uploader = RemoteDraftUploader { drafts ->
-            desktopOnline && drafts.isNotEmpty()
+        val uploader = object : RemoteDraftUploader {
+            override suspend fun uploadPending(drafts: List<DraftEntity>): Boolean {
+                return desktopOnline && drafts.isNotEmpty()
+            }
         }
         val repo = OfflineDraftRepository(store, uploader)
 

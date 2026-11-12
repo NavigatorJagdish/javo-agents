@@ -2,13 +2,14 @@ name: CI — Android Companion
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "fix/**"]
     paths:
       - "apps/android/**"
       - ".github/workflows/ci-android.yml"
   pull_request:
     paths:
       - "apps/android/**"
+      - ".github/workflows/ci-android.yml"
 
 jobs:
   android-lint-and-test:
@@ -37,3 +38,9 @@ jobs:
 
       - name: Run Unit Tests
         run: gradle testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK & AAB (Unsigned Verification)
+        run: gradle assembleRelease bundleRelease --no-daemon --stacktrace
