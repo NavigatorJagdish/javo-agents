@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      pnpm_config_strict_dep_builds: "false"
 
     steps:
       - name: Checkout repository
@@ -61,7 +62,7 @@ jobs:
 
       - name: Install Windows Electron Shell dependencies
         working-directory: apps/windows
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Typecheck & Build Windows Electron Shell
         working-directory: apps/windows

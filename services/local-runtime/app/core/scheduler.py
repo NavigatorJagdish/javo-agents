@@ -70,6 +70,9 @@ class SchedulerService:
         if self._scheduler is None:
             self.initialize()
 
+        if self._scheduler.running:
+            return
+
         self._scheduler.start()
         logger.info("Scheduler started")
 

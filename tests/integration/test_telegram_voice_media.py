@@ -113,13 +113,26 @@ def test_voice_hinglish_and_confirmation_gate(client: TestClient):
     assert d2["action_taken"] == "schedule_queued"
 
 
-def test_dashboard_static_mount_served_locally(client: TestClient, tmp_path: Path, monkeypatch):
-    r = client.get("/dashboard/")
-    if r.status_code == 200:
-        assert "Javo Agents" in r.text
+def test_dashboard_static_mount_served_locally(tmp_path: Path, monkeypatch):
+    from fastapi.routing import Mount
+
+    app = create_app()
+    has_built_mount = any(isinstance(r, Mount) and r.path == "/dashboard" for r in app.routes)
+    if has_built_mount:
+        with TestClient(app) as live_client:
+            res = live_client.get("/dashboard/")
+            assert res.status_code == 200
+            assert "Javo Agents" in res.text
         return
 
     # Backend-only CI checkouts omit built frontend dist/; verify static mount with a staged bundle.
+    db_path = tmp_path / "dash_mount.db"
+    sched_path = tmp_path / "dash_sched.db"
+    monkeypatch.setenv("JAVO_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("JAVO_SCHEDULER_DB_URL", f"sqlite:///{sched_path}")
+    import app.config as cfg
+
+    cfg._settings = None
     staged_dist = tmp_path / "dashboard_dist"
     staged_dist.mkdir(parents=True, exist_ok=True)
     (staged_dist / "index.html").write_text(
@@ -127,10 +140,13 @@ def test_dashboard_static_mount_served_locally(client: TestClient, tmp_path: Pat
         encoding="utf-8",
     )
     monkeypatch.setenv("JAVO_DASHBOARD_DIST", str(staged_dist))
-    with TestClient(create_app()) as staged_client:
-        staged_res = staged_client.get("/dashboard/")
-        assert staged_res.status_code == 200
-        assert "Javo Agents" in staged_res.text
+    try:
+        with TestClient(create_app()) as staged_client:
+            staged_res = staged_client.get("/dashboard/")
+            assert staged_res.status_code == 200
+            assert "Javo Agents" in staged_res.text
+    finally:
+        cfg._settings = None
 
 
 def test_media_processor_with_local_ffmpeg(tmp_path: Path):
