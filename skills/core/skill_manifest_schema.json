@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://javo.agents/schemas/skill-manifest.v1.json",
+  "title": "Javo Skill Manifest",
+  "description": "Manifest schema for sandboxed Javo Agents skills.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "description",
+    "author",
+    "entrypoint",
+    "handler",
+    "permissions",
+    "timeout_seconds",
+    "input_schema",
+    "output_schema"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 100
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 500
+    },
+    "author": {
+      "type": "string",
+      "minLength": 2
+    },
+    "license": {
+      "type": "string",
+      "default": "MIT"
+    },
+    "entrypoint": {
+      "type": "string",
+      "default": "skill.py"
+    },
+    "handler": {
+      "type": "string",
+      "default": "run"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "pure:compute",
+          "text:transform",
+          "filesystem:read",
+          "network:local_ollama",
+          "network:external"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 60
+    },
+    "max_memory_mb": {
+      "type": "integer",
+      "minimum": 32,
+      "maximum": 2048,
+      "default": 256
+    },
+    "languages": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["en"]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "trust_tier": {
+      "type": "string",
+      "enum": ["core_verified", "community_reviewed", "experimental"],
+      "default": "core_verified"
+    },
+    "input_schema": {
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    }
+  }
+}

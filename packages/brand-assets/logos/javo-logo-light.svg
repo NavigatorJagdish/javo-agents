@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-label="Javo Agents Light Logo">
+  <defs>
+    <linearGradient id="javo-light-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00B4D8" />
+      <stop offset="50%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <linearGradient id="javo-light-bars" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00B4D8" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <linearGradient id="javo-light-orbit" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00B4D8" stop-opacity="0.95" />
+      <stop offset="55%" stop-color="#7C3AED" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#00B4D8" stop-opacity="0.15" />
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="200" rx="20" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="2" />
+
+  <g transform="translate(106, 100)">
+    <!-- Orbital Ring -->
+    <ellipse cx="0" cy="0" rx="76" ry="30" transform="rotate(-24)" fill="none" stroke="url(#javo-light-orbit)" stroke-width="2.5" />
+    <circle cx="65" cy="-29" r="3.5" fill="#00B4D8" />
+
+    <!-- Hexagonal Shield Outline -->
+    <polygon
+      points="0,-64 55,-32 55,24 0,64 -55,24 -55,-32"
+      fill="#FFFFFF"
+      stroke="url(#javo-light-grad)"
+      stroke-width="4.2"
+      stroke-linejoin="round"
+    />
+    <polygon
+      points="0,-54 46,-27 46,20 0,53 -46,20 -46,-27"
+      fill="none"
+      stroke="#2563EB"
+      stroke-opacity="0.18"
+      stroke-width="1.2"
+      stroke-linejoin="round"
+    />
+
+    <!-- Inner Connected-Node Graph -->
+    <g stroke="url(#javo-light-grad)" stroke-width="2.2" stroke-opacity="0.85">
+      <line x1="0" y1="-38" x2="0" y2="-16" />
+      <line x1="-30" y1="22" x2="-12" y2="8" />
+      <line x1="30" y1="22" x2="12" y2="8" />
+    </g>
+
+    <circle cx="0" cy="-38" r="5" fill="#00B4D8" />
+    <circle cx="-30" cy="22" r="5" fill="#2563EB" />
+    <circle cx="30" cy="22" r="5" fill="#7C3AED" />
+
+    <!-- Waveform Bars -->
+    <g fill="url(#javo-light-bars)">
+      <rect x="-18" y="-8" width="5" height="16" rx="2.5" />
+      <rect x="-9" y="-16" width="5" height="32" rx="2.5" />
+      <rect x="-2.5" y="-22" width="5" height="44" rx="2.5" />
+      <rect x="4" y="-16" width="5" height="32" rx="2.5" />
+      <rect x="13" y="-8" width="5" height="16" rx="2.5" />
+    </g>
+  </g>
+
+  <g transform="translate(212, 92)">
+    <text x="0" y="0" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="48" font-weight="800" letter-spacing="4" fill="#0B1026">JAVO</text>
+    <text x="164" y="0" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="48" font-weight="400" letter-spacing="4" fill="url(#javo-light-grad)">AGENTS</text>
+    <text x="2" y="32" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" letter-spacing="3.5" fill="#475569">LOCAL-FIRST AUTONOMOUS AI TEAM</text>
+  </g>
+</svg>

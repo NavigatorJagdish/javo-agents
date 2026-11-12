@@ -1,0 +1,31 @@
+{
+  "id": "hindi-hinglish-hook-writer",
+  "name": "Hindi & Hinglish Hook Writer",
+  "version": "1.0.0",
+  "description": "Generates scroll-stopping opening hooks in Hindi (Devanagari) and Hinglish for Indian YouTube Shorts and Instagram Reels.",
+  "author": "Javo Agents Core Team",
+  "license": "Apache-2.0",
+  "entrypoint": "skill.py",
+  "handler": "run",
+  "permissions": ["pure:compute", "text:transform"],
+  "timeout_seconds": 5,
+  "max_memory_mb": 128,
+  "languages": ["hi", "hinglish", "en"],
+  "tags": ["hindi", "hinglish", "hooks", "reels", "shorts"],
+  "trust_tier": "core_verified",
+  "input_schema": {
+    "type": "object",
+    "required": ["topic"],
+    "properties": {
+      "topic": { "type": "string" },
+      "language": { "type": "string", "enum": ["hinglish", "hindi", "bilingual"] },
+      "niche": { "type": "string" },
+      "tone": { "type": "string" },
+      "count": { "type": "integer" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["hooks", "language", "topic"]
+  }
+}

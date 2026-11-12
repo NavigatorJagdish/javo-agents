@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Javo Agents Favicon">
+  <defs>
+    <linearGradient id="fav-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0B1026" />
+  <g transform="translate(32, 32)">
+    <ellipse cx="0" cy="0" rx="27" ry="11" transform="rotate(-24)" fill="none" stroke="url(#fav-grad)" stroke-width="1.5" stroke-opacity="0.7" />
+    <polygon points="0,-23 20,-11.5 20,9 0,23 -20,9 -20,-11.5" fill="#101836" stroke="url(#fav-grad)" stroke-width="2.5" stroke-linejoin="round" />
+    <line x1="0" y1="-14" x2="0" y2="-6" stroke="#00E5FF" stroke-width="1.2" />
+    <line x1="-11" y1="8" x2="-4" y2="3" stroke="#00E5FF" stroke-width="1.2" />
+    <line x1="11" y1="8" x2="4" y2="3" stroke="#8B5CF6" stroke-width="1.2" />
+    <circle cx="0" cy="-14" r="2.2" fill="#00E5FF" />
+    <circle cx="-11" cy="8" r="2.2" fill="#38BDF8" />
+    <circle cx="11" cy="8" r="2.2" fill="#8B5CF6" />
+    <rect x="-6.5" y="-3.5" width="2.2" height="7" rx="1.1" fill="url(#fav-grad)" />
+    <rect x="-3" y="-6.5" width="2.2" height="13" rx="1.1" fill="url(#fav-grad)" />
+    <rect x="0.8" y="-6.5" width="2.2" height="13" rx="1.1" fill="url(#fav-grad)" />
+    <rect x="4.3" y="-3.5" width="2.2" height="7" rx="1.1" fill="url(#fav-grad)" />
+  </g>
+</svg>

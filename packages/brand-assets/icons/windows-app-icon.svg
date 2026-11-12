@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Javo Agents Windows App Icon">
+  <defs>
+    <radialGradient id="win-bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#17224D" />
+      <stop offset="100%" stop-color="#0B1026" />
+    </radialGradient>
+    <linearGradient id="win-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="win-bars" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="win-orbit" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.95" />
+      <stop offset="55%" stop-color="#8B5CF6" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#00E5FF" stop-opacity="0.15" />
+    </linearGradient>
+    <filter id="win-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded Square Windows Icon Base -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#win-bg)" stroke="url(#win-grad)" stroke-width="3" stroke-opacity="0.45" />
+
+  <g transform="translate(128, 128)">
+    <!-- Orbital Ring -->
+    <ellipse cx="0" cy="0" rx="94" ry="38" transform="rotate(-24)" fill="none" stroke="url(#win-orbit)" stroke-width="3.5" filter="url(#win-glow)" />
+    <circle cx="80" cy="-36" r="5" fill="#00E5FF" filter="url(#win-glow)" />
+
+    <!-- Hexagonal Shield -->
+    <polygon
+      points="0,-82 70,-41 70,32 0,82 -70,32 -70,-41"
+      fill="#0B1026"
+      fill-opacity="0.92"
+      stroke="url(#win-grad)"
+      stroke-width="6"
+      stroke-linejoin="round"
+      filter="url(#win-glow)"
+    />
+    <polygon
+      points="0,-70 60,-35 60,27 0,70 -60,27 -60,-35"
+      fill="none"
+      stroke="#00E5FF"
+      stroke-opacity="0.22"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+
+    <!-- Node Connections -->
+    <g stroke="url(#win-grad)" stroke-width="2.8" stroke-opacity="0.85">
+      <line x1="0" y1="-50" x2="0" y2="-22" />
+      <line x1="-40" y1="30" x2="-16" y2="11" />
+      <line x1="40" y1="30" x2="16" y2="11" />
+    </g>
+
+    <!-- 3 Nodes -->
+    <circle cx="0" cy="-50" r="7" fill="#00E5FF" filter="url(#win-glow)" />
+    <circle cx="-40" cy="30" r="7" fill="#38BDF8" filter="url(#win-glow)" />
+    <circle cx="40" cy="30" r="7" fill="#8B5CF6" filter="url(#win-glow)" />
+
+    <!-- Waveform Bars -->
+    <g fill="url(#win-bars)" filter="url(#win-glow)">
+      <rect x="-24" y="-11" width="7" height="22" rx="3.5" />
+      <rect x="-12" y="-22" width="7" height="44" rx="3.5" />
+      <rect x="-3.5" y="-30" width="7" height="60" rx="3.5" />
+      <rect x="5" y="-22" width="7" height="44" rx="3.5" />
+      <rect x="17" y="-11" width="7" height="22" rx="3.5" />
+    </g>
+  </g>
+</svg>

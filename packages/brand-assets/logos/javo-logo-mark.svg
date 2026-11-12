@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="Javo Agents Icon Mark">
+  <defs>
+    <linearGradient id="mark-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="mark-bars" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="mark-orbit" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.95" />
+      <stop offset="50%" stop-color="#8B5CF6" stop-opacity="0.7" />
+      <stop offset="100%" stop-color="#00E5FF" stop-opacity="0.15" />
+    </linearGradient>
+    <filter id="mark-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g transform="translate(90, 90)">
+    <ellipse cx="0" cy="0" rx="80" ry="32" transform="rotate(-24)" fill="none" stroke="url(#mark-orbit)" stroke-width="2.5" filter="url(#mark-glow)" />
+    <circle cx="69" cy="-31" r="4" fill="#00E5FF" filter="url(#mark-glow)" />
+
+    <polygon
+      points="0,-68 58,-34 58,26 0,68 -58,26 -58,-34"
+      fill="#0B1026"
+      stroke="url(#mark-grad)"
+      stroke-width="4.5"
+      stroke-linejoin="round"
+      filter="url(#mark-glow)"
+    />
+
+    <g stroke="url(#mark-grad)" stroke-width="2" stroke-opacity="0.85">
+      <line x1="0" y1="-41" x2="0" y2="-17" />
+      <line x1="-32" y1="24" x2="-13" y2="9" />
+      <line x1="32" y1="24" x2="13" y2="9" />
+    </g>
+
+    <circle cx="0" cy="-41" r="5.5" fill="#00E5FF" filter="url(#mark-glow)" />
+    <circle cx="-32" cy="24" r="5.5" fill="#38BDF8" filter="url(#mark-glow)" />
+    <circle cx="32" cy="24" r="5.5" fill="#8B5CF6" filter="url(#mark-glow)" />
+
+    <g fill="url(#mark-bars)" filter="url(#mark-glow)">
+      <rect x="-19" y="-9" width="5.5" height="18" rx="2.75" />
+      <rect x="-9.5" y="-17" width="5.5" height="34" rx="2.75" />
+      <rect x="-2.75" y="-24" width="5.5" height="48" rx="2.75" />
+      <rect x="4" y="-17" width="5.5" height="34" rx="2.75" />
+      <rect x="13.5" y="-9" width="5.5" height="18" rx="2.75" />
+    </g>
+  </g>
+</svg>

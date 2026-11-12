@@ -1,0 +1,49 @@
+appId: com.javo.agents.desktop
+productName: Javo Agents
+copyright: Copyright © 2026 Javo Agents
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - public/**/*
+  - package.json
+extraResources:
+  - from: ../../apps/dashboard/dist
+    to: dashboard
+    filter:
+      - "**/*"
+  - from: ../../packages/brand-assets/icons
+    to: icons
+    filter:
+      - "**/*"
+  - from: ../../services/local-runtime
+    to: local-runtime
+    filter:
+      - "app/**/*"
+      - "pyproject.toml"
+      - "requirements*.txt"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: ../../packages/brand-assets/icons/dist/javo-app.ico
+  artifactName: "JavoAgents-${version}-${arch}.${ext}"
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Javo Agents
+  uninstallDisplayName: Javo Agents
+portable:
+  artifactName: "JavoAgents-Portable-${version}-${arch}.${ext}"
+publish:
+  provider: github
+  owner: javo-agents
+  repo: javo-agents

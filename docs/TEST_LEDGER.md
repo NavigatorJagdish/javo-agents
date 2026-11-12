@@ -1,0 +1,16 @@
+# Test Ledger
+
+Record of automated tests and verification checks executed in this workspace.
+
+| Date | Scope | Command | Result | Details |
+| :--- | :--- | :--- | :--- | :--- |
+| 2026-11-12 | Skill Sandbox & Core Skills | `python -m unittest skills/tests/test_sandbox.py skills/core/social-caption-optimizer/test_skill.py skills/core/hindi-hinglish-hook-writer/test_skill.py -v` | **PASS (14/14)** | Verified AST blocking, permission checks, credential env scrubbing, timeout enforcement, trust score calculation, `social-caption-optimizer`, and `hindi-hinglish-hook-writer`. |
+| 2026-11-12 | Shared TypeScript Packages | `tsc -p packages/shared-types/tsconfig.json`, `api-client`, `workflow-schema`, `policy-engine` | **PASS (4/4)** | Clean compilation with `strict: true` and declaration `.d.ts` output emitted for all 4 packages. |
+| 2026-11-12 | Python Backend Unit & Integration Suite | `python -m pytest tests -v` (in `services/local-runtime`) | **PASS (23/23)** | Verified FastAPI lifecycle, localhost `/dashboard/` mount, SQLite table creation, 30 seeded agents, task/goal/milestone persistence, workflow CRUD & execution, `/security/{pause,resume,emergency-stop,autopilot-status}`, Telegram fail-closed pairing & commands, Hinglish Voice confirmation gate, real FFmpeg 9.0.2 media probing & thumbnail generation, APScheduler CRUD, Fernet/PBKDF2 credential encryption, encrypted backup/verify/restore, device pairing, zero-cost budget guardian, Privacy Firewall & prompt secret blocking, ContentWatcher duplicate detection, and MockConnector publishing. |
+| 2026-11-12 | Live FastAPI Uvicorn Smoke Probe | `uvicorn app.main:app --host 127.0.0.1 --port 18432` | **PASS** | Verified `/` (`status=running`), `/health/` (`status=healthy`, `database=connected`), and `/agents/` (`30` seeded agents). |
+| 2026-11-12 | Repository Secret & Hygiene Scan | `python scripts/security_scan.py` | **PASS** | Scanned 324 source/config files across the monorepo: `0` leaked secrets or committed `.env` files. |
+| 2026-11-12 | Brand Icon Generation | `python packages/brand-assets/icons/generate_icons.py` | **PASS** | Generated 7 PNG icons (16..256px), `tray-icon.png`, and `javo-app.ico` in `packages/brand-assets/icons/dist/`. |
+| 2026-11-12 | React Dashboard Production Build | `pnpm run build` (`tsc -b && vite build` in `apps/dashboard`) | **PASS** | TypeScript check and Vite production bundle succeeded (`dist/index.html`, CSS, JS emitted). |
+| 2026-11-12 | Official Website Typecheck & Static Export | `pnpm run typecheck && pnpm run build` (in `apps/website`) | **PASS** | `tsc --noEmit` and Next.js 15.5.29 static export (`out/`) completed with 24/24 static pages generated. |
+| 2026-11-12 | Windows Electron Installer & Portable Build | `electron-builder --win --config electron-builder.yml "--config.win.signAndEditExecutable=false"` | **PASS (Unsigned)** | Built `JavoAgents-0.1.0-x64.exe` (NSIS installer, 82.8 MB) and `JavoAgents-Portable-0.1.0-x64.exe` (82.6 MB) in `apps/windows/release/` with `SHA256SUMS.txt`. Code signing skipped (no Authenticode cert). |
+| 2026-11-12 | Android App (`apps/android`) | Structural/syntax/XML check | **BLOCKED (Build)** | 51 Kotlin files + XML manifests/resources passed structural/XML validation; Gradle/Kotlin compilation and JUnit execution require JDK 17 + Android SDK 35 (not installed on host). |

@@ -1,0 +1,18 @@
+{
+  "name": "@javo/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed REST + WebSocket client for Javo Agents local-runtime backend",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@javo/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://javo.agents/schemas/model-profiles.v1.json",
+  "updated_at": "2026-11-12",
+  "notes": "Quantized local AI model profiles tuned for Windows creator laptops and desktops.",
+  "profiles": [
+    {
+      "id": "8gb_cpu_only",
+      "label": "8 GB RAM — CPU Only (Entry Laptop)",
+      "min_ram_gb": 8,
+      "gpu_required": false,
+      "max_concurrent_agents": 1,
+      "ollama_keep_alive": "2m",
+      "llm": {
+        "primary": {
+          "model": "qwen2.5:3b-instruct-q4_K_M",
+          "ram_footprint_gb": 2.3,
+          "context_window": 4096,
+          "license": "Qwen License (Apache-2.0 for 3B weights)",
+          "license_audit": "Permissive commercial use; verify tag weights match Qwen2.5-3B-Instruct."
+        },
+        "fallback": {
+          "model": "llama3.2:3b-instruct-q4_K_M",
+          "ram_footprint_gb": 2.2,
+          "context_window": 4096,
+          "license": "Llama 3.2 Community License",
+          "license_audit": "Commercial allowed under 700M MAU threshold; attribution notice required."
+        },
+        "ultra_light": {
+          "model": "gemma2:2b-instruct-q4_K_M",
+          "ram_footprint_gb": 1.7,
+          "context_window": 4096,
+          "license": "Gemma Terms of Use",
+          "license_audit": "Permissive with prohibited-use terms; great for quick caption rewrites."
+        }
+      },
+      "speech_to_text": {
+        "engine": "whisper.cpp",
+        "model": "ggml-tiny.en-q5_1 / ggml-base-q5_1 (multilingual Hindi/English)",
+        "ram_footprint_mb": 140,
+        "license": "MIT"
+      },
+      "text_to_speech": {
+        "engine": "piper",
+        "voice": "en_US-lessac-medium / hi_IN-rohan-medium",
+        "ram_footprint_mb": 90,
+        "license": "MIT"
+      }
+    },
+    {
+      "id": "16gb_hybrid",
+      "label": "16 GB RAM — CPU or 4–6 GB VRAM GPU",
+      "min_ram_gb": 16,
+      "gpu_required": false,
+      "recommended_vram_gb": 6,
+      "max_concurrent_agents": 3,
+      "ollama_keep_alive": "5m",
+      "llm": {
+        "primary": {
+          "model": "qwen2.5:7b-instruct-q4_K_M",
+          "ram_footprint_gb": 4.9,
+          "context_window": 8192,
+          "license": "Apache-2.0",
+          "license_audit": "Fully permissive Apache-2.0; strong Hindi/Hinglish & JSON tool output."
+        },
+        "fallback": {
+          "model": "mistral:7b-instruct-v0.3-q4_K_M",
+          "ram_footprint_gb": 4.4,
+          "context_window": 8192,
+          "license": "Apache-2.0",
+          "license_audit": "Fully permissive Apache-2.0."
+        }
+      },
+      "speech_to_text": {
+        "engine": "whisper.cpp",
+        "model": "ggml-small-q5_1",
+        "ram_footprint_mb": 320,
+        "license": "MIT"
+      },
+      "text_to_speech": {
+        "engine": "piper",
+        "voice": "en_US-ryan-high / hi_IN-pratham-medium",
+        "ram_footprint_mb": 120,
+        "license": "MIT"
+      }
+    },
+    {
+      "id": "32gb_gpu",
+      "label": "32 GB+ RAM — Dedicated GPU (8–16 GB VRAM)",
+      "min_ram_gb": 32,
+      "gpu_required": true,
+      "recommended_vram_gb": 12,
+      "max_concurrent_agents": 5,
+      "ollama_keep_alive": "15m",
+      "llm": {
+        "primary": {
+          "model": "qwen2.5:14b-instruct-q4_K_M",
+          "ram_footprint_gb": 9.2,
+          "context_window": 16384,
+          "license": "Apache-2.0",
+          "license_audit": "Apache-2.0; ideal for multi-agent planning and bilingual scripting."
+        },
+        "coding_skill_upgrades": {
+          "model": "qwen2.5-coder:7b-instruct-q4_K_M",
+          "ram_footprint_gb": 4.9,
+          "context_window": 16384,
+          "license": "Apache-2.0",
+          "license_audit": "Apache-2.0; used by Self-Upgrading Engineer in sandboxed proposals."
+        }
+      },
+      "speech_to_text": {
+        "engine": "whisper.cpp",
+        "model": "ggml-medium-q5_0",
+        "ram_footprint_mb": 650,
+        "license": "MIT"
+      },
+      "text_to_speech": {
+        "engine": "piper",
+        "voice": "en_US-lessac-high / hi_IN-pratham-medium",
+        "ram_footprint_mb": 140,
+        "license": "MIT"
+      }
+    }
+  ]
+}

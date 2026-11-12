@@ -1,0 +1,22 @@
+{
+  "name": "@javo/windows-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Javo Agents Windows Electron Desktop Shell",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win --config electron-builder.yml"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3"
+  }
+}

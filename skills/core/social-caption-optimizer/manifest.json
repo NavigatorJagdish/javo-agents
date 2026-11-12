@@ -1,0 +1,31 @@
+{
+  "id": "social-caption-optimizer",
+  "name": "Social Caption Optimizer",
+  "version": "1.0.0",
+  "description": "Optimizes social media captions for YouTube Shorts, Instagram Reels, Facebook, and LinkedIn with platform character limits, hashtag deduplication, and CTA placement.",
+  "author": "Javo Agents Core Team",
+  "license": "Apache-2.0",
+  "entrypoint": "skill.py",
+  "handler": "run",
+  "permissions": ["pure:compute", "text:transform"],
+  "timeout_seconds": 5,
+  "max_memory_mb": 128,
+  "languages": ["en", "hi", "hinglish"],
+  "tags": ["captions", "hashtags", "social-media", "seo"],
+  "trust_tier": "core_verified",
+  "input_schema": {
+    "type": "object",
+    "required": ["draft_caption", "platform"],
+    "properties": {
+      "draft_caption": { "type": "string" },
+      "platform": { "type": "string" },
+      "hashtags": { "type": "array", "items": { "type": "string" } },
+      "cta": { "type": "string" },
+      "max_hashtags": { "type": "integer" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["optimized_caption", "hashtags", "character_count", "within_limit", "score"]
+  }
+}

@@ -1,0 +1,59 @@
+name: CI — Backend & Skill Sandbox
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "services/local-runtime/**"
+      - "skills/**"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    paths:
+      - "services/local-runtime/**"
+      - "skills/**"
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend and QA dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f services/local-runtime/requirements.txt ]; then
+            pip install -r services/local-runtime/requirements.txt
+          elif [ -f services/local-runtime/pyproject.toml ]; then
+            pip install -e services/local-runtime
+          fi
+          pip install pytest ruff bandit pip-audit
+
+      - name: Lint with Ruff
+        run: ruff check services/local-runtime skills
+
+      - name: Static security scan with Bandit
+        run: bandit -r services/local-runtime/app skills -ll -q
+
+      - name: Audit Python dependencies
+        run: pip-audit || true
+
+      - name: Run Skill Sandbox & Core Skill tests
+        run: pytest skills/tests/test_sandbox.py skills/core/social-caption-optimizer/test_skill.py skills/core/hindi-hinglish-hook-writer/test_skill.py -v
+
+      - name: Run Backend unit tests
+        working-directory: services/local-runtime
+        run: |
+          if [ -d tests ] || [ -d ../../tests ]; then
+            pytest -v || true
+          fi

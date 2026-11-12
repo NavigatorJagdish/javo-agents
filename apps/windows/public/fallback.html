@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Javo Agents — Desktop Shell</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 50% 35%, #16214d 0%, #0b1026 70%);
+      color: #e2e6f0;
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: rgba(17, 25, 56, 0.9);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      border-radius: 18px;
+      padding: 36px;
+      max-width: 540px;
+      box-shadow: 0 0 36px rgba(0, 229, 255, 0.12);
+    }
+    h1 { color: #ffffff; margin: 0 0 8px; font-size: 26px; }
+    .accent { color: #00e5ff; }
+    p { line-height: 1.6; font-size: 14px; }
+    code {
+      background: #0b1026;
+      padding: 3px 8px;
+      border-radius: 6px;
+      color: #00e5ff;
+      font-size: 13px;
+    }
+    .actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .primary { background: linear-gradient(135deg, #00e5ff, #8b5cf6); color: #0b1026; }
+    .danger { background: #ef4444; color: #ffffff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1><span class="accent">JAVO</span> AGENTS</h1>
+    <p id="status">Checking local runtime &amp; hardware profile...</p>
+    <p>If the React dashboard bundle has not been built yet, run <code>scripts/start-windows.ps1</code> or <code>pnpm --filter @javo/dashboard build</code>.</p>
+    <div class="actions">
+      <button class="primary" onclick="refreshStatus()">Refresh Status</button>
+      <button class="danger" onclick="triggerStop()">Emergency Stop</button>
+    </div>
+  </div>
+  <script>
+    async function refreshStatus() {
+      const el = document.getElementById('status');
+      if (!window.javoDesktop) {
+        el.textContent = 'Desktop bridge unavailable.';
+        return;
+      }
+      const st = await window.javoDesktop.getRuntimeStatus();
+      const hw = await window.javoDesktop.getHardwareProfile();
+      el.innerHTML =
+        'Backend: <strong>' + (st.running ? 'Online' : 'Offline') + '</strong> (' + st.baseUrl + ')<br/>' +
+        'Recommended AI Tier: <code>' + hw.recommendedOllamaModel + '</code> (' + hw.totalRamGb + ' GB RAM)';
+    }
+    async function triggerStop() {
+      if (window.javoDesktop) await window.javoDesktop.emergencyStop();
+      refreshStatus();
+    }
+    refreshStatus();
+  </script>
+</body>
+</html>

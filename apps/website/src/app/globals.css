@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #F8FAFC;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #F1F5F9;
+    --text-primary: #0B1026;
+    --text-secondary: #475569;
+    --border-subtle: rgba(15, 23, 42, 0.1);
+  }
+
+  .dark {
+    --bg-primary: #0B1026;
+    --bg-surface: #111836;
+    --bg-elevated: #151E42;
+    --text-primary: #FFFFFF;
+    --text-secondary: #E2E6F0;
+    --border-subtle: rgba(226, 230, 240, 0.12);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .bg-grid-pattern {
+    background-image: linear-gradient(to right, rgba(0, 229, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(139, 92, 246, 0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, #00E5FF 0%, #8B5CF6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass-card {
+    @apply rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md shadow-sm dark:border-white/10 dark:bg-[#111836]/80 dark:shadow-card;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#8B5CF6] px-5 py-3 text-sm font-semibold text-[#0B1026] shadow-glow transition-all duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5FF] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0B1026];
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-900 transition-all duration-200 hover:border-[#00E5FF] hover:text-[#008BA3] dark:border-white/15 dark:bg-white/5 dark:text-[#E2E6F0] dark:hover:border-[#00E5FF]/60 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5FF];
+  }
+}

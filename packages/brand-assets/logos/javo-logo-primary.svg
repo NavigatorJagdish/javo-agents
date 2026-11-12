@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-label="Javo Agents Primary Logo">
+  <defs>
+    <linearGradient id="javo-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1026" />
+      <stop offset="100%" stop-color="#111938" />
+    </linearGradient>
+    <linearGradient id="javo-cyan-violet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="javo-bars" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+    <linearGradient id="javo-orbit" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#8B5CF6" stop-opacity="0.7" />
+      <stop offset="100%" stop-color="#00E5FF" stop-opacity="0.15" />
+    </linearGradient>
+    <filter id="javo-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="640" height="200" rx="20" fill="url(#javo-bg)" />
+
+  <!-- Symbol Group -->
+  <g transform="translate(106, 100)">
+    <!-- Glowing Orbital Ring -->
+    <ellipse cx="0" cy="0" rx="76" ry="30" transform="rotate(-24)" fill="none" stroke="url(#javo-orbit)" stroke-width="2.5" filter="url(#javo-glow)" />
+    <circle cx="65" cy="-29" r="3.5" fill="#00E5FF" filter="url(#javo-glow)" />
+
+    <!-- Hexagonal Shield Outline -->
+    <polygon
+      points="0,-64 55,-32 55,24 0,64 -55,24 -55,-32"
+      fill="#0D1430"
+      fill-opacity="0.92"
+      stroke="url(#javo-cyan-violet)"
+      stroke-width="4"
+      stroke-linejoin="round"
+      filter="url(#javo-glow)"
+    />
+    <polygon
+      points="0,-54 46,-27 46,20 0,53 -46,20 -46,-27"
+      fill="none"
+      stroke="#00E5FF"
+      stroke-opacity="0.22"
+      stroke-width="1.2"
+      stroke-linejoin="round"
+    />
+
+    <!-- Inner Connected-Node Graph (3 nodes connected to waveform center) -->
+    <g stroke="url(#javo-cyan-violet)" stroke-width="2" stroke-opacity="0.8">
+      <line x1="0" y1="-38" x2="0" y2="-16" />
+      <line x1="-30" y1="22" x2="-12" y2="8" />
+      <line x1="30" y1="22" x2="12" y2="8" />
+    </g>
+
+    <!-- 3 Graph Nodes -->
+    <circle cx="0" cy="-38" r="5" fill="#00E5FF" filter="url(#javo-glow)" />
+    <circle cx="-30" cy="22" r="5" fill="#38BDF8" filter="url(#javo-glow)" />
+    <circle cx="30" cy="22" r="5" fill="#8B5CF6" filter="url(#javo-glow)" />
+
+    <!-- Central Vertical Equalizer / Waveform Bars -->
+    <g fill="url(#javo-bars)" filter="url(#javo-glow)">
+      <rect x="-18" y="-8" width="5" height="16" rx="2.5" />
+      <rect x="-9" y="-16" width="5" height="32" rx="2.5" />
+      <rect x="-2.5" y="-22" width="5" height="44" rx="2.5" />
+      <rect x="4" y="-16" width="5" height="32" rx="2.5" />
+      <rect x="13" y="-8" width="5" height="16" rx="2.5" />
+    </g>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(212, 92)">
+    <text x="0" y="0" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="48" font-weight="800" letter-spacing="4" fill="#FFFFFF">JAVO</text>
+    <text x="164" y="0" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="48" font-weight="300" letter-spacing="4" fill="url(#javo-cyan-violet)">AGENTS</text>
+    <text x="2" y="32" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" letter-spacing="3.5" fill="#E2E6F0" opacity="0.82">LOCAL-FIRST AUTONOMOUS AI TEAM</text>
+  </g>
+</svg>

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-label="Javo Agents Light Splash Screen">
+  <defs>
+    <radialGradient id="splash-light-bg" cx="50%" cy="44%" r="60%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#EEF2FF" />
+    </radialGradient>
+    <linearGradient id="splash-light-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00B4D8" />
+      <stop offset="50%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <linearGradient id="splash-light-bars" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#00B4D8" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#splash-light-bg)" />
+
+  <g transform="translate(640, 290)">
+    <ellipse cx="0" cy="0" rx="132" ry="52" transform="rotate(-22)" fill="none" stroke="url(#splash-light-grad)" stroke-width="3" stroke-opacity="0.75" />
+    <circle cx="114" cy="-48" r="6" fill="#00B4D8" />
+
+    <polygon
+      points="0,-106 92,-53 92,42 0,106 -92,42 -92,-53"
+      fill="#FFFFFF"
+      stroke="url(#splash-light-grad)"
+      stroke-width="6"
+      stroke-linejoin="round"
+    />
+
+    <g stroke="url(#splash-light-grad)" stroke-width="3" stroke-opacity="0.85">
+      <line x1="0" y1="-64" x2="0" y2="-28" />
+      <line x1="-50" y1="38" x2="-20" y2="14" />
+      <line x1="50" y1="38" x2="20" y2="14" />
+    </g>
+
+    <circle cx="0" cy="-64" r="8" fill="#00B4D8" />
+    <circle cx="-50" cy="38" r="8" fill="#2563EB" />
+    <circle cx="50" cy="38" r="8" fill="#7C3AED" />
+
+    <g fill="url(#splash-light-bars)">
+      <rect x="-30" y="-14" width="8" height="28" rx="4" />
+      <rect x="-15" y="-28" width="8" height="56" rx="4" />
+      <rect x="-4" y="-38" width="8" height="76" rx="4" />
+      <rect x="7" y="-28" width="8" height="56" rx="4" />
+      <rect x="22" y="-14" width="8" height="28" rx="4" />
+    </g>
+  </g>
+
+  <text x="640" y="465" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="52" font-weight="800" letter-spacing="8" fill="#0B1026">JAVO AGENTS</text>
+  <text x="640" y="505" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="18" font-weight="500" letter-spacing="4" fill="#475569">PRIVATE · LOCAL-FIRST · SUPERVISED AUTOPILOT</text>
+
+  <rect x="490" y="555" width="300" height="6" rx="3" fill="#CBD5E1" />
+  <rect x="490" y="555" width="140" height="6" rx="3" fill="url(#splash-light-grad)" />
+</svg>

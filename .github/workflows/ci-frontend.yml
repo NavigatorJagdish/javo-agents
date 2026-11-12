@@ -1,0 +1,63 @@
+name: CI — Frontend & Shared Packages
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "packages/**"
+      - "apps/dashboard/**"
+      - "apps/website/**"
+      - "apps/windows/**"
+      - ".github/workflows/ci-frontend.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/dashboard/**"
+      - "apps/website/**"
+      - "apps/windows/**"
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build Shared Packages
+        run: |
+          npm install -g typescript
+          tsc -p packages/shared-types/tsconfig.json
+          tsc -p packages/api-client/tsconfig.json
+          tsc -p packages/workflow-schema/tsconfig.json
+          tsc -p packages/policy-engine/tsconfig.json
+
+      - name: Typecheck & Build Dashboard
+        working-directory: apps/dashboard
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          npx tsc --noEmit
+          pnpm build
+
+      - name: Typecheck & Build Website
+        working-directory: apps/website
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          npx tsc --noEmit
+          pnpm build
+
+      - name: Typecheck Windows Electron Shell
+        working-directory: apps/windows
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm typecheck
