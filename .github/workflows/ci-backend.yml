@@ -28,6 +28,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: services/local-runtime/requirements.txt
 
       - name: Install FFmpeg for media worker tests
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
