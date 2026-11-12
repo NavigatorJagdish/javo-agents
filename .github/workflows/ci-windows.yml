@@ -1,0 +1,81 @@
+name: CI — Windows Desktop Package
+
+on:
+  push:
+    branches: [main, develop, "fix/**"]
+    paths:
+      - "apps/windows/**"
+      - "apps/dashboard/**"
+      - "services/local-runtime/**"
+      - "packages/**"
+      - ".github/workflows/ci-windows.yml"
+  pull_request:
+    paths:
+      - "apps/windows/**"
+      - "apps/dashboard/**"
+      - "services/local-runtime/**"
+      - "packages/**"
+      - ".github/workflows/ci-windows.yml"
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm & TypeScript CLI
+        run: npm install -g pnpm@12 typescript@5.8
+
+      - name: Build Shared Packages
+        run: |
+          tsc -p packages/shared-types/tsconfig.json
+          tsc -p packages/api-client/tsconfig.json
+          tsc -p packages/workflow-schema/tsconfig.json
+          tsc -p packages/policy-engine/tsconfig.json
+
+      - name: Build Dashboard for Desktop Shell
+        working-directory: apps/dashboard
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm build
+
+      - name: Build Windows Desktop Shell & Installer
+        working-directory: apps/windows
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm build
+          pnpm run dist:win
+
+      - name: Compute Checksums & Metadata
+        working-directory: apps/windows/release
+        run: |
+          Get-FileHash JavoAgents-0.1.0-x64.exe, JavoAgents-Portable-0.1.0-x64.exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          Get-Content SHA256SUMS.txt
+          $meta = @{
+            commit = $env:GITHUB_SHA
+            branch = $env:GITHUB_REF_NAME
+            version = "v0.1.0-alpha"
+            built_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          } | ConvertTo-Json
+          $meta | Out-File -FilePath build-metadata.json -Encoding ascii
+
+      - name: Upload Windows Desktop Artifacts (Private Alpha)
+        uses: actions/upload-artifact@v4
+        with:
+          name: javo-agents-windows-v0.1.0-alpha
+          path: |
+            apps/windows/release/JavoAgents-0.1.0-x64.exe
+            apps/windows/release/JavoAgents-Portable-0.1.0-x64.exe
+            apps/windows/release/SHA256SUMS.txt
+            apps/windows/release/build-metadata.json
+          retention-days: 14

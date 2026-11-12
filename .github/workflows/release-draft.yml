@@ -1,0 +1,29 @@
+name: Create Draft GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag name (e.g. v0.1.0-alpha)"
+        required: true
+        default: "v0.1.0-alpha"
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || 'v0.1.0-alpha' }}
+          name: "Javo Agents ${{ github.event.inputs.tag_name || 'v0.1.0-alpha' }} (Private Alpha)"
+          body_path: docs/releases/v0.1.0-alpha.md
+          draft: true
+          prerelease: true
+          generate_release_notes: false

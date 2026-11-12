@@ -2,7 +2,7 @@ name: CI — Backend & Skill Sandbox
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "fix/**"]
     paths:
       - "services/local-runtime/**"
       - "skills/**"
