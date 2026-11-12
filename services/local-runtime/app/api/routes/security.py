@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import hmac
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.resource_manager import get_resource_manager
 from app.core.scheduler import scheduler
+from app.core.security import get_owner_token, get_token_manager, require_auth, require_owner
 from app.database import get_session
 from app.models.agent import AgentExecution, ExecutionStatus
 from app.models.security import (
@@ -98,11 +100,64 @@ class AutopilotControlResponse(BaseModel):
     message: str
 
 
+class TokenRequest(BaseModel):
+    owner_secret: str
+    device_id: Optional[str] = None
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: str
+    role: str
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+@router.post("/token", response_model=TokenResponse)
+async def issue_owner_token(body: TokenRequest) -> TokenResponse:
+    """Authenticate with the local owner secret and exchange for a short-lived Bearer token."""
+    expected = get_owner_token()
+    if not body.owner_secret or not hmac.compare_digest(body.owner_secret, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid owner credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = get_token_manager().generate_token("owner", device_id=body.device_id, role="owner")
+    return TokenResponse(access_token=token, user_id="owner", role="owner")
+
+
+@router.get("/local-token")
+async def get_local_dev_token(request: Request) -> dict[str, Any]:
+    """Localhost-only convenience bootstrap endpoint available only when debug mode is enabled."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not settings.debug:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local dev token endpoint is disabled outside debug mode",
+        )
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local token bootstrap is restricted to loopback interfaces",
+        )
+    return {"owner_token": get_owner_token(), "token_type": "bearer"}
+
+
+@router.get("/me")
+async def current_principal(user: dict = Depends(require_auth)) -> dict[str, Any]:
+    """Inspect the currently authenticated principal."""
+    return user
+
+
 @router.get("/dashboard", response_model=SecurityDashboardResponse)
 async def security_dashboard(
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> SecurityDashboardResponse:
     """Return high-level security posture overview."""
@@ -153,6 +208,7 @@ async def list_audit_logs(
     resource_type: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> list[AuditLogResponse]:
     """List audit log entries with optional filters."""
@@ -175,6 +231,7 @@ async def list_audit_logs(
 async def list_permissions(
     subject_type: Optional[str] = None,
     subject_id: Optional[str] = None,
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> list[PermissionResponse]:
     """List configured access control permissions."""
@@ -191,6 +248,7 @@ async def list_permissions(
 async def update_permission(
     permission_id: str,
     body: PermissionUpdate,
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> PermissionResponse:
     """Update an existing permission rule."""
@@ -221,6 +279,7 @@ async def update_permission(
 @router.post("/emergency-stop", response_model=EmergencyStopResponse)
 async def emergency_stop(
     body: EmergencyStopRequest = EmergencyStopRequest(),
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> EmergencyStopResponse:
     """Immediately cancel all running/queued tasks and agent executions."""
@@ -284,7 +343,7 @@ async def emergency_stop(
 
 
 @router.get("/autopilot-status", response_model=AutopilotControlResponse)
-async def autopilot_status() -> AutopilotControlResponse:
+async def autopilot_status(user: dict = Depends(require_auth)) -> AutopilotControlResponse:
     """Return global autopilot pause and emergency-stop status."""
     rm = get_resource_manager()
     paused = bool(
@@ -301,6 +360,7 @@ async def autopilot_status() -> AutopilotControlResponse:
 
 @router.post("/pause", response_model=AutopilotControlResponse)
 async def pause_autopilot(
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> AutopilotControlResponse:
     """Pause scheduled automation without cancelling persisted jobs."""
@@ -331,6 +391,7 @@ async def pause_autopilot(
 
 @router.post("/resume", response_model=AutopilotControlResponse)
 async def resume_autopilot(
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> AutopilotControlResponse:
     """Clear emergency stop (if active) and resume scheduled automation."""

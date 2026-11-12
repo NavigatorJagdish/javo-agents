@@ -43,13 +43,17 @@ def e2e_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_full_end_to_end_user_journey(e2e_env: Path, tmp_path: Path):
-    with TestClient(create_app()) as client:
+    from app.core.security import get_token_manager
+
+    token = get_token_manager().generate_token("jagdish", device_id="desktop-1", role="owner")
+    auth_headers = {"Authorization": f"Bearer {token}"}
+    with TestClient(create_app(), headers=auth_headers) as client:
         _run_journey_assertions(client, tmp_path)
 
     # Verify persistence across simulated runtime restart using a fresh app instance on the same SQLite DB
     import asyncio
     asyncio.run(close_db())
-    with TestClient(create_app()) as restarted_client:
+    with TestClient(create_app(), headers=auth_headers) as restarted_client:
         goals_after = restarted_client.get("/goals/")
         assert goals_after.status_code == 200
         goals_list = goals_after.json() if isinstance(goals_after.json(), list) else goals_after.json().get("goals", [])

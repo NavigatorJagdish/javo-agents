@@ -23,7 +23,10 @@ Every core local-first capability—loopback backend, `$0` AI budget enforcement
 | **No Leaked Secrets / `.env` Committed** | PASS | `scripts/security_scan.py` passed across 332 files (`0` findings). |
 | **Static Security Analysis (Bandit)** | PASS | `bandit -r services/local-runtime/app skills -ll -q` passed (`0` medium/high issues). |
 | **Python Lint (Ruff)** | PASS | `ruff check .` passed with `0` errors. |
-| **Backend Unit, Integration, Sandbox & E2E Tests** | PASS | Full `pytest` + `unittest` suites covering 23-step E2E user journey, restart persistence, and skill sandbox. |
+| **Owner Authentication & Endpoint Access Control** | PASS | `require_auth` & `require_owner` on sensitive endpoints, WebSocket `/ws` authentication verified. |
+| **Skill Upgrade Approval & Plugin Isolation** | PASS | 15m TTL, authenticated owner approval, SHA-256 verification, replay rejection, untrusted plugin execution prohibited. |
+| **Honest Publishing & Telegram Webhook Secret** | PASS | Eliminated fake publish states, enforce schedule approval, verified `X-Telegram-Bot-Api-Secret-Token`. |
+| **Backend Unit, Integration, Sandbox, Security & E2E Tests** | PASS | Full `pytest` suite passing 43/43 tests, including 10 mandatory security regression scenarios. |
 | **Frontend & Desktop Builds (`dashboard`, `website`, `windows`)** | PASS | `vite build`, `next build` (24 static pages), and `tsc --noEmit` exit `0`. |
 | **Android CI (`lint`, `test`, `debug`, `release`)** | IN REVIEW (PR #1) | Unit test compilation fixed (`43257414334`); `proguard-rules.pro` R8 rules added; awaiting final GitHub Actions run verification on latest push. |
 | **Authenticode / Android Release Signing** | BLOCKED (External) | Signing certificates/keystores are not stored in the repository (by design). |

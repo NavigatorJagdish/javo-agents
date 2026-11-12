@@ -79,9 +79,21 @@ class BackupService:
             "created_at": manifest["created_at"],
         }
 
+    def _safe_backup_path(self, backup_name: str) -> Path:
+        safe_name = Path(backup_name).name
+        if safe_name != backup_name or ".." in backup_name or "/" in backup_name or "\\" in backup_name:
+            raise ValueError(f"Invalid backup filename: {backup_name}")
+        target = (self.backup_dir / safe_name).resolve()
+        if not target.is_relative_to(self.backup_dir.resolve()):
+            raise ValueError(f"Backup path outside directory: {backup_name}")
+        return target
+
     def verify_backup(self, backup_name: str) -> dict[str, Any]:
         """Decrypt and verify integrity of a backup file against its SHA-256 checksum."""
-        target = self.backup_dir / backup_name
+        try:
+            target = self._safe_backup_path(backup_name)
+        except ValueError as exc:
+            return {"valid": False, "error": str(exc)}
         if not target.exists():
             return {"valid": False, "error": "Backup file not found"}
 
@@ -107,9 +119,9 @@ class BackupService:
         if not verification.get("valid"):
             raise ValueError(f"Backup verification failed: {verification.get('error')}")
 
-        target = self.backup_dir / backup_name
+        target = self._safe_backup_path(backup_name)
         decrypted = self._fernet.decrypt(target.read_bytes())
-        dest = Path(restore_dir)
+        dest = Path(restore_dir).resolve()
         dest.mkdir(parents=True, exist_ok=True)
 
         extracted: list[str] = []
@@ -117,11 +129,13 @@ class BackupService:
             for member in tar.getmembers():
                 if member.name == "manifest.json":
                     continue
+                if member.issym() or member.islnk() or member.isdev() or not member.isfile():
+                    raise ValueError(f"Unsafe non-regular file entry in backup archive: {member.name}")
                 # Prevent path traversal
                 member_path = (dest / member.name).resolve()
-                if not str(member_path).startswith(str(dest.resolve())):
+                if not member_path.is_relative_to(dest):
                     raise ValueError(f"Unsafe path in backup archive: {member.name}")
-                tar.extract(member, path=dest)
+                tar.extract(member, path=dest, filter="data")
                 extracted.append(member.name)
 
         logger.info("Restored backup %s (%d items)", backup_name, len(extracted))

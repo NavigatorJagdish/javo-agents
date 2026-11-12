@@ -12,10 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import require_auth, require_owner
 from app.database import get_session
 from app.models.user import Device, DeviceType, User
 
-router = APIRouter(prefix="/devices", tags=["devices"])
+router = APIRouter(prefix="/devices", tags=["devices"], dependencies=[Depends(require_auth)])
 
 # Ephemeral in-memory pairing codes: code -> metadata dict
 _PENDING_PAIRINGS: dict[str, dict[str, Any]] = {}
@@ -111,9 +112,11 @@ async def initiate_pairing(
 async def confirm_pairing(
     code: str,
     body: PairConfirmRequest = PairConfirmRequest(),
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> DeviceResponse:
     """Confirm device pairing using the pairing code and persist the trusted device."""
+    del user
     pending = _PENDING_PAIRINGS.pop(code, None)
     if not pending:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid or unknown pairing code")
@@ -139,8 +142,13 @@ async def confirm_pairing(
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_device(device_id: str, session: AsyncSession = Depends(get_session)) -> None:
+async def revoke_device(
+    device_id: str,
+    user: dict = Depends(require_owner),
+    session: AsyncSession = Depends(get_session),
+) -> None:
     """Revoke and remove a paired device."""
+    del user
     res = await session.execute(select(Device).where(Device.id == device_id))
     device = res.scalar_one_or_none()
     if not device:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import mimetypes
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
@@ -14,15 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.security import require_auth
 from app.database import get_session
-from app.models.account import Platform
 from app.models.content import (
     AssetStatus,
     AssetType,
     ContentAsset,
     ContentSchedule,
     MediaMetadata,
-    PublishRecord,
     PublishStatus,
     ScheduleStatus,
 )
@@ -90,12 +89,18 @@ class ScheduleResponse(BaseModel):
     updated_at: datetime
 
 
+class PublishRequest(BaseModel):
+    allow_mock: bool = False
+
+
 class PublishResponse(BaseModel):
     schedule_id: str
     publish_record_id: str
     status: str
     platform_post_id: Optional[str] = None
     message: str
+    mode: str = "live"
+    platform: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +167,7 @@ async def upload_content(
     title: Optional[str] = Form(default=None),
     description: Optional[str] = Form(default=None),
     user_id: Optional[str] = Form(default=None),
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> ContentAssetResponse:
     """Upload a media or document file into the content library."""
@@ -175,7 +181,7 @@ async def upload_content(
     contents = await file.read()
     dest_path.write_bytes(contents)
 
-    resolved_user = await _resolve_user_id(user_id, session)
+    resolved_user = user.get("user_id") or await _resolve_user_id(user_id, session)
     asset = ContentAsset(
         id=asset_id,
         user_id=resolved_user,
@@ -201,6 +207,7 @@ async def upload_content(
 @router.post("/scan-folder", response_model=ScanFolderResponse)
 async def scan_folder(
     body: ScanFolderRequest,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> ScanFolderResponse:
     """Scan a local folder and register discovered media files as content assets."""
@@ -212,7 +219,7 @@ async def scan_folder(
             detail=f"Folder does not exist: {target}",
         )
 
-    resolved_user = await _resolve_user_id(body.user_id, session)
+    resolved_user = user.get("user_id") or await _resolve_user_id(body.user_id, session)
     iterator = target.rglob("*") if body.recursive else target.glob("*")
     files = [p for p in iterator if p.is_file() and p.suffix.lower() in _EXT_TO_TYPE]
 
@@ -257,12 +264,23 @@ async def scan_folder(
 @router.post("/schedule", response_model=ScheduleResponse, status_code=status.HTTP_201_CREATED)
 async def create_schedule(
     body: ScheduleCreate,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> ScheduleResponse:
     """Schedule a content asset for publishing to a social account."""
     asset_res = await session.execute(select(ContentAsset).where(ContentAsset.id == body.asset_id))
     if not asset_res.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content asset not found")
+
+    from app.models.account import SocialAccount
+
+    acc_res = await session.execute(select(SocialAccount).where(SocialAccount.id == body.account_id))
+    account = acc_res.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Social account not found")
+    is_admin = bool(user.get("is_owner")) or str(user.get("role", "")).lower() in {"owner", "admin"}
+    if not is_admin and account.user_id != user.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-account access denied")
 
     schedule = ContentSchedule(
         id=str(uuid4()),
@@ -299,40 +317,68 @@ async def list_schedules(
 @router.post("/schedule/{schedule_id}/publish", response_model=PublishResponse)
 async def publish_scheduled_content(
     schedule_id: str,
+    body: Optional[PublishRequest] = None,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> PublishResponse:
-    """Execute immediate publish for a scheduled content item."""
+    """Execute verified publish for an approved scheduled content item via real connector or explicit mock."""
+    from app.models.account import SocialAccount
+    from app.services.content_pipeline import approve_and_dispatch_schedule
+
     res = await session.execute(select(ContentSchedule).where(ContentSchedule.id == schedule_id))
     schedule = res.scalar_one_or_none()
     if not schedule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content schedule not found")
 
-    from app.models.account import SocialAccount
+    if schedule.status == ScheduleStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Content schedule has already been published",
+        )
+
+    if schedule.status != ScheduleStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Schedule cannot be published while status is '{schedule.status.value}'; approval required first.",
+        )
 
     acc_res = await session.execute(select(SocialAccount).where(SocialAccount.id == schedule.account_id))
     account = acc_res.scalar_one_or_none()
-    platform_val = account.platform.value if account and isinstance(account.platform, Platform) else (
-        str(account.platform) if account else Platform.OTHER.value
-    )
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Target social account not found for schedule",
+        )
 
-    record = PublishRecord(
-        id=str(uuid4()),
+    is_admin = bool(user.get("is_owner")) or str(user.get("role", "")).lower() in {"owner", "admin"}
+    if not is_admin and account.user_id != user.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cross-account access denied: schedule account belongs to another user",
+        )
+
+    req = body or PublishRequest()
+    result = await approve_and_dispatch_schedule(
+        session=session,
         schedule_id=schedule.id,
-        platform=platform_val,
-        status=PublishStatus.SUCCESS,
-        published_at=datetime.now(timezone.utc),
+        approved_by=str(schedule.approved_by or user.get("user_id") or "owner"),
+        publish_now=True,
+        allow_mock=req.allow_mock,
     )
-    schedule.status = ScheduleStatus.PUBLISHED
-    session.add(record)
-    await session.commit()
-    await session.refresh(record)
+    if not result.get("published"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Platform connector failed to publish post: {result.get('error', 'Unknown error')}",
+        )
 
     return PublishResponse(
         schedule_id=schedule.id,
-        publish_record_id=record.id,
+        publish_record_id=str(result.get("publish_record_id", "")),
         status=PublishStatus.SUCCESS.value,
-        platform_post_id=record.platform_post_id,
-        message="Content published",
+        platform_post_id=result.get("platform_post_id"),
+        mode=str(result.get("mode", "live")),
+        platform=result.get("platform"),
+        message=f"Content published via {result.get('mode', 'live')} connector",
     )
 
 
@@ -350,8 +396,13 @@ async def get_content_asset(
 
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_content_asset(asset_id: str, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_content_asset(
+    asset_id: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> None:
     """Delete a content asset."""
+    del user
     res = await session.execute(select(ContentAsset).where(ContentAsset.id == asset_id))
     asset = res.scalar_one_or_none()
     if not asset:
@@ -363,6 +414,7 @@ async def delete_content_asset(asset_id: str, session: AsyncSession = Depends(ge
 @router.post("/pipeline/run")
 async def trigger_content_pipeline(
     body: dict,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Scan a local folder, probe media, draft captions/hashtags, check quality, and queue approval-gated schedules."""
@@ -376,7 +428,7 @@ async def trigger_content_pipeline(
         folder_path=folder_path,
         platform=str(body.get("platform", "instagram")),
         account_id=body.get("account_id"),
-        user_id=body.get("user_id"),
+        user_id=str(body.get("user_id") or user.get("user_id") or "owner"),
         topic=body.get("topic"),
         auto_schedule=bool(body.get("auto_schedule", True)),
         approval_required=bool(body.get("approval_required", True)),
@@ -388,16 +440,36 @@ async def trigger_content_pipeline(
 async def approve_schedule(
     schedule_id: str,
     body: Optional[dict] = None,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Approve a scheduled post and optionally dispatch it via connector or explicit MockConnector."""
+    from app.models.account import SocialAccount
     from app.services.content_pipeline import approve_and_dispatch_schedule
 
+    sched_res = await session.execute(select(ContentSchedule).where(ContentSchedule.id == schedule_id))
+    sched = sched_res.scalar_one_or_none()
+    if not sched:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content schedule not found")
+
+    if sched.status == ScheduleStatus.PUBLISHED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Content schedule has already been published",
+        )
+
+    acc_res = await session.execute(select(SocialAccount).where(SocialAccount.id == sched.account_id))
+    account = acc_res.scalar_one_or_none()
+    is_admin = bool(user.get("is_owner")) or str(user.get("role", "")).lower() in {"owner", "admin"}
+    if account is not None and not is_admin and account.user_id != user.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-account access denied")
+
     payload = body or {}
+    principal = str(user.get("user_id", "owner"))
     return await approve_and_dispatch_schedule(
         session=session,
         schedule_id=schedule_id,
-        approved_by=str(payload.get("approved_by", "owner")),
+        approved_by=principal,
         publish_now=bool(payload.get("publish_now", False)),
         allow_mock=bool(payload.get("allow_mock", True)),
     )

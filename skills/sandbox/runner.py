@@ -206,8 +206,9 @@ def run_skill_sandboxed(
     skill_dir: Path,
     payload: dict[str, Any],
     verify_checksum: bool = True,
+    allow_untrusted: bool = False,
 ) -> SandboxResult:
-    """Validate manifest, inspect AST, and execute skill in an isolated subprocess."""
+    """Validate manifest, inspect AST, enforce trust tier, and execute skill in an isolated subprocess."""
     import time
 
     t0 = time.monotonic()
@@ -219,6 +220,19 @@ def run_skill_sandboxed(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return SandboxResult(success=False, error=f"Invalid manifest.json: {exc}")
+
+    trust_tier = str(manifest.get("trust_tier", "untrusted")).lower()
+    if not allow_untrusted and trust_tier != "core_verified":
+        return SandboxResult(
+            success=False,
+            error=(
+                f"Execution of untrusted plugin (trust_tier='{trust_tier}') is prohibited: "
+                "OS-level container isolation is unavailable; only core_verified skills may execute."
+            ),
+            violations=[f"Untrusted plugin blocked: trust_tier='{trust_tier}'"],
+            trust_score=0.0,
+            duration_ms=0,
+        )
 
     entrypoint = manifest.get("entrypoint", "skill.py")
     handler = manifest.get("handler", "run")
@@ -250,8 +264,21 @@ def run_skill_sandboxed(
             trust_score=0.0,
         )
 
+    allow_net = "network:external" in permissions or "network:local_ollama" in permissions
+    allow_fs_write = "filesystem:write" in permissions
     bootstrap = (
-        "import importlib.util, json, sys\n"
+        "import builtins, importlib.util, json, os, socket, sys\n"
+        f"if not {allow_net!r}:\n"
+        "    def _no_net(*a, **kw): raise PermissionError('Network capability blocked by sandbox')\n"
+        "    socket.socket = _no_net\n"
+        f"if not {allow_fs_write!r}:\n"
+        "    _orig_open = builtins.open\n"
+        "    def _ro_open(file, mode='r', *a, **kw):\n"
+        "        if any(m in str(mode) for m in ('w', 'a', 'x', '+')):\n"
+        "            raise PermissionError('Filesystem write blocked by sandbox')\n"
+        "        return _orig_open(file, mode, *a, **kw)\n"
+        "    builtins.open = _ro_open\n"
+        "os.system = lambda *a, **kw: (_ for _ in ()).throw(PermissionError('Process spawn blocked'))\n"
         "spec = importlib.util.spec_from_file_location('javo_skill', sys.argv[1])\n"
         "mod = importlib.util.module_from_spec(spec)\n"
         "spec.loader.exec_module(mod)\n"
@@ -260,6 +287,10 @@ def run_skill_sandboxed(
         "result = fn(payload)\n"
         "sys.stdout.write(json.dumps(result, ensure_ascii=True))\n"
     )
+
+    run_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     try:
         proc = subprocess.run(
@@ -271,6 +302,7 @@ def run_skill_sandboxed(
             timeout=timeout_sec,
             env=build_sanitized_env(),
             cwd=str(skill_dir),
+            **run_kwargs,
         )
     except subprocess.TimeoutExpired:
         elapsed = int((time.monotonic() - t0) * 1000)

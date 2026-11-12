@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.task import Task, TaskPriority, TaskState
 
@@ -124,6 +125,7 @@ async def list_tasks(
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     body: TaskCreate,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> TaskResponse:
     """Create a new task with an initial audit trail entry."""
@@ -162,6 +164,7 @@ async def get_task(task_id: str, session: AsyncSession = Depends(get_session)) -
 async def update_task(
     task_id: str,
     body: TaskUpdate,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> TaskResponse:
     """Update fields of an existing task."""
@@ -186,7 +189,11 @@ async def update_task(
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(task_id: str, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_task(
+    task_id: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> None:
     """Delete a task."""
     task = await _get_task_or_404(task_id, session)
     await session.delete(task)
@@ -194,7 +201,11 @@ async def delete_task(task_id: str, session: AsyncSession = Depends(get_session)
 
 
 @router.post("/{task_id}/execute", response_model=ExecuteTaskResponse, status_code=status.HTTP_202_ACCEPTED)
-async def execute_task(task_id: str, session: AsyncSession = Depends(get_session)) -> ExecuteTaskResponse:
+async def execute_task(
+    task_id: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> ExecuteTaskResponse:
     """Execute a task through the Master Orchestrator or assigned specialist agent."""
     from app.agents import create_orchestrator, get_all_agents
     from app.core.resource_manager import get_resource_manager

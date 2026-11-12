@@ -14,11 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import get_all_agents
 from app.core.privacy_firewall import get_privacy_firewall
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.memory import Importance, MemoryEntry, MemoryType, Preference
 from app.models.user import User
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_auth)])
 
 
 class MemoryCreateRequest(BaseModel):

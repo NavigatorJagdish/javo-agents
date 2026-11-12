@@ -56,10 +56,12 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: Optional[str] = None
     telegram_webhook_url: Optional[str] = None
+    telegram_webhook_secret: Optional[str] = None
     telegram_allowed_users: list[str] = Field(default=[])
 
     # Security
     encryption_key: Optional[str] = None
+    owner_token: Optional[str] = None
     token_expiry_hours: int = 24
     max_sessions_per_user: int = 5
     require_device_approval: bool = True

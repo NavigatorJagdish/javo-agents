@@ -12,6 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.agent import (
     AgentConfig,
@@ -134,6 +135,7 @@ async def get_agent(agent_name: str, session: AsyncSession = Depends(get_session
 async def run_agent(
     agent_name: str,
     body: RunAgentRequest,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> RunAgentResponse:
     """Dispatch and execute a task using the named agent implementation."""
@@ -199,6 +201,7 @@ async def run_agent(
 async def update_agent_config(
     agent_name: str,
     body: AgentConfigUpdate,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> AgentDetail:
     """Update or create the configuration for an agent."""
@@ -218,8 +221,13 @@ async def update_agent_config(
 
 
 @router.post("/{agent_name}/enable", response_model=AgentSummary)
-async def enable_agent(agent_name: str, session: AsyncSession = Depends(get_session)) -> AgentSummary:
+async def enable_agent(
+    agent_name: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> AgentSummary:
     """Enable an agent."""
+    del user
     agent = await _find_agent(agent_name, session)
     agent.is_enabled = True
     if agent.status == AgentStatus.DISABLED:
@@ -230,8 +238,13 @@ async def enable_agent(agent_name: str, session: AsyncSession = Depends(get_sess
 
 
 @router.post("/{agent_name}/disable", response_model=AgentSummary)
-async def disable_agent(agent_name: str, session: AsyncSession = Depends(get_session)) -> AgentSummary:
+async def disable_agent(
+    agent_name: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> AgentSummary:
     """Disable an agent."""
+    del user
     agent = await _find_agent(agent_name, session)
     agent.is_enabled = False
     agent.status = AgentStatus.DISABLED

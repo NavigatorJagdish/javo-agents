@@ -11,11 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.task import Goal, GoalStatus, Milestone
 from app.models.user import User
 
-router = APIRouter(prefix="/goals", tags=["goals"])
+router = APIRouter(prefix="/goals", tags=["goals"], dependencies=[Depends(require_auth)])
 
 
 # ---------------------------------------------------------------------------

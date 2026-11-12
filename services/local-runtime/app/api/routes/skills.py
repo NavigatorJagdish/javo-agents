@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import get_all_agents
+from app.core.security import require_auth, require_owner
 from app.database import get_session
 from app.models.security import AuditAction, AuditLog, AuditSeverity
 
@@ -79,7 +81,6 @@ class SkillUpgradeProposalRequest(BaseModel):
 
 class SkillUpgradeActionRequest(BaseModel):
     proposal_id: str
-    approved_by: str = "owner"
 
 
 @router.get("/")
@@ -115,9 +116,11 @@ async def list_skills() -> dict[str, Any]:
 @router.post("/inspect")
 async def inspect_skill(
     body: SkillInspectRequest,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Run license check, AST security scan, permission inspection, and isolated subprocess sandbox test."""
+    del user
     from sandbox.runner import calculate_trust_score, inspect_skill_ast, run_skill_sandboxed
 
     agents = get_all_agents()
@@ -175,7 +178,7 @@ async def inspect_skill(
 
     manifest = json.loads((target_dir / "manifest.json").read_text(encoding="utf-8"))
     license_name = str(manifest.get("license", "MIT"))
-    sandbox_res = run_skill_sandboxed(target_dir, body.test_payload, verify_checksum=True)
+    sandbox_res = run_skill_sandboxed(target_dir, body.test_payload, verify_checksum=True, allow_untrusted=False)
     trust_report = (
         await trust_agent.run(
             {
@@ -217,6 +220,7 @@ async def inspect_skill(
 async def propose_skill_upgrade(
     skill_name: str,
     body: SkillUpgradeProposalRequest,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Create a sandbox-verified, human-approval-gated skill upgrade proposal."""
@@ -276,6 +280,13 @@ async def propose_skill_upgrade(
     )
 
     proposal_id = str(uuid4())
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=15)
+    code_sha256 = (
+        hashlib.sha256(body.new_source_code.encode("utf-8")).hexdigest()
+        if body.new_source_code is not None
+        else None
+    )
     proposal = {
         "proposal_id": proposal_id,
         "skill_name": skill_name,
@@ -284,11 +295,14 @@ async def propose_skill_upgrade(
         "license": body.license_name,
         "requested_permissions": body.requested_permissions,
         "new_source_code": body.new_source_code,
+        "sha256": code_sha256,
         "summary": body.summary,
         "risk_level": risk_level,
         "requires_approval": requires_approval,
         "status": "pending_approval",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "proposed_by": str(user.get("user_id", "owner")),
+        "created_at": now.isoformat(),
+        "expires_at": expires_at.isoformat(),
         "engineer_report": eng_report,
     }
     _PROPOSALS[proposal_id] = proposal
@@ -296,12 +310,18 @@ async def propose_skill_upgrade(
     session.add(
         AuditLog(
             id=str(uuid4()),
+            user_id=str(user.get("user_id", "owner")),
             agent_id="self_upgrading_engineer",
             action=AuditAction.PROPOSE if hasattr(AuditAction, "PROPOSE") else AuditAction.UPDATE,
             severity=AuditSeverity.INFO,
             resource_type="skill",
             description=f"Proposed upgrade for skill {skill_name} -> {body.target_version}",
-            details={"proposal_id": proposal_id, "target_version": body.target_version, "risk_level": risk_level},
+            details={
+                "proposal_id": proposal_id,
+                "target_version": body.target_version,
+                "risk_level": risk_level,
+                "sha256": code_sha256,
+            },
         )
     )
     await session.commit()
@@ -312,20 +332,54 @@ async def propose_skill_upgrade(
 async def apply_skill_upgrade(
     skill_name: str,
     body: SkillUpgradeActionRequest,
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Apply an approved upgrade proposal after saving a local rollback backup."""
+    """Apply an owner-approved, verified, non-expired upgrade proposal once after saving rollback backup."""
     from sandbox.runner import compute_sha256
 
     proposal = _PROPOSALS.get(body.proposal_id)
     if proposal is None or proposal["skill_name"] != skill_name:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upgrade proposal not found")
 
+    if proposal.get("status") == "applied":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upgrade proposal has already been applied; replay is prohibited",
+        )
+    if proposal.get("status") != "pending_approval":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Upgrade proposal is not in pending_approval state (status='{proposal.get('status')}')",
+        )
+
+    expires_at_raw = proposal.get("expires_at")
+    if expires_at_raw and datetime.now(timezone.utc) > datetime.fromisoformat(str(expires_at_raw)):
+        proposal["status"] = "expired"
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Upgrade proposal has expired; generate a new proposal",
+        )
+
+    if proposal.get("new_source_code") is not None:
+        actual_sha = hashlib.sha256(str(proposal["new_source_code"]).encode("utf-8")).hexdigest()
+        expected_sha = proposal.get("sha256")
+        if not expected_sha or not hashlib.sha256(actual_sha.encode()).digest() == hashlib.sha256(str(expected_sha).encode()).digest():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Upgrade proposal source integrity verification failed",
+            )
+
     skill_dir = _find_skill_dir(skill_name)
     if skill_dir is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Skill '{skill_name}' not found")
     manifest_path = skill_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("trust_tier") not in {"core_verified", "community_reviewed"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Untrusted plugins cannot be upgraded and executed via host runtime",
+        )
     entrypoint = skill_dir / str(manifest.get("entrypoint", "skill.py"))
 
     # Create backup copies before modifying
@@ -343,29 +397,40 @@ async def apply_skill_upgrade(
         manifest["sha256"] = compute_sha256(entrypoint)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
+    approver = str(user.get("user_id") or "owner")
     proposal["status"] = "applied"
-    proposal["approved_by"] = body.approved_by
+    proposal["approved_by"] = approver
+    proposal["applied_at"] = datetime.now(timezone.utc).isoformat()
     session.add(
         AuditLog(
             id=str(uuid4()),
+            user_id=approver,
             agent_id="self_upgrading_engineer",
             action=AuditAction.APPROVE,
             severity=AuditSeverity.INFO,
             resource_type="skill",
-            description=f"Applied approved upgrade for skill {skill_name} -> {manifest['version']} by {body.approved_by}",
-            details={"proposal_id": body.proposal_id, "new_version": manifest["version"]},
+            description=f"Applied approved upgrade for skill {skill_name} -> {manifest['version']} by {approver}",
+            details={"proposal_id": body.proposal_id, "new_version": manifest["version"], "approved_by": approver},
         )
     )
     await session.commit()
-    return {"skill_name": skill_name, "version": manifest["version"], "status": "applied", "rollback_available": True}
+    return {
+        "skill_name": skill_name,
+        "version": manifest["version"],
+        "status": "applied",
+        "approved_by": approver,
+        "rollback_available": True,
+    }
 
 
 @router.post("/{skill_name}/rollback")
 async def rollback_skill(
     skill_name: str,
+    user: dict = Depends(require_owner),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Restore a skill to its pre-upgrade backup manifest and source."""
+    approver = str(user.get("user_id") or "owner")
     skill_dir = _find_skill_dir(skill_name)
     if skill_dir is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Skill '{skill_name}' not found")
@@ -386,12 +451,13 @@ async def rollback_skill(
     session.add(
         AuditLog(
             id=str(uuid4()),
+            user_id=approver,
             agent_id="self_upgrading_engineer",
             action=AuditAction.CONFIG_CHANGE,
             severity=AuditSeverity.WARNING,
             resource_type="skill",
             description=f"Rolled back skill {skill_name} to version {manifest.get('version')}",
-            details={"restored_version": manifest.get("version")},
+            details={"restored_version": manifest.get("version"), "approved_by": approver},
         )
     )
     await session.commit()

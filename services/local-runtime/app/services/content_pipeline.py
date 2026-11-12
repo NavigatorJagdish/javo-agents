@@ -316,12 +316,12 @@ async def approve_and_dispatch_schedule(
     platform_enum = account.platform if account else Platform.INSTAGRAM
     has_live_oauth = bool(account and account.access_token and account.status == AccountStatus.CONNECTED)
 
-    mode = "mock"
-    connector: Any = MockConnector(
-        access_token="",
-        account_id=account.id if account else "local_mock",
-    )
-    if has_live_oauth and not allow_mock:
+    if not allow_mock:
+        if not has_live_oauth:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Live publication requires a connected social account with active OAuth credentials (or explicitly enable allow_mock=true)",
+            )
         tok = account.access_token or ""
         ext_id = account.platform_user_id or ""
         if platform_enum == Platform.FACEBOOK:
@@ -330,7 +330,18 @@ async def approve_and_dispatch_schedule(
             connector = InstagramConnector(access_token=tok, account_id=ext_id)
         elif platform_enum == Platform.YOUTUBE:
             connector = YouTubeConnector(access_token=tok, account_id=ext_id)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No live connector implemented for platform '{platform_enum.value}'",
+            )
         mode = "live"
+    else:
+        mode = "mock"
+        connector = MockConnector(
+            access_token="",
+            account_id=account.id if account else "local_mock",
+        )
 
     payload = PostPayload(
         caption=caption,
@@ -364,6 +375,7 @@ async def approve_and_dispatch_schedule(
     await session.commit()
     return {
         "schedule_id": sched.id,
+        "publish_record_id": record.id,
         "status": sched.status.value,
         "approved_by": approved_by,
         "published": pub_res.success,

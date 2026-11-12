@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,14 +10,18 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.ai_router import get_ai_router
-from app.database import get_session
+from app.core.security import require_owner
+from app.database import close_db, create_tables, get_session, init_engine
+from app.models.task import Task, TaskState
 from app.services.backup_service import BackupService
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_owner)])
+_RESTORE_LOCK = asyncio.Lock()
 
 # Runtime mutable overrides layered on top of Settings
 _RUNTIME_OVERRIDES: dict[str, Any] = {}
@@ -366,16 +371,19 @@ async def create_backup(session: AsyncSession = Depends(get_session)) -> BackupI
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_backup(body: RestoreRequest) -> RestoreResponse:
-    """Verify & restore the SQLite database from an encrypted .jbackup or legacy .db backup."""
+async def restore_backup(
+    body: RestoreRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RestoreResponse:
+    """Verify & safely restore the SQLite database from an encrypted .jbackup or legacy .db backup."""
     settings = get_settings()
     backup_dir = Path(settings.backup_dir).resolve()
     safe_name = Path(body.filename).name
-    if safe_name != body.filename:
+    if safe_name != body.filename or ".." in body.filename or "/" in body.filename or "\\" in body.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid backup filename")
     src = (backup_dir / safe_name).resolve()
 
-    if not src.exists() or src.parent != backup_dir:
+    if not src.exists() or not src.is_relative_to(backup_dir):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backup file not found")
 
     db_path = _resolve_sqlite_path()
@@ -385,32 +393,72 @@ async def restore_backup(body: RestoreRequest) -> RestoreResponse:
             detail="Restore is only supported for local SQLite databases",
         )
 
-    if safe_name.endswith(".jbackup"):
-        svc = BackupService(backup_dir=settings.backup_dir)
-        verification = svc.verify_backup(safe_name)
-        if not verification.get("valid"):
+    if _RESTORE_LOCK.locked():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Another backup restore operation is already in progress",
+        )
+
+    async with _RESTORE_LOCK:
+        active_tasks = (
+            await session.execute(select(func.count()).select_from(Task).where(Task.state == TaskState.RUNNING))
+        ).scalar_one()
+        if active_tasks > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot perform destructive restore while tasks are actively running",
+            )
+
+        if safe_name.endswith(".jbackup"):
+            svc = BackupService(backup_dir=settings.backup_dir)
+            verification = svc.verify_backup(safe_name)
+            if not verification.get("valid"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Encrypted backup verification failed: {verification.get('error', 'corrupt archive')}",
+                )
+
+            await session.close()
+            await close_db()
+            try:
+                restore_res = svc.restore_backup(safe_name, restore_dir=db_path.parent)
+                if not restore_res.get("restored"):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(restore_res.get("error", "Restore failed")),
+                    )
+            finally:
+                init_engine()
+                await create_tables()
+
+            return RestoreResponse(
+                restored_from=safe_name,
+                status="restored",
+                message="Encrypted backup verified and restored safely.",
+            )
+
+        # Verify legacy .db magic header before restoring
+        with src.open("rb") as f:
+            header = f.read(16)
+        if header != b"SQLite format 3\x00":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Encrypted backup verification failed: {verification.get('error', 'corrupt archive')}",
+                detail="Corrupted or invalid SQLite backup file",
             )
-        restore_res = svc.restore_backup(safe_name, restore_dir=db_path.parent)
-        if not restore_res.get("restored"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(restore_res.get("error", "Restore failed")),
-            )
+
+        await session.close()
+        await close_db()
+        try:
+            shutil.copy2(src, db_path)
+        finally:
+            init_engine()
+            await create_tables()
+
         return RestoreResponse(
             restored_from=safe_name,
             status="restored",
-            message="Encrypted backup verified and restored. Restart or reconnect active sessions if needed.",
+            message="Database restored safely from verified SQLite backup.",
         )
-
-    shutil.copy2(src, db_path)
-    return RestoreResponse(
-        restored_from=safe_name,
-        status="restored",
-        message="Database restored from backup. Restart or reconnect active sessions if needed.",
-    )
 
 
 @router.get("/backups", response_model=list[BackupInfo])

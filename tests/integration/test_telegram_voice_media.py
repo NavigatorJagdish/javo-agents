@@ -25,15 +25,19 @@ def client(tmp_path, monkeypatch):
 
     import app.config as cfg
     import app.api.routes.telegram as tg_route
+    from app.core.security import get_token_manager
 
     cfg._settings = None
     tg_route._TELEGRAM_OVERRIDES.clear()
+    tg_route._PROCESSED_UPDATE_IDS.clear()
 
+    token = get_token_manager().generate_token("owner", device_id="desktop-1", role="owner")
     app = create_app()
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as test_client:
         yield test_client
 
     tg_route._TELEGRAM_OVERRIDES.clear()
+    tg_route._PROCESSED_UPDATE_IDS.clear()
     cfg._settings = None
 
 

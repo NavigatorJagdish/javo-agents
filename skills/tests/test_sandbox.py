@@ -111,6 +111,7 @@ class TestSkillSandbox(unittest.TestCase):
                 "version": "1.0.0",
                 "description": "Tests timeout enforcement",
                 "author": "Test",
+                "trust_tier": "core_verified",
                 "entrypoint": "skill.py",
                 "handler": "run",
                 "permissions": ["pure:compute"],
@@ -126,6 +127,25 @@ class TestSkillSandbox(unittest.TestCase):
             res = run_skill_sandboxed(skill_dir, {})
             self.assertFalse(res.success)
             self.assertIn("timed out", (res.error or "").lower())
+
+    def test_untrusted_plugin_blocked_even_with_clean_ast(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp)
+            manifest = {
+                "id": "untrusted-clean-test",
+                "name": "Untrusted Clean Test",
+                "version": "1.0.0",
+                "trust_tier": "experimental",
+                "entrypoint": "skill.py",
+                "handler": "run",
+                "permissions": ["pure:compute"],
+            }
+            (skill_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (skill_dir / "skill.py").write_text("def run(p):\n    return {'ok': True}\n", encoding="utf-8")
+            res = run_skill_sandboxed(skill_dir, {})
+            self.assertFalse(res.success)
+            self.assertEqual(res.trust_score, 0.0)
+            self.assertIn("prohibited", (res.error or "").lower())
 
     def test_trust_score_calculation(self) -> None:
         score = calculate_trust_score(

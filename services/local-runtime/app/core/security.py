@@ -76,7 +76,12 @@ class TokenManager:
         self._expiry_hours = expiry_hours
         self._active_tokens: dict[str, dict] = {}
 
-    def generate_token(self, user_id: str, device_id: Optional[str] = None) -> str:
+    def generate_token(
+        self,
+        user_id: str,
+        device_id: Optional[str] = None,
+        role: str = "owner",
+    ) -> str:
         """Generate a new access token."""
         token_id = str(uuid.uuid4())
         expires_at = datetime.now(timezone.utc) + timedelta(hours=self._expiry_hours)
@@ -85,6 +90,7 @@ class TokenManager:
             "token_id": token_id,
             "user_id": user_id,
             "device_id": device_id,
+            "role": role,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expires_at.isoformat(),
         }
@@ -171,20 +177,53 @@ def get_token_manager() -> TokenManager:
     return _token_manager
 
 
+_bootstrap_owner_token: Optional[str] = None
+
+
+def get_owner_token() -> str:
+    """Return configured owner token or bootstrap a process-scoped owner secret."""
+    global _bootstrap_owner_token
+    settings = get_settings()
+    if settings.owner_token:
+        return settings.owner_token
+    if _bootstrap_owner_token is None:
+        _bootstrap_owner_token = secrets.token_urlsafe(32)
+    return _bootstrap_owner_token
+
+
+def validate_auth_token(token: str) -> Optional[dict]:
+    """Validate either a TokenManager HMAC token or the local owner secret token."""
+    if not token:
+        return None
+    owner_tok = get_owner_token()
+    if hmac.compare_digest(token, owner_tok):
+        return {"user_id": "owner", "role": "owner", "is_owner": True}
+    token_mgr = get_token_manager()
+    return token_mgr.validate_token(token)
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
 ) -> Optional[dict]:
     """Auth middleware dependency - extracts and validates the current user.
 
+    Supports Bearer token, X-API-Key, or X-Owner-Token headers.
     Returns None if no auth provided (for endpoints that allow anonymous access).
-    Raises 401 if token is invalid.
+    Raises 401 if supplied credentials are invalid.
     """
-    if credentials is None:
+    raw_token: Optional[str] = None
+    if credentials is not None:
+        raw_token = credentials.credentials
+    elif request.headers.get("X-API-Key"):
+        raw_token = request.headers.get("X-API-Key")
+    elif request.headers.get("X-Owner-Token"):
+        raw_token = request.headers.get("X-Owner-Token")
+
+    if raw_token is None:
         return None
 
-    token_mgr = get_token_manager()
-    payload = token_mgr.validate_token(credentials.credentials)
+    payload = validate_auth_token(raw_token)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -195,12 +234,23 @@ async def get_current_user(
 
 
 def require_auth(user: Optional[dict] = Depends(get_current_user)) -> dict:
-    """Dependency that requires authentication."""
+    """Dependency that requires an authenticated user."""
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def require_owner(user: dict = Depends(require_auth)) -> dict:
+    """Dependency that requires authenticated owner/admin privileges."""
+    role = str(user.get("role", "")).lower()
+    if not user.get("is_owner") and role not in {"owner", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner privileges required",
         )
     return user
 
