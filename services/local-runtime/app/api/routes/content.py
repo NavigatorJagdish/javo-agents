@@ -333,10 +333,10 @@ async def publish_scheduled_content(
     if schedule.status == ScheduleStatus.PUBLISHED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Content schedule has already been published",
+            detail="Content schedule has already been published to live platform",
         )
 
-    if schedule.status != ScheduleStatus.APPROVED:
+    if schedule.status not in {ScheduleStatus.APPROVED, ScheduleStatus.SIMULATED}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Schedule cannot be published while status is '{schedule.status.value}'; approval required first.",
@@ -365,6 +365,18 @@ async def publish_scheduled_content(
         publish_now=True,
         allow_mock=req.allow_mock,
     )
+
+    if req.allow_mock:
+        return PublishResponse(
+            schedule_id=schedule.id,
+            publish_record_id=str(result.get("publish_record_id", "")),
+            status=PublishStatus.SIMULATED.value,
+            platform_post_id=result.get("platform_post_id"),
+            mode="mock",
+            platform=result.get("platform"),
+            message="Content simulated via mock connector; schedule remains approved for live publishing",
+        )
+
     if not result.get("published"):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -376,9 +388,9 @@ async def publish_scheduled_content(
         publish_record_id=str(result.get("publish_record_id", "")),
         status=PublishStatus.SUCCESS.value,
         platform_post_id=result.get("platform_post_id"),
-        mode=str(result.get("mode", "live")),
+        mode="live",
         platform=result.get("platform"),
-        message=f"Content published via {result.get('mode', 'live')} connector",
+        message="Content published via live connector",
     )
 
 

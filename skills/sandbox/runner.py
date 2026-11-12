@@ -85,6 +85,72 @@ SENSITIVE_ENV_FRAGMENTS = (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CORE_SKILLS_DIR = REPO_ROOT / "skills" / "core"
+
+# Official Cryptographic Integrity Ledger for Built-in Core Skills
+CORE_SKILL_PROVENANCE_LEDGER: dict[str, dict[str, Any]] = {
+    "hindi-hinglish-hook-writer": {
+        "id": "hindi-hinglish-hook-writer",
+        "relative_dir": "hindi-hinglish-hook-writer",
+        "allowed_permissions": {"pure:compute", "text:transform"},
+        "entrypoint": "skill.py",
+        "entrypoint_sha256": "e77d68f5a7f6e75f120f74d5b87a60f27db0bc1a987f566884d1702793c81b7a",
+        "manifest_sha256": "86f26fcaaad4de1e3ee5c6b136cacecff4ea57ede34e618f4a6b80334f8d4aaf",
+    },
+    "social-caption-optimizer": {
+        "id": "social-caption-optimizer",
+        "relative_dir": "social-caption-optimizer",
+        "allowed_permissions": {"pure:compute", "text:transform"},
+        "entrypoint": "skill.py",
+        "entrypoint_sha256": "318760f1444955f98673397287d9c0d17c2976984d1e9cdc23d6f725a68c3e40",
+        "manifest_sha256": "23a435086fa241e98a7725f9b64bb0f6814c1e90291651a6de4638ac8f2f9a44",
+    },
+}
+
+
+def verify_skill_provenance(skill_dir: Path, manifest: dict[str, Any]) -> tuple[bool, str]:
+    """Verify that a skill claiming core_verified has genuine installation provenance and untampered cryptographic integrity."""
+    skill_id = str(manifest.get("id") or "").strip()
+    if skill_id not in CORE_SKILL_PROVENANCE_LEDGER:
+        return False, f"Skill '{skill_id}' is not registered in the core provenance ledger; cannot claim core_verified"
+
+    ledger = CORE_SKILL_PROVENANCE_LEDGER[skill_id]
+
+    # 1. Provenance check: must reside inside canonical CORE_SKILLS_DIR
+    try:
+        rel_path = skill_dir.resolve().relative_to(CORE_SKILLS_DIR.resolve())
+        if rel_path.parts[0] != ledger["relative_dir"]:
+            return False, f"Skill directory '{skill_dir.name}' does not match expected core path '{ledger['relative_dir']}'"
+    except (ValueError, IndexError):
+        return False, f"Skill claiming 'core_verified' is located outside official core directory ({skill_dir})"
+
+    # 2. Permission check: cannot exceed pinned core permissions
+    requested_perms = set(manifest.get("permissions", []))
+    if not requested_perms.issubset(ledger["allowed_permissions"]):
+        excess = requested_perms - ledger["allowed_permissions"]
+        return False, f"Manifest requests unpinned permissions for core skill: {excess}"
+
+    # 3. Integrity check: manifest hash must match
+    manifest_file = skill_dir / "manifest.json"
+    if not manifest_file.exists():
+        return False, "Missing manifest.json"
+    actual_manifest_sha = compute_sha256(manifest_file)
+    if not actual_manifest_sha.lower() == str(ledger["manifest_sha256"]).lower():
+        return False, f"Core manifest SHA-256 integrity mismatch ({actual_manifest_sha} != {ledger['manifest_sha256']}): tampering detected"
+
+    # 4. Integrity check: entrypoint file hash must match
+    entrypoint = manifest.get("entrypoint", ledger["entrypoint"])
+    skill_file = skill_dir / entrypoint
+    if not skill_file.exists():
+        return False, f"Missing entrypoint file {entrypoint}"
+    actual_code_sha = compute_sha256(skill_file)
+    if not actual_code_sha.lower() == str(ledger["entrypoint_sha256"]).lower():
+        return False, f"Core skill code SHA-256 integrity mismatch ({actual_code_sha} != {ledger['entrypoint_sha256']}): tampering detected"
+
+    return True, "verified"
+
+
 @dataclass
 class SandboxResult:
     success: bool
@@ -222,12 +288,25 @@ def run_skill_sandboxed(
         return SandboxResult(success=False, error=f"Invalid manifest.json: {exc}")
 
     trust_tier = str(manifest.get("trust_tier", "untrusted")).lower()
+
+    # Enforce genuine provenance and cryptographic integrity for any core_verified claim
+    if trust_tier == "core_verified":
+        is_valid_core, reason = verify_skill_provenance(skill_dir, manifest)
+        if not is_valid_core:
+            return SandboxResult(
+                success=False,
+                error=f"Provenance/integrity verification failed: {reason}",
+                violations=[f"Core provenance violation: {reason}"],
+                trust_score=0.0,
+                duration_ms=0,
+            )
+
     if not allow_untrusted and trust_tier != "core_verified":
         return SandboxResult(
             success=False,
             error=(
                 f"Execution of untrusted plugin (trust_tier='{trust_tier}') is prohibited: "
-                "OS-level container isolation is unavailable; only core_verified skills may execute."
+                "OS-level container isolation is unavailable; only verified core skills with valid provenance may execute."
             ),
             violations=[f"Untrusted plugin blocked: trust_tier='{trust_tier}'"],
             trust_score=0.0,

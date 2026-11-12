@@ -317,10 +317,28 @@ async def approve_and_dispatch_schedule(
     has_live_oauth = bool(account and account.access_token and account.status == AccountStatus.CONNECTED)
 
     if not allow_mock:
+        # Durable idempotency check: reject if already published to live platform
+        if sched.status == ScheduleStatus.PUBLISHED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Content schedule has already been published to live platform",
+            )
+        existing_live = await session.execute(
+            select(PublishRecord).where(
+                PublishRecord.schedule_id == sched.id,
+                PublishRecord.status == PublishStatus.SUCCESS,
+            )
+        )
+        if existing_live.scalars().first() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Content schedule has already been published to live platform",
+            )
+
         if not has_live_oauth:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Live publication requires a connected social account with active OAuth credentials (or explicitly enable allow_mock=true)",
+                detail="Live publication requires a connected social account with active OAuth credentials (or explicitly enable allow_mock=true for simulation)",
             )
         tok = account.access_token or ""
         ext_id = account.platform_user_id or ""
@@ -353,6 +371,42 @@ async def approve_and_dispatch_schedule(
     )
     pub_res = await connector.publish_post(payload)
 
+    if mode == "mock":
+        record = PublishRecord(
+            id=str(uuid4()),
+            schedule_id=sched.id,
+            platform=platform_enum,
+            platform_post_id=f"sim-{pub_res.post_id}" if pub_res.post_id else f"sim-{uuid4().hex[:8]}",
+            platform_url=pub_res.url or "https://mock.javo.local/posts/simulated",
+            status=PublishStatus.SIMULATED,
+            error_message=pub_res.error,
+            engagement_data={"mode": "mock", "simulated": True, "raw": pub_res.raw},
+        )
+        session.add(record)
+
+        # Simulation preserves approved status for later live publishing!
+        # Do NOT falsely mark schedule or asset as PUBLISHED externally
+        if sched.status != ScheduleStatus.APPROVED:
+            sched.status = ScheduleStatus.APPROVED
+        if asset is not None and asset.status == AssetStatus.DRAFT:
+            asset.status = AssetStatus.READY
+
+        await session.commit()
+        return {
+            "schedule_id": sched.id,
+            "publish_record_id": record.id,
+            "status": sched.status.value,
+            "approved_by": approved_by,
+            "published": False,
+            "simulated": True,
+            "mode": "mock",
+            "platform": platform_enum.value,
+            "platform_post_id": record.platform_post_id,
+            "platform_url": record.platform_url,
+            "error": pub_res.error,
+        }
+
+    # Live connector execution outcome
     record = PublishRecord(
         id=str(uuid4()),
         schedule_id=sched.id,
@@ -361,7 +415,7 @@ async def approve_and_dispatch_schedule(
         platform_url=pub_res.url,
         status=PublishStatus.SUCCESS if pub_res.success else PublishStatus.FAILED,
         error_message=pub_res.error,
-        engagement_data={"mode": mode, "raw": pub_res.raw},
+        engagement_data={"mode": "live", "simulated": False, "raw": pub_res.raw},
     )
     session.add(record)
 
@@ -379,7 +433,8 @@ async def approve_and_dispatch_schedule(
         "status": sched.status.value,
         "approved_by": approved_by,
         "published": pub_res.success,
-        "mode": mode,
+        "simulated": False,
+        "mode": "live",
         "platform": platform_enum.value,
         "platform_post_id": pub_res.post_id,
         "platform_url": pub_res.url,

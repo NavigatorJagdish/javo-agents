@@ -50,6 +50,7 @@ SUPPORTED_BOT_COMMANDS = [
 # ---------------------------------------------------------------------------
 class TelegramConfigResponse(BaseModel):
     configured: bool
+    mode: str = "disabled"
     webhook_url: Optional[str] = None
     allowed_users: list[str] = Field(default_factory=list)
     has_webhook_secret: bool = False
@@ -57,6 +58,7 @@ class TelegramConfigResponse(BaseModel):
 
 class TelegramConfigUpdate(BaseModel):
     bot_token: Optional[str] = None
+    mode: Optional[str] = None
     webhook_url: Optional[str] = None
     webhook_secret: Optional[str] = None
     allowed_users: Optional[list[str]] = None
@@ -86,9 +88,15 @@ class TelegramSendResponse(BaseModel):
 # ---------------------------------------------------------------------------
 def _effective_telegram_config() -> dict[str, Any]:
     s = get_settings()
+    configured_mode = _TELEGRAM_OVERRIDES.get("mode", getattr(s, "telegram_mode", "disabled"))
+    webhook_url = _TELEGRAM_OVERRIDES.get("webhook_url", s.telegram_webhook_url)
+    # If mode is not explicitly polling and a webhook URL is configured, treat as webhook
+    if configured_mode == "disabled" and webhook_url:
+        configured_mode = "webhook"
     return {
         "bot_token": _TELEGRAM_OVERRIDES.get("bot_token", s.telegram_bot_token),
-        "webhook_url": _TELEGRAM_OVERRIDES.get("webhook_url", s.telegram_webhook_url),
+        "mode": configured_mode,
+        "webhook_url": webhook_url,
         "webhook_secret": _TELEGRAM_OVERRIDES.get("webhook_secret", s.telegram_webhook_secret),
         "allowed_users": _TELEGRAM_OVERRIDES.get("allowed_users", list(s.telegram_allowed_users)),
     }
@@ -106,6 +114,7 @@ async def get_telegram_config(
     cfg = _effective_telegram_config()
     return TelegramConfigResponse(
         configured=bool(cfg["bot_token"]),
+        mode=str(cfg.get("mode") or "disabled"),
         webhook_url=cfg["webhook_url"],
         allowed_users=cfg["allowed_users"],
         has_webhook_secret=bool(cfg.get("webhook_secret")),
@@ -133,15 +142,32 @@ async def telegram_webhook(
 ) -> TelegramWebhookResponse:
     """Receive incoming Telegram Bot API webhook updates with secret verification, replay defense, and fail-closed pairing."""
     cfg = _effective_telegram_config()
+    mode = str(cfg.get("mode", "disabled")).lower()
+
+    # Fail closed if polling mode is active
+    if mode == "polling":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram webhook endpoint is disabled: polling mode is active",
+        )
+
+    # Fail closed: webhook secret is strictly required when receiving webhooks
     expected_secret = cfg.get("webhook_secret")
-    if expected_secret:
-        if not x_telegram_bot_api_secret_token or not hmac.compare_digest(
-            x_telegram_bot_api_secret_token, str(expected_secret)
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing Telegram webhook secret token",
-            )
+    if not expected_secret or not isinstance(expected_secret, str) or len(expected_secret.strip()) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram webhook requires a securely configured secret token; endpoint operates fail-closed",
+        )
+
+    # Secret header must match via constant-time verification
+    clean_secret = expected_secret.strip()
+    if not x_telegram_bot_api_secret_token or not hmac.compare_digest(
+        x_telegram_bot_api_secret_token, clean_secret
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing Telegram webhook secret token",
+        )
 
     update_id = update.get("update_id")
     if isinstance(update_id, int):

@@ -59,6 +59,20 @@ export const Analytics: React.FC = () => {
         </div>
       </div>
 
+      <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-cyan-400/20 text-[#00E5FF] font-semibold uppercase tracking-wider text-[10px]">
+            Data Grounding
+          </span>
+          <span className="text-slate-700 dark:text-slate-300">
+            Telemetry distinguishes <strong>Verified Live Platform API Metrics</strong> from <strong>Simulated Sandbox Previews</strong>.
+          </span>
+        </div>
+        <span className="font-mono text-slate-500 dark:text-slate-400">
+          Source: Live OAuth Connectors &bull; Mock Connector Simulation Isolated
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
           title="Total Impressions"
@@ -96,9 +110,14 @@ export const Analytics: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <Card variant="default">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-4">
-            Daily Views by Platform
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Daily Views by Platform
+            </h2>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono">
+              Verified Platform Data
+            </span>
+          </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={weeklyViews}>
@@ -123,9 +142,14 @@ export const Analytics: React.FC = () => {
         </Card>
 
         <Card variant="default">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-4">
-            Platform Retention vs Engagement (%)
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Platform Retention vs Engagement (%)
+            </h2>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 font-mono">
+              Live vs Simulation Benchmarks
+            </span>
+          </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={platformCompare}>

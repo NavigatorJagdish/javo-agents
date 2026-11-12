@@ -37,6 +37,7 @@ class ScheduleStatus(str, enum.Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    SIMULATED = "simulated"
     PUBLISHED = "published"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -44,6 +45,7 @@ class ScheduleStatus(str, enum.Enum):
 
 class PublishStatus(str, enum.Enum):
     SUCCESS = "success"
+    SIMULATED = "simulated"
     PARTIAL = "partial"
     FAILED = "failed"
 

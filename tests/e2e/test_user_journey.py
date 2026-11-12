@@ -132,16 +132,17 @@ def _run_journey_assertions(client: TestClient, tmp_path: Path):
     sched_id = pipe_data["scheduled_items"][0]["schedule_id"]
     assert pipe_data["scheduled_items"][0]["status"] == "pending"
 
-    # 6. Human approval + explicit MockConnector publish (truthful mode="mock")
+    # 6. Human approval + explicit MockConnector simulation (truthful mode="mock", preserves approved status for live)
     pub = client.post(
         f"/content/schedule/{sched_id}/approve",
         json={"approved_by": "jagdish", "publish_now": True, "allow_mock": True},
     )
     assert pub.status_code == 200
     pub_data = pub.json()
-    assert pub_data["published"] is True
+    assert pub_data["simulated"] is True
     assert pub_data["mode"] == "mock"
-    assert pub_data["status"] == "published"
+    assert pub_data["published"] is False
+    assert pub_data["status"] == "approved"
 
     # 7. Real Agent Run + Master Orchestrator Task execution
     agent_run = client.post(
@@ -217,15 +218,26 @@ def _run_journey_assertions(client: TestClient, tmp_path: Path):
     assert stt.json()["duration_seconds"] is not None
 
     # 10. Telegram allowlist fail-closed + NL command + Emergency Stop + Resume
+    # Without webhook secret, webhook fails closed with 403
     unpaired = client.post(
         "/telegram/webhook",
         json={"message": {"from": {"id": 99999}, "text": "system ka status batao"}},
     )
     assert unpaired.status_code == 403
 
-    client.put("/telegram/config", json={"bot_token": "mock-token-123", "allowed_users": ["12345"]})
+    e2e_secret = "secure-e2e-webhook-secret-token"
+    client.put(
+        "/telegram/config",
+        json={
+            "bot_token": "mock-token-123",
+            "webhook_secret": e2e_secret,
+            "mode": "webhook",
+            "allowed_users": ["12345"],
+        },
+    )
     paired_nl = client.post(
         "/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": e2e_secret},
         json={"message": {"from": {"id": 12345}, "text": "system ka status batao"}},
     )
     assert paired_nl.status_code == 200

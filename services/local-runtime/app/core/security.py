@@ -6,6 +6,8 @@ import base64
 import hashlib
 import hmac
 import logging
+import os
+from pathlib import Path
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -177,18 +179,196 @@ def get_token_manager() -> TokenManager:
     return _token_manager
 
 
-_bootstrap_owner_token: Optional[str] = None
+# ---------------------------------------------------------------------------
+# OS-Backed Credential Storage & Windows DPAPI
+# ---------------------------------------------------------------------------
+def _get_credential_dir() -> Path:
+    """Return platform-appropriate secure credential directory."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or str(Path.home())
+        cred_dir = Path(base) / "JavoAgents" / "credentials"
+    else:
+        cred_dir = Path.home() / ".javo" / "credentials"
+    cred_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(cred_dir, 0o700)
+    except Exception:
+        pass
+    return cred_dir
+
+
+def _dpapi_protect(plaintext: bytes) -> bytes:
+    """Encrypt data using Windows DPAPI (CryptProtectData via ctypes)."""
+    if os.name != "nt":
+        return plaintext
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+
+        in_blob = DATA_BLOB(
+            len(plaintext),
+            ctypes.cast(ctypes.c_char_p(plaintext), ctypes.POINTER(ctypes.c_char)),
+        )
+        out_blob = DATA_BLOB()
+        if not crypt32.CryptProtectData(
+            ctypes.byref(in_blob),
+            "javo_credential",
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(out_blob),
+        ):
+            return plaintext
+        protected = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        kernel32.LocalFree(out_blob.pbData)
+        return protected
+    except Exception as exc:
+        logger.debug(f"DPAPI protect fallback: {exc}")
+        return plaintext
+
+
+def _dpapi_unprotect(ciphertext: bytes) -> bytes:
+    """Decrypt data using Windows DPAPI (CryptUnprotectData via ctypes)."""
+    if os.name != "nt":
+        return ciphertext
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+
+        in_blob = DATA_BLOB(
+            len(ciphertext),
+            ctypes.cast(ctypes.c_char_p(ciphertext), ctypes.POINTER(ctypes.c_char)),
+        )
+        out_blob = DATA_BLOB()
+        if not crypt32.CryptUnprotectData(
+            ctypes.byref(in_blob),
+            None,
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(out_blob),
+        ):
+            return ciphertext
+        unprotected = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        kernel32.LocalFree(out_blob.pbData)
+        return unprotected
+    except Exception as exc:
+        logger.debug(f"DPAPI unprotect fallback: {exc}")
+        return ciphertext
+
+
+def _load_durable_secret(name: str) -> Optional[str]:
+    """Load a persistent secret from DPAPI-encrypted or permission-restricted storage."""
+    cred_dir = _get_credential_dir()
+    dpapi_file = cred_dir / f"{name}.dpapi"
+    raw_file = cred_dir / f"{name}.key"
+
+    if dpapi_file.exists():
+        try:
+            raw_bytes = dpapi_file.read_bytes()
+            decrypted = _dpapi_unprotect(raw_bytes).decode("utf-8").strip()
+            if decrypted:
+                return decrypted
+        except Exception as exc:
+            logger.warning(f"Failed to read DPAPI secret {name}: {exc}")
+
+    if raw_file.exists():
+        try:
+            val = raw_file.read_text(encoding="utf-8").strip()
+            if val:
+                return val
+        except Exception as exc:
+            logger.warning(f"Failed to read raw secret {name}: {exc}")
+
+    return None
+
+
+def _save_durable_secret(name: str, secret: str) -> None:
+    """Save a persistent secret using Windows DPAPI or 0o600 restricted file storage."""
+    cred_dir = _get_credential_dir()
+    val_bytes = secret.strip().encode("utf-8")
+
+    if os.name == "nt":
+        dpapi_file = cred_dir / f"{name}.dpapi"
+        protected = _dpapi_protect(val_bytes)
+        dpapi_file.write_bytes(protected)
+    else:
+        raw_file = cred_dir / f"{name}.key"
+        raw_file.write_text(secret.strip(), encoding="utf-8")
+        try:
+            os.chmod(raw_file, 0o600)
+        except Exception:
+            pass
+
+
+_cached_owner_token: Optional[str] = None
+_cached_app_secret: Optional[str] = None
+
+
+def get_durable_app_secret() -> str:
+    """Return or provision a durable 256-bit per-installation application secret key."""
+    global _cached_app_secret
+    if _cached_app_secret is not None:
+        return _cached_app_secret
+
+    persisted = _load_durable_secret("app_secret")
+    if persisted:
+        _cached_app_secret = persisted
+        return _cached_app_secret
+
+    new_secret = secrets.token_urlsafe(32)
+    try:
+        _save_durable_secret("app_secret", new_secret)
+    except Exception as exc:
+        logger.warning(f"Could not persist application secret: {exc}")
+
+    _cached_app_secret = new_secret
+    return _cached_app_secret
 
 
 def get_owner_token() -> str:
-    """Return configured owner token or bootstrap a process-scoped owner secret."""
-    global _bootstrap_owner_token
+    """Return configured owner token or load/provision a persistent OS-backed owner secret."""
+    global _cached_owner_token
     settings = get_settings()
     if settings.owner_token:
         return settings.owner_token
-    if _bootstrap_owner_token is None:
-        _bootstrap_owner_token = secrets.token_urlsafe(32)
-    return _bootstrap_owner_token
+
+    if _cached_owner_token is not None:
+        return _cached_owner_token
+
+    persisted = _load_durable_secret("owner_token")
+    if persisted:
+        _cached_owner_token = persisted
+        return _cached_owner_token
+
+    new_token = secrets.token_urlsafe(32)
+    try:
+        _save_durable_secret("owner_token", new_token)
+    except Exception as exc:
+        logger.warning(f"Could not persist owner token: {exc}")
+
+    _cached_owner_token = new_token
+    return _cached_owner_token
 
 
 def validate_auth_token(token: str) -> Optional[dict]:

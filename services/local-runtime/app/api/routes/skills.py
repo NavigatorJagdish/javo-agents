@@ -375,11 +375,31 @@ async def apply_skill_upgrade(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Skill '{skill_name}' not found")
     manifest_path = skill_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    # Untrusted plugins cannot be upgraded and executed via host runtime without OS container isolation
     if manifest.get("trust_tier") not in {"core_verified", "community_reviewed"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Untrusted plugins cannot be upgraded and executed via host runtime",
+            detail="Untrusted plugins cannot be upgraded and executed via host runtime without OS container isolation",
         )
+
+    # Prevent permission escalation: an upgrade cannot grant new or unpinned capabilities
+    orig_perms = set(manifest.get("permissions", []))
+    req_perms = set(proposal.get("requested_permissions", []))
+    if req_perms and not req_perms.issubset(orig_perms):
+        excess = req_perms - orig_perms
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Unsafe upgrade rejected: Permission escalation is prohibited (requested {excess})",
+        )
+
+    # Prevent modifying skill trust tier (cannot escalate to core_verified or change tier)
+    if "trust_tier" in proposal and proposal["trust_tier"] != manifest.get("trust_tier"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unsafe upgrade rejected: Modifying skill trust tier is prohibited",
+        )
+
     entrypoint = skill_dir / str(manifest.get("entrypoint", "skill.py"))
 
     # Create backup copies before modifying
