@@ -63,6 +63,7 @@ jobs:
 
       - name: Upload Android Build Artifacts (Private Alpha)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: javo-agents-android-v0.1.0-alpha
           path: apps/android/build-artifacts/

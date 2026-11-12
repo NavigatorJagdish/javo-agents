@@ -71,6 +71,7 @@ jobs:
 
       - name: Upload Windows Desktop Artifacts (Private Alpha)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: javo-agents-windows-v0.1.0-alpha
           path: |

@@ -126,18 +126,33 @@ export default function DownloadPage() {
 
             <div className="mt-8 flex flex-wrap gap-3">
               <a
-                href={SITE_CONFIG.windowsArtifacts.workflowUrl}
+                href={SITE_CONFIG.windowsArtifacts.installerDownloadUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-primary"
               >
                 <Download className="h-4 w-4" />
-                Download Windows Artifacts
+                Download Installer (.exe)
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
-              <Link href="/docs#installation" className="btn-secondary">
-                Windows Setup Guide
-              </Link>
+              <a
+                href={SITE_CONFIG.windowsArtifacts.portableDownloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+              >
+                <Package className="h-4 w-4" />
+                Portable (.exe)
+              </a>
+              <a
+                href={SITE_CONFIG.windowsArtifacts.draftReleaseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+              >
+                <Github className="h-4 w-4" />
+                View Release Assets
+              </a>
             </div>
           </div>
 
@@ -218,18 +233,24 @@ export default function DownloadPage() {
 
             <div className="mt-8 flex flex-wrap gap-3">
               <a
-                href={SITE_CONFIG.androidArtifacts.workflowUrl}
+                href={SITE_CONFIG.androidArtifacts.actionsRunsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-primary"
               >
                 <Download className="h-4 w-4" />
-                Download Android APK Artifacts
+                Download Android Test APK
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
-              <Link href="/roadmap" className="btn-secondary">
-                Testing Roadmap
-              </Link>
+              <a
+                href={SITE_CONFIG.androidArtifacts.workflowUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+              >
+                <Terminal className="h-4 w-4" />
+                Android CI Pipeline
+              </a>
             </div>
           </div>
         </div>

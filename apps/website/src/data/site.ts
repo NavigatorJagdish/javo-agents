@@ -14,8 +14,12 @@ export const SITE_CONFIG = {
   windowsArtifacts: {
     installerName: 'JavoAgents-0.1.0-x64.exe',
     installerSha256: '5d6f13f07a3b84957814f5a079c8de78ee14bbfbae91eda5764d03df1e8e8fd0',
+    installerDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/JavoAgents-0.1.0-x64.exe',
     portableName: 'JavoAgents-Portable-0.1.0-x64.exe',
     portableSha256: 'c8e092aa339137d615e474ca0b7ed598f0cc74bd76cca10d82c601620f51b7e7',
+    portableDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/JavoAgents-Portable-0.1.0-x64.exe',
+    checksumsUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/SHA256SUMS.txt',
+    draftReleaseUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/tag/untagged-793724ecd9d08a285337',
     workflowUrl: 'https://github.com/NavigatorJagdish/javo-agents/actions/workflows/ci-windows.yml',
   },
   androidArtifacts: {
@@ -23,6 +27,7 @@ export const SITE_CONFIG = {
     releaseApkName: 'javo-agents-android-v0.1.0-alpha-release-unsigned.apk',
     releaseAabName: 'javo-agents-android-v0.1.0-alpha-release-unsigned.aab',
     workflowUrl: 'https://github.com/NavigatorJagdish/javo-agents/actions/workflows/ci-android.yml',
+    actionsRunsUrl: 'https://github.com/NavigatorJagdish/javo-agents/actions?query=workflow%3A%22CI+%E2%80%94+Android+Companion%22',
   },
   windowsMinSpecs: {
     os: 'Windows 10 / 11 (64-bit)',
