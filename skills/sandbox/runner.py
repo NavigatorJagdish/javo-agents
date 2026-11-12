@@ -103,8 +103,8 @@ CORE_SKILL_PROVENANCE_LEDGER: dict[str, dict[str, Any]] = {
         "relative_dir": "social-caption-optimizer",
         "allowed_permissions": {"pure:compute", "text:transform"},
         "entrypoint": "skill.py",
-        "entrypoint_sha256": "318760f1444955f98673397287d9c0d17c2976984d1e9cdc23d6f725a68c3e40",
-        "manifest_sha256": "23a435086fa241e98a7725f9b64bb0f6814c1e90291651a6de4638ac8f2f9a44",
+        "entrypoint_sha256": "e1db25209b827b4925201f786d48fcea968ea5697e7896574ac717513b5c13c8",
+        "manifest_sha256": "e8b7e904108d0d88e3d248928420292971c3601787164b4e2ee212b74bb2c3ac",
     },
 }
 
@@ -162,7 +162,11 @@ class SandboxResult:
 
 
 def compute_sha256(file_path: Path) -> str:
-    return hashlib.sha256(file_path.read_bytes()).hexdigest()
+    """Compute SHA-256 with cross-platform CRLF/LF line-ending normalization for text files."""
+    data = file_path.read_bytes()
+    if file_path.suffix.lower() in {".py", ".json", ".yaml", ".yml", ".txt", ".md"}:
+        data = data.replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def inspect_skill_ast(source_code: str, permissions: list[str]) -> list[str]:
