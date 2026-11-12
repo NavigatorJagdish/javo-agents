@@ -1,7 +1,6 @@
 """Content Recycler agent — repurposes older evergreen content for new platforms and formats."""
 
 import logging
-from typing import Any
 
 from app.agents.base import BaseAgent
 from app.core.ai_router import AIRouter

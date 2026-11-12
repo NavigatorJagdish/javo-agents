@@ -5,7 +5,6 @@ from __future__ import annotations
 import platform
 import time
 from datetime import datetime, timezone
-from typing import Any
 
 import psutil
 from fastapi import APIRouter, Depends
@@ -125,7 +124,7 @@ async def diagnostics(session: AsyncSession = Depends(get_session)) -> Diagnosti
 
     # AI router
     try:
-        from app.core.ai_router import AIRouter  # type: ignore[import-untyped]
+        from app.core.ai_router import AIRouter  # noqa: F401
 
         checks.append(ServiceCheck(name="ai_router", status="ok"))
     except Exception:

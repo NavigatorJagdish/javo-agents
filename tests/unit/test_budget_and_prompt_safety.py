@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.ai_router import AIRouter
-from app.core.privacy_firewall import DataClassification, PrivacyFirewall
+from app.core.privacy_firewall import PrivacyFirewall
 from app.core.resource_manager import ResourceManager
 
 

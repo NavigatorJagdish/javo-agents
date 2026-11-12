@@ -1,7 +1,6 @@
 """Content Factory agent — generates content drafts using AI and applies brand voice."""
 
 import logging
-from typing import Any
 
 from app.agents.base import BaseAgent
 from app.core.ai_router import AIRouter

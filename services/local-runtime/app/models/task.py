@@ -2,7 +2,7 @@
 
 import enum
 from datetime import datetime
-from typing import Optional, List, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
 import sqlalchemy as sa
@@ -10,6 +10,9 @@ from sqlalchemy import ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class TaskState(str, enum.Enum):

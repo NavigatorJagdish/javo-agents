@@ -27,11 +27,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
 
       - name: Run Android Lint
-        run: ./gradlew lintDebug
+        run: gradle lintDebug --no-daemon --stacktrace
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest
+        run: gradle testDebugUnitTest --no-daemon --stacktrace

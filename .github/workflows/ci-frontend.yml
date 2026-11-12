@@ -27,7 +27,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -45,19 +45,19 @@ jobs:
       - name: Typecheck & Build Dashboard
         working-directory: apps/dashboard
         run: |
-          pnpm install --frozen-lockfile || pnpm install
-          npx tsc --noEmit
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Typecheck & Build Website
         working-directory: apps/website
         run: |
-          pnpm install --frozen-lockfile || pnpm install
-          npx tsc --noEmit
+          pnpm install --no-frozen-lockfile
+          pnpm typecheck
           pnpm build
 
-      - name: Typecheck Windows Electron Shell
+      - name: Typecheck & Build Windows Electron Shell
         working-directory: apps/windows
         run: |
-          pnpm install --frozen-lockfile || pnpm install
+          pnpm install --no-frozen-lockfile
           pnpm typecheck
+          pnpm build

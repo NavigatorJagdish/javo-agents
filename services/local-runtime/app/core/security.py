@@ -176,7 +176,7 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
 ) -> Optional[dict]:
     """Auth middleware dependency - extracts and validates the current user.
-    
+
     Returns None if no auth provided (for endpoints that allow anonymous access).
     Raises 401 if token is invalid.
     """

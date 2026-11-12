@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents import ALL_AGENT_CLASSES, BaseAgent, MasterAgent, create_orchestrator, get_all_agents
+from app.agents import ALL_AGENT_CLASSES, BaseAgent, create_orchestrator, get_all_agents
 
 
 def test_all_29_specialist_agents_registered():
