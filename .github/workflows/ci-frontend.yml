@@ -19,45 +19,52 @@ on:
 jobs:
   typecheck-and-build:
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
+      - name: Install pnpm and TypeScript CLI
+        run: npm install -g pnpm@12 typescript
+
       - name: Build Shared Packages
         run: |
-          npm install -g typescript
           tsc -p packages/shared-types/tsconfig.json
           tsc -p packages/api-client/tsconfig.json
           tsc -p packages/workflow-schema/tsconfig.json
           tsc -p packages/policy-engine/tsconfig.json
 
+      - name: Install Dashboard dependencies
+        working-directory: apps/dashboard
+        run: pnpm install --no-frozen-lockfile
+
       - name: Typecheck & Build Dashboard
         working-directory: apps/dashboard
-        run: |
-          pnpm install --no-frozen-lockfile
-          pnpm build
+        run: pnpm build
+
+      - name: Install Website dependencies
+        working-directory: apps/website
+        run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck & Build Website
         working-directory: apps/website
         run: |
-          pnpm install --no-frozen-lockfile
           pnpm typecheck
           pnpm build
+
+      - name: Install Windows Electron Shell dependencies
+        working-directory: apps/windows
+        run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck & Build Windows Electron Shell
         working-directory: apps/windows
         run: |
-          pnpm install --no-frozen-lockfile
           pnpm typecheck
           pnpm build

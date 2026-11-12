@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -193,7 +194,12 @@ def create_app() -> FastAPI:
             ws_manager.disconnect(websocket)
 
     # Serve built local web dashboard when present (localhost-only by default via JAVO_HOST=127.0.0.1)
-    dashboard_dist = Path(__file__).resolve().parents[3] / "apps" / "dashboard" / "dist"
+    override_dist = os.environ.get("JAVO_DASHBOARD_DIST")
+    dashboard_dist = (
+        Path(override_dist)
+        if override_dist
+        else Path(__file__).resolve().parents[3] / "apps" / "dashboard" / "dist"
+    )
     if dashboard_dist.is_dir() and (dashboard_dist / "index.html").is_file():
         application.mount(
             "/dashboard",

@@ -113,10 +113,24 @@ def test_voice_hinglish_and_confirmation_gate(client: TestClient):
     assert d2["action_taken"] == "schedule_queued"
 
 
-def test_dashboard_static_mount_served_locally(client: TestClient):
+def test_dashboard_static_mount_served_locally(client: TestClient, tmp_path: Path, monkeypatch):
     r = client.get("/dashboard/")
-    assert r.status_code == 200
-    assert "Javo Agents" in r.text
+    if r.status_code == 200:
+        assert "Javo Agents" in r.text
+        return
+
+    # Backend-only CI checkouts omit built frontend dist/; verify static mount with a staged bundle.
+    staged_dist = tmp_path / "dashboard_dist"
+    staged_dist.mkdir(parents=True, exist_ok=True)
+    (staged_dist / "index.html").write_text(
+        "<!doctype html><html><title>Javo Agents</title><body>Javo Agents Dashboard</body></html>",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JAVO_DASHBOARD_DIST", str(staged_dist))
+    with TestClient(create_app()) as staged_client:
+        staged_res = staged_client.get("/dashboard/")
+        assert staged_res.status_code == 200
+        assert "Javo Agents" in staged_res.text
 
 
 def test_media_processor_with_local_ffmpeg(tmp_path: Path):
