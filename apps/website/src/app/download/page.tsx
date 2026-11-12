@@ -176,7 +176,7 @@ export default function DownloadPage() {
               Run From Verified Source (PowerShell)
             </div>
             <pre className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-100 dark:border-white/10">
-{`git clone https://github.com/javo-agents/javo-agents.git
+{`git clone https://github.com/NavigatorJagdish/javo-agents.git
 cd javo-agents
 .\\scripts\\setup-windows.ps1
 .\\scripts\\start-windows.ps1`}

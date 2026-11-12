@@ -58,7 +58,7 @@ export const GitHub: React.FC = () => {
         <Button
           variant="secondary"
           leftIcon={<RefreshCw className="h-4 w-4" />}
-          onClick={() => addToast('Checked GitHub Releases', 'Javo Agents v2.4.0 is up to date.', 'info')}
+          onClick={() => addToast('Checked GitHub Releases', 'Javo Agents v0.1.0-alpha (NavigatorJagdish/javo-agents) checked.', 'info')}
         >
           Check All Releases
         </Button>

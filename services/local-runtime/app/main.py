@@ -162,6 +162,7 @@ def create_app() -> FastAPI:
     )
 
     application.include_router(api_router)
+    application.include_router(api_router, prefix="/api")
 
     @application.get("/", tags=["root"])
     async def root() -> dict[str, Any]:

@@ -125,6 +125,28 @@ async def telegram_webhook(
     cmd = text.split()[0].lower() if text.startswith("/") else ""
     arg = text[len(cmd):].strip() if cmd else ""
 
+    # Natural-language command mapping for authorized paired users
+    if not cmd and text:
+        low = text.lower()
+        if any(k in low for k in ("emergency stop", "kill switch", "turant band")):
+            cmd = "/stop"
+        elif any(k in low for k in ("pause", "ruko", "band karo")):
+            cmd = "/pause"
+        elif any(k in low for k in ("resume", "chalu", "wapas start")):
+            cmd = "/resume"
+        elif any(k in low for k in ("goal", "target", "views", "lakshya")):
+            cmd = "/goals"
+        elif any(k in low for k in ("schedule", "queue", "post")):
+            cmd = "/schedule"
+        elif any(k in low for k in ("status", "haal", "kaisa", "report")):
+            cmd = "/status"
+        elif any(k in low for k in ("agent", "team")):
+            cmd = "/agents"
+        elif any(k in low for k in ("security", "privacy")):
+            cmd = "/security"
+        elif any(k in low for k in ("help", "madad", "commands")):
+            cmd = "/help"
+
     cfg = _effective_telegram_config()
     allowed = [str(u).strip() for u in cfg["allowed_users"] if str(u).strip()]
 
@@ -235,6 +257,21 @@ async def telegram_webhook(
                 task.updated_at = datetime.now(timezone.utc)
                 await session.commit()
                 reply = f"Approved task `{arg}` (moved to pending)."
+    elif cmd == "/stop":
+        get_resource_manager().trigger_emergency_stop(f"Telegram emergency stop by {sender}")
+        if scheduler.is_running and scheduler._scheduler is not None:
+            scheduler._scheduler.pause()
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                action=AuditAction.EMERGENCY_STOP,
+                severity=AuditSeverity.CRITICAL,
+                resource_type="telegram",
+                description=f"Emergency stop triggered by Telegram user {sender}",
+            )
+        )
+        await session.commit()
+        reply = "EMERGENCY STOP activated via Telegram. All automation halted."
     elif cmd == "/reject":
         if not arg:
             reply = "Usage: /reject <task_id>"
@@ -261,12 +298,22 @@ async def telegram_webhook(
 
 @router.post("/send", response_model=TelegramSendResponse)
 async def send_telegram_message(body: TelegramSendRequest) -> TelegramSendResponse:
-    """Queue or send an outbound message via the configured Telegram bot."""
+    """Scrub secrets via PrivacyFirewall and queue or send an outbound message via Telegram bot."""
+    from app.core.privacy_firewall import get_privacy_firewall
+
     cfg = _effective_telegram_config()
     if not cfg["bot_token"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Telegram bot token is not configured",
+        )
+
+    scrubbed = get_privacy_firewall().redact_pii(body.text)
+    if scrubbed != body.text:
+        return TelegramSendResponse(
+            ok=True,
+            chat_id=body.chat_id,
+            status="queued_redacted",
         )
 
     return TelegramSendResponse(

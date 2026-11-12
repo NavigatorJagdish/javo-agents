@@ -136,7 +136,11 @@ async def run_agent(
     body: RunAgentRequest,
     session: AsyncSession = Depends(get_session),
 ) -> RunAgentResponse:
-    """Dispatch a task execution to the named agent."""
+    """Dispatch and execute a task using the named agent implementation."""
+    import time
+    from datetime import datetime, timezone
+    from app.agents import get_all_agents
+
     agent = await _find_agent(agent_name, session)
     if not agent.is_enabled:
         raise HTTPException(
@@ -144,22 +148,50 @@ async def run_agent(
             detail=f"Agent '{agent.agent_key}' is disabled",
         )
 
+    started_at = datetime.now(timezone.utc)
     execution = AgentExecution(
         id=str(uuid4()),
         agent_id=agent.id,
         task_id=body.task_id,
-        status=ExecutionStatus.QUEUED,
+        status=ExecutionStatus.RUNNING,
         inputs=body.task_data,
+        started_at=started_at,
     )
     session.add(execution)
+    await session.flush()
+
+    t0 = time.monotonic()
+    agents_map = get_all_agents()
+    agent_impl = agents_map.get(agent.agent_key)
+    if agent_impl is None:
+        execution.status = ExecutionStatus.FAILED
+        execution.error = f"Agent implementation '{agent.agent_key}' not found in registry"
+    else:
+        try:
+            result = await agent_impl.run(body.task_data or {})
+            execution.outputs = result
+            exec_status = str(result.get("status", "")).lower()
+            if exec_status == "error":
+                execution.status = ExecutionStatus.FAILED
+                execution.error = str(result.get("error", "Agent returned error status"))
+            else:
+                execution.status = ExecutionStatus.COMPLETED
+        except Exception as exc:
+            execution.status = ExecutionStatus.FAILED
+            execution.error = str(exc)
+
+    execution.duration_ms = int((time.monotonic() - t0) * 1000)
+    execution.completed_at = datetime.now(timezone.utc)
+
     await session.commit()
     await session.refresh(execution)
 
+    status_val = execution.status.value if isinstance(execution.status, ExecutionStatus) else str(execution.status)
     return RunAgentResponse(
         execution_id=execution.id,
         agent_id=agent.id,
         agent_key=agent.agent_key,
-        status=ExecutionStatus.QUEUED.value,
+        status=status_val,
     )
 
 

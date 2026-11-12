@@ -27,7 +27,7 @@ export const DOC_SECTIONS: DocSection[] = [
     ],
     codeSnippet: {
       label: 'PowerShell — Local Setup',
-      code: `git clone https://github.com/javo-agents/javo-agents.git
+      code: `git clone https://github.com/NavigatorJagdish/javo-agents.git
 cd javo-agents
 .\\scripts\\setup-windows.ps1
 .\\scripts\\start-windows.ps1`,

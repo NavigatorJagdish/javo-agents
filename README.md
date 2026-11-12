@@ -9,15 +9,17 @@ Local-first, privacy-preserving multi-agent automation platform for creators, so
 - **Desktop Shell (`apps/windows/`)**: Electron wrapper for Windows with system tray controls and emergency stop.
 - **Mobile Companion (`apps/android/`)**: Android companion app with secure device pairing.
 
-## Quick Start (Backend)
+## Quick Start (Backend — Safe Loopback Default)
 
 ```bash
 cd services/local-runtime
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Once running, open the interactive API docs at `http://localhost:8000/docs`.
+> **Security Default:** Local installations bind exclusively to `127.0.0.1` (loopback). For explicit LAN pairing with the Android companion, pass `--host <your-lan-ip>` and confirm pairing via a time-limited code in `/devices/pair`.
+
+Once running, open the interactive API docs at `http://127.0.0.1:8000/docs`.
 
 ## Key Features
 

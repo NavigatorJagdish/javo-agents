@@ -235,7 +235,15 @@ class MasterAgent(BaseAgent):
                 if res.get("status") == "error":
                     failed.append(subtask["task_type"])
 
-            remaining = [s for s in remaining if s not in ready]
+            remaining = [s for s in remaining if s not in approved]
+            if pending_approval:
+                return {
+                    "status": "pending_approval",
+                    "subtask_results": results,
+                    "pending_subtasks": [s["task_type"] for s in pending_approval],
+                    "failed_subtasks": failed,
+                    "total_subtasks": len(subtasks),
+                }
 
         overall_status = "success" if not failed else ("partial" if len(failed) < len(subtasks) else "error")
         return {

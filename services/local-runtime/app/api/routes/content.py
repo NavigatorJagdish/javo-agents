@@ -358,3 +358,46 @@ async def delete_content_asset(asset_id: str, session: AsyncSession = Depends(ge
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content asset not found")
     await session.delete(asset)
     await session.commit()
+
+
+@router.post("/pipeline/run")
+async def trigger_content_pipeline(
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Scan a local folder, probe media, draft captions/hashtags, check quality, and queue approval-gated schedules."""
+    from app.services.content_pipeline import run_content_pipeline
+
+    folder_path = str(body.get("folder_path", "")).strip()
+    if not folder_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="folder_path is required")
+    return await run_content_pipeline(
+        session=session,
+        folder_path=folder_path,
+        platform=str(body.get("platform", "instagram")),
+        account_id=body.get("account_id"),
+        user_id=body.get("user_id"),
+        topic=body.get("topic"),
+        auto_schedule=bool(body.get("auto_schedule", True)),
+        approval_required=bool(body.get("approval_required", True)),
+        limit=int(body.get("limit", 20)),
+    )
+
+
+@router.post("/schedule/{schedule_id}/approve")
+async def approve_schedule(
+    schedule_id: str,
+    body: Optional[dict] = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Approve a scheduled post and optionally dispatch it via connector or explicit MockConnector."""
+    from app.services.content_pipeline import approve_and_dispatch_schedule
+
+    payload = body or {}
+    return await approve_and_dispatch_schedule(
+        session=session,
+        schedule_id=schedule_id,
+        approved_by=str(payload.get("approved_by", "owner")),
+        publish_now=bool(payload.get("publish_now", False)),
+        allow_mock=bool(payload.get("allow_mock", True)),
+    )
