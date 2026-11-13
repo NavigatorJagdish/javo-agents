@@ -67,7 +67,11 @@ A PASS in an old workflow never transfers automatically to a newer commit. No ro
 | WEB-01 | Website download/verified release hashes | Next.js website, release docs | CODE | Verify each new release |
 | RELEASE-01 | Private PR; no merge | Existing PR #1 | CODE | Owner to approve |
 | RELEASE-02 | Real phone acceptance distinct from CI | This matrix and master doc | DOCUMENTED | Owner must test |
-| RELEASE-03 | Binary provenance + signing continuity | Existing draft releases | PARTIAL | New package not issued for v2 changes |
+| RELEASE-03 | Binary provenance + signing continuity | Old v0.1.4 draft asset was overwritten by the previous PR-on-push --clobber workflow; upload gate fixed in ci-android.yml | AT RISK / CORRECTION COMMITTED | New version and complete provenance required |
+
+## Release integrity incident (13 November 2026)
+
+The original v0.1.4-alpha debug APK was previously listed in private Release 444076571 with SHA-256 `3ed9722b74d11f67b0183ced15c5839c3aa10c69abf7dd7eece095755c790d16`. A later query returned a different asset ID 743353257 and SHA-256 `338f608932e30fff1accf2ff846a97e379be8c7efd024db8705256869591370e` under the same filename. This demonstrates loss of asset immutability due to the prior `gh release upload --clobber` on routine PR CI runs. The workflow has been changed to **manual opt-in only, no clobber**, but older in-flight runs may still run their original workflow definitions. Do not send an old v0.1.4 checksum or claim this draft is an immutable production release. Issue a **new versioned private alpha** after all older workflows stop, all checks pass, and a fresh digest/signing test is complete.
 
 ## Immediate implementation milestones
 ### M0 — current source stabilization (owner blocker)
