@@ -10,7 +10,7 @@ export const SITE_CONFIG = {
   githubPrUrl: 'https://github.com/NavigatorJagdish/javo-agents/pull/1',
   githubDiscussionsUrl: 'https://github.com/NavigatorJagdish/javo-agents/discussions',
   githubIssuesUrl: 'https://github.com/NavigatorJagdish/javo-agents/issues',
-  websiteUrl: 'https://javoagents.org',
+  websiteUrl: 'https://navigatorjagdish.github.io/javo-agents',
   windowsArtifacts: {
     installerName: 'JavoAgents-0.1.0-x64.exe',
     installerSha256: '5e4d760243703824f911c5c21109d4bed101e9ec7a4896c5c4e693ddc4e2ecac',
