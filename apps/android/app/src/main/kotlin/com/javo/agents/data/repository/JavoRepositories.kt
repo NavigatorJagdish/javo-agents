@@ -37,12 +37,12 @@ class RoomDraftStore(private val draftDao: DraftDao) : DraftStore {
 }
 
 interface RemoteDraftUploader {
-    suspend fun uploadPending(drafts: List<DraftEntity>): Boolean
+    suspend fun uploadPending(drafts: List<DraftEntity>): List<String>
 }
 
 class BridgeDraftUploader(private val bridgeClient: WindowsBridgeClient) : RemoteDraftUploader {
-    override suspend fun uploadPending(drafts: List<DraftEntity>): Boolean {
-        if (drafts.isEmpty()) return true
+    override suspend fun uploadPending(drafts: List<DraftEntity>): List<String> {
+        if (drafts.isEmpty()) return emptyList()
         val payload = drafts.map {
             DraftSyncRequest(
                 id = it.id,
@@ -84,12 +84,9 @@ class OfflineDraftRepository(
     suspend fun queueAndTrySync(): Int {
         val pending = draftStore.getPendingSync()
         if (pending.isEmpty()) return 0
-        val synced = remoteUploader.uploadPending(pending)
-        if (synced) {
-            pending.forEach { draftStore.markSynced(it.id) }
-            return pending.size
-        }
-        return 0
+        val ackedIds = remoteUploader.uploadPending(pending)
+        ackedIds.forEach { draftStore.markSynced(it) }
+        return ackedIds.size
     }
 
     suspend fun updateDraft(draft: DraftEntity) {

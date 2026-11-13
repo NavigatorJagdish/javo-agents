@@ -27,6 +27,9 @@ import com.javo.agents.data.model.VoiceMessage
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.data.model.WorkflowInfo
 import com.javo.agents.data.remote.BridgeConnectionState
+import com.javo.agents.data.remote.GeminiAuthException
+import com.javo.agents.data.remote.GeminiQuotaExceededException
+import com.javo.agents.data.remote.GeminiUnavailableException
 import com.javo.agents.service.VoiceCaptureService
 import com.javo.agents.service.VoiceRecognitionListener
 import com.javo.agents.service.VoiceRecognitionManager
@@ -109,10 +112,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _aiConfig = MutableStateFlow(
         AIProviderConfig(
             activeProvider = ProviderType.LOCAL_PC_OLLAMA,
+            geminiModelName = keystore.getGeminiModel(),
             hasGeminiKeyStored = keystore.hasGeminiApiKey()
         )
     )
     val aiConfig: StateFlow<AIProviderConfig> = _aiConfig.asStateFlow()
+
+    private val _geminiTestFeedback = MutableStateFlow<String?>(null)
+    val geminiTestFeedback: StateFlow<String?> = _geminiTestFeedback.asStateFlow()
+
+    private val _isTestingGemini = MutableStateFlow(false)
+    val isTestingGemini: StateFlow<Boolean> = _isTestingGemini.asStateFlow()
 
     private val _pairingFeedback = MutableStateFlow<String?>(null)
     val pairingFeedback: StateFlow<String?> = _pairingFeedback.asStateFlow()
@@ -285,26 +295,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val isBridgeConnected = connectionState.value == BridgeConnectionState.Connected
             if (isBridgeConnected) {
                 val remoteReply = bridge.sendVoiceCommand(query, lang.code)
-                if (remoteReply != null) {
-                    replyText = remoteReply.reply
-                    actionHint = "Executed via ${remoteReply.routedAgent}"
+                if (remoteReply.isSuccess) {
+                    val body = remoteReply.getOrNull()
+                    replyText = body?.reply ?: "Received confirmation from Windows runtime."
+                    actionHint = "Executed via ${body?.routedAgent ?: "Javo Desktop"}"
                 } else {
-                    replyText = "Command sent to Windows bridge. Offline acknowledgment received."
-                    actionHint = "Queued to Windows Runtime"
+                    val err = remoteReply.exceptionOrNull()?.message ?: "Host unreachable"
+                    replyText = "Failed to deliver voice command to Windows runtime: $err"
+                    actionHint = "Windows Delivery Failed • Tap to Retry"
                 }
             } else if (keystore.hasGeminiApiKey()) {
                 // Route 2: Direct Gemini API via user-provided developer key in Keystore
+                val activeModel = keystore.getGeminiModel()
                 val systemPrompt = "You are Javo, a local-first, privacy-respecting AI assistant for social media creators and entrepreneurs. You are helpful, concise, and communicate fluently in English, Hindi, and Hinglish. Answer general questions naturally. If the user asks you to draft content, provide creative, ready-to-use hooks and captions."
                 val geminiRes = gemini.generateResponse(
                     prompt = query,
                     apiKey = keystore.getGeminiApiKey().orEmpty(),
+                    model = activeModel,
                     systemInstruction = systemPrompt
                 )
                 if (geminiRes.isSuccess) {
                     replyText = geminiRes.getOrThrow()
-                    actionHint = "Generated via Google Gemini 1.5 Flash (Direct API)"
+                    actionHint = "Generated via Google Gemini ($activeModel)"
                 } else {
-                    replyText = "Gemini API encountered an error: ${geminiRes.exceptionOrNull()?.message}"
+                    val ex = geminiRes.exceptionOrNull()
+                    replyText = when (ex) {
+                        is GeminiQuotaExceededException -> "Gemini API rate/quota limit reached (HTTP 429). Please try again shortly or check your Google AI Studio quota."
+                        is GeminiAuthException -> "Gemini API authentication failed (HTTP 401/403). Please verify your API key in Settings → AI Providers."
+                        is GeminiUnavailableException -> "Gemini API service is temporarily unavailable (HTTP 500/503). Please try again in a few moments."
+                        else -> "Gemini API encountered an error: ${ex?.message ?: "Request failed"}"
+                    }
                     actionHint = "Direct API Error"
                 }
             } else {
@@ -368,23 +388,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             is PairingValidationResult.Valid -> {
                 val payload = validation.payload
-                keystore.savePairingSession(
-                    hostUrl = payload.hostUrl,
-                    pairingToken = payload.deviceToken,
-                    fingerprintSha256 = payload.fingerprintSha256
-                )
-                keystore.saveOnboardingComplete(true)
                 viewModelScope.launch {
+                    _pairingFeedback.value = "Verifying pairing with Windows Runtime at ${payload.hostUrl}..."
                     val result = bridge.confirmPairing(
                         hostUrl = payload.hostUrl,
                         pairingCode = payload.pairingCode,
                         deviceToken = payload.deviceToken,
                         deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
                     )
-                    _pairingFeedback.value = if (result.isSuccess) {
-                        "Paired & verified with Windows Local Runtime!"
+                    if (result.isSuccess) {
+                        keystore.savePairingSession(
+                            hostUrl = payload.hostUrl,
+                            pairingToken = payload.deviceToken,
+                            fingerprintSha256 = payload.fingerprintSha256
+                        )
+                        keystore.saveOnboardingComplete(true)
+                        _pairingFeedback.value = "Paired & verified with Windows Local Runtime!"
                     } else {
-                        "Credentials encrypted in Android Keystore. Runtime unreachable right now — offline queue active."
+                        val errMsg = result.exceptionOrNull()?.message ?: "Host unreachable or pairing rejected"
+                        _pairingFeedback.value = "Pairing failed: $errMsg. Check that Windows Runtime is running on the same network."
                     }
                 }
             }
@@ -410,11 +432,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun syncNow() {
         viewModelScope.launch {
             val online = bridge.pingPairedHost()
-            val synced = if (online) repo.draftRepository.queueAndTrySync() else 0
-            _statusToast.value = if (online) {
-                "Windows Runtime reachable. Synced $synced pending items."
+            if (online) {
+                val synced = repo.draftRepository.queueAndTrySync()
+                _statusToast.value = "Windows Runtime reachable. Synced $synced pending items."
             } else {
-                "Windows Runtime offline. Changes remain safely queued in Room."
+                _statusToast.value = "Windows Runtime offline or unauthenticated. Drafts safely kept in local storage."
             }
         }
     }
@@ -454,13 +476,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _aiConfig.update { it.copy(activeProvider = provider) }
     }
 
+    fun selectGeminiModel(model: String) {
+        keystore.saveGeminiModel(model)
+        _aiConfig.update { it.copy(geminiModelName = model) }
+        _geminiTestFeedback.value = null
+    }
+
     fun saveGeminiKey(apiKey: String) {
         keystore.saveGeminiApiKey(apiKey)
         _aiConfig.update { it.copy(hasGeminiKeyStored = keystore.hasGeminiApiKey()) }
+        _geminiTestFeedback.value = null
         _statusToast.value = if (keystore.hasGeminiApiKey()) {
             "Gemini API key encrypted in Android Keystore."
         } else {
             "Gemini API key removed."
+        }
+    }
+
+    fun testGeminiConnection() {
+        val apiKey = keystore.getGeminiApiKey()
+        if (apiKey.isNullOrBlank()) {
+            _geminiTestFeedback.value = "Save an API key first before testing connection."
+            return
+        }
+        val model = keystore.getGeminiModel()
+        viewModelScope.launch {
+            _isTestingGemini.value = true
+            _geminiTestFeedback.value = "Testing connection to $model..."
+            val result = gemini.testConnection(apiKey, model)
+            _isTestingGemini.value = false
+            if (result.isSuccess) {
+                _geminiTestFeedback.value = result.getOrNull() ?: "Connected successfully to $model!"
+            } else {
+                val ex = result.exceptionOrNull()
+                _geminiTestFeedback.value = when (ex) {
+                    is GeminiQuotaExceededException -> "Quota/Rate limit hit (HTTP 429). Check your Google AI Studio quota."
+                    is GeminiAuthException -> "Authentication failed (HTTP 401/403). Invalid API key."
+                    is GeminiUnavailableException -> "Service unavailable (HTTP 500/503). Try again later."
+                    else -> "Connection failed: ${ex?.message ?: "Unknown error"}"
+                }
+            }
         }
     }
 

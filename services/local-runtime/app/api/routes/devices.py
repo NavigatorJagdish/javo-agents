@@ -9,11 +9,13 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_auth, require_owner
 from app.database import get_session
+from app.models.agent import AgentDefinition, AgentStatus
+from app.models.content import AssetStatus, AssetType, ContentAsset, ContentSchedule, ScheduleStatus
 from app.models.user import Device, DeviceType, User
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -71,8 +73,10 @@ class SyncResponse(BaseModel):
     device_id: str
     synced_at: str
     status: str
-    active_agents: int = 14
+    active_agents: int = 0
     pending_approvals: int = 0
+    acknowledged_ids: list[str] = Field(default_factory=list)
+    synced_drafts_count: int = 0
     message: str = "Synced"
 
 
@@ -208,22 +212,114 @@ async def sync_device(
     user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> SyncResponse:
-    """Record a device sync heartbeat, accept queued drafts, and return current sync status."""
+    """Record a device sync heartbeat, persist queued drafts durably, and return current truthful sync status."""
+    res = await session.execute(select(Device).where(Device.id == device_id))
+    device = res.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    target_user_id = device.user_id
+    now = datetime.now(timezone.utc)
+    device.last_seen = now
+
+    acknowledged_ids: list[str] = []
+    if drafts:
+        for d in drafts:
+            draft_id = str(d.get("id") or "").strip()
+            if not draft_id:
+                continue
+            title = str(d.get("title") or "Untitled Draft").strip()
+            content_text = str(d.get("body") or d.get("content_text") or "").strip()
+            platform_str = str(d.get("platform") or "Instagram").strip()
+
+            # Map platform to asset type
+            asset_type = AssetType.TEXT
+            if platform_str.lower() in ("youtube", "reel", "tiktok"):
+                asset_type = AssetType.REEL
+
+            # Idempotent upsert
+            asset_res = await session.execute(
+                select(ContentAsset).where(ContentAsset.id == draft_id)
+            )
+            asset = asset_res.scalar_one_or_none()
+            if asset:
+                asset.title = title
+                asset.content_text = content_text
+                asset.updated_at = now
+                meta = dict(asset.ai_metadata or {})
+                meta["synced_from_device"] = device_id
+                meta["platform"] = platform_str
+                asset.ai_metadata = meta
+            else:
+                asset = ContentAsset(
+                    id=draft_id,
+                    user_id=target_user_id,
+                    title=title,
+                    description=f"Synced from mobile device {device.device_name}",
+                    asset_type=asset_type,
+                    status=AssetStatus.DRAFT,
+                    content_text=content_text,
+                    ai_metadata={
+                        "synced_from_device": device_id,
+                        "platform": platform_str,
+                        "created_via": "android_sync",
+                    },
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(asset)
+            acknowledged_ids.append(draft_id)
+
+    await session.commit()
+
+    # Truthful counts from real database tables
+    active_agents = await session.scalar(
+        select(func.count(AgentDefinition.id)).where(AgentDefinition.status == AgentStatus.RUNNING)
+    ) or 0
+
+    pending_approvals = await session.scalar(
+        select(func.count(ContentSchedule.id)).where(ContentSchedule.status == ScheduleStatus.PENDING)
+    ) or 0
+
+    return SyncResponse(
+        device_id=device_id,
+        synced_at=now.isoformat(),
+        status="synced",
+        active_agents=active_agents,
+        pending_approvals=pending_approvals,
+        acknowledged_ids=acknowledged_ids,
+        synced_drafts_count=len(acknowledged_ids),
+        message=f"Synced {len(acknowledged_ids)} drafts durably" if acknowledged_ids else "Heartbeat synced",
+    )
+
+
+@router.get("/{device_id}/drafts")
+async def get_device_drafts(
+    device_id: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """Retrieve durable drafts associated with this device or user."""
     del user
     res = await session.execute(select(Device).where(Device.id == device_id))
     device = res.scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
 
-    now = datetime.now(timezone.utc)
-    device.last_seen = now
-    await session.commit()
-
-    return SyncResponse(
-        device_id=device_id,
-        synced_at=now.isoformat(),
-        status="synced",
-        active_agents=14,
-        pending_approvals=0,
-        message="Synced successfully",
+    asset_res = await session.execute(
+        select(ContentAsset)
+        .where(ContentAsset.user_id == device.user_id, ContentAsset.status == AssetStatus.DRAFT)
+        .order_by(ContentAsset.updated_at.desc())
     )
+    assets = asset_res.scalars().all()
+    return [
+        {
+            "id": a.id,
+            "title": a.title,
+            "body": a.content_text or "",
+            "platform": (a.ai_metadata or {}).get("platform", "Instagram"),
+            "status": a.status.value if hasattr(a.status, "value") else str(a.status),
+            "updated_at": a.updated_at.isoformat() if a.updated_at else "",
+        }
+        for a in assets
+    ]

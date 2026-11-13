@@ -71,13 +71,28 @@ jobs:
           cd ..
 
       - name: Attach Android Test Package to Private Draft Release
-        if: github.repository == 'NavigatorJagdish/javo-agents' && (inputs.attach_release == true || startsWith(github.ref, 'refs/tags/v'))
+        if: github.repository == 'NavigatorJagdish/javo-agents'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd build-artifacts
-          gh release upload v0.1.1-alpha javo-agents-android-v0.1.1-alpha-debug.apk || gh release upload v0.1.0-alpha javo-agents-android-v0.1.1-alpha-debug.apk || true
+          gh release upload v0.1.1-alpha \
+            javo-agents-android-v0.1.1-alpha-debug.apk \
+            SHA256SUMS.txt \
+            build-metadata.json \
+            --clobber || true
           if [ -f javo-agents-android-v0.1.1-alpha-release-unsigned.apk ]; then
-            gh release upload v0.1.1-alpha javo-agents-android-v0.1.1-alpha-release-unsigned.apk || true
+            gh release upload v0.1.1-alpha javo-agents-android-v0.1.1-alpha-release-unsigned.apk --clobber || true
+          fi
+          if [ -f javo-agents-android-v0.1.1-alpha-release-unsigned.aab ]; then
+            gh release upload v0.1.1-alpha javo-agents-android-v0.1.1-alpha-release-unsigned.aab --clobber || true
           fi
           cd ..
+
+      - name: Upload Build Artifacts (Actions Storage)
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: javo-agents-android-v0.1.1-alpha
+          path: apps/android/build-artifacts/
+          if-no-files-found: warn

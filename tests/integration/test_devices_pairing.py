@@ -1,4 +1,4 @@
-"""Integration tests for device pairing endpoint contract."""
+"""Integration tests for device pairing endpoint contract and truthful draft sync."""
 
 from __future__ import annotations
 
@@ -52,13 +52,65 @@ def test_pairing_flow_from_unauthenticated_device(tmp_path, monkeypatch):
         assert conf_data["device_token"]
         device_token = conf_data["device_token"]
 
-        # 3. Use newly issued device token to sync drafts
+        # 3. Use newly issued device token to sync drafts durably
+        draft_payload = [
+            {
+                "id": "draft-phone-101",
+                "title": "Hinglish AI Reel Hook",
+                "body": "5 local AI tools jo har creator ko pata hone chahiye!",
+                "platform": "Instagram",
+                "status": "draft",
+            },
+            {
+                "id": "draft-phone-102",
+                "title": "YouTube Tech Shorts Script",
+                "body": "Local LLM vs Cloud API comparison script.",
+                "platform": "YouTube",
+                "status": "draft",
+            },
+        ]
+
         sync_res = client.post(
             "/devices/android-test-device-uuid/sync",
-            json=[],
+            json=draft_payload,
             headers={"Authorization": f"Bearer {device_token}"},
         )
         assert sync_res.status_code == 200
-        assert sync_res.json()["status"] == "synced"
+        sync_data = sync_res.json()
+        assert sync_data["status"] == "synced"
+        assert sync_data["acknowledged_ids"] == ["draft-phone-101", "draft-phone-102"]
+        assert sync_data["synced_drafts_count"] == 2
+        # Truthful metric: 0 active running background agents on idle test DB, NOT hardcoded 14!
+        assert sync_data["active_agents"] == 0
+
+        # 4. Verify durable database storage and idempotent update
+        updated_draft_payload = [
+            {
+                "id": "draft-phone-101",
+                "title": "Hinglish AI Reel Hook (Updated)",
+                "body": "Updated body text for local AI tools reel.",
+                "platform": "Instagram",
+                "status": "draft",
+            }
+        ]
+        sync_res_2 = client.post(
+            "/devices/android-test-device-uuid/sync",
+            json=updated_draft_payload,
+            headers={"Authorization": f"Bearer {device_token}"},
+        )
+        assert sync_res_2.status_code == 200
+        assert sync_res_2.json()["acknowledged_ids"] == ["draft-phone-101"]
+
+        # 5. Retrieve drafts via device endpoint to confirm durable persistence
+        drafts_res = client.get(
+            "/devices/android-test-device-uuid/drafts",
+            headers={"Authorization": f"Bearer {device_token}"},
+        )
+        assert drafts_res.status_code == 200
+        stored_drafts = drafts_res.json()
+        assert len(stored_drafts) == 2
+        d1 = next(d for d in stored_drafts if d["id"] == "draft-phone-101")
+        assert d1["title"] == "Hinglish AI Reel Hook (Updated)"
+        assert "Updated body text" in d1["body"]
 
     cfg._settings = None

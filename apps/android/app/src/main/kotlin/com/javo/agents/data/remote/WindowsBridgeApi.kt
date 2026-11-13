@@ -69,8 +69,12 @@ data class EmergencyStopResponse(
 
 @Serializable
 data class SyncPayloadDto(
+    @SerialName("device_id") val deviceId: String = "",
+    val status: String = "synced",
     @SerialName("active_agents") val activeAgents: Int = 0,
     @SerialName("pending_approvals") val pendingApprovals: Int = 0,
+    @SerialName("acknowledged_ids") val acknowledgedIds: List<String> = emptyList(),
+    @SerialName("synced_drafts_count") val syncedDraftsCount: Int = 0,
     val message: String = "Synced"
 )
 

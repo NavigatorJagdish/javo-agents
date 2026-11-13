@@ -42,7 +42,15 @@ fun AIProvidersScreen(
     onBack: () -> Unit
 ) {
     val config by viewModel.aiConfig.collectAsState()
+    val geminiFeedback by viewModel.geminiTestFeedback.collectAsState()
+    val isTestingGemini by viewModel.isTestingGemini.collectAsState()
     var geminiKeyInput by remember { mutableStateOf("") }
+
+    val supportedGeminiModels = listOf(
+        "gemini-2.5-flash" to "Gemini 2.5 Flash (Recommended • Free Tier)",
+        "gemini-2.5-flash-lite" to "Gemini 2.5 Flash Lite (Lightweight • Fast)",
+        "gemini-2.0-flash" to "Gemini 2.0 Flash (Multimodal Baseline)"
+    )
 
     JavoSubScreenScaffold(title = "AI Providers", onBack = onBack) { padding ->
         Column(
@@ -89,6 +97,37 @@ fun AIProvidersScreen(
                 }
             }
 
+            if (config.activeProvider == ProviderType.GEMINI_DIRECT || config.hasGeminiKeyStored) {
+                StatusCard {
+                    Text("Select Gemini Model", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Choose the Google Gemini model for on-device voice queries and content generation. Verified against current Google API models.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    supportedGeminiModels.forEach { (modelId, displayLabel) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            RadioButton(
+                                selected = config.geminiModelName == modelId,
+                                onClick = { viewModel.selectGeminiModel(modelId) }
+                            )
+                            Text(
+                                text = displayLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
             StatusCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Gemini API Key Vault", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -122,6 +161,20 @@ fun AIProvidersScreen(
                     enabled = geminiKeyInput.isNotBlank()
                 )
                 if (config.hasGeminiKeyStored) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    JavoOutlinedButton(
+                        text = if (isTestingGemini) "Testing..." else "Test Connection (${config.geminiModelName})",
+                        onClick = { viewModel.testGeminiConnection() },
+                        borderColor = ElectricCyan
+                    )
+                    if (geminiFeedback != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = geminiFeedback.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (geminiFeedback?.startsWith("Connected") == true) EmeraldSuccess else CoralDanger
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     JavoOutlinedButton(
                         text = "Remove Stored Key",

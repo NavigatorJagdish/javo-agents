@@ -223,6 +223,17 @@ class KeystoreManager(
 
     fun hasGeminiApiKey(): Boolean = !getGeminiApiKey().isNullOrBlank()
 
+    fun saveGeminiModel(model: String) {
+        val trimmed = model.trim()
+        if (trimmed.isNotBlank()) {
+            secretStore.putSecret(KEY_GEMINI_MODEL, trimmed)
+        }
+    }
+
+    fun getGeminiModel(): String {
+        return secretStore.getSecret(KEY_GEMINI_MODEL) ?: "gemini-2.5-flash"
+    }
+
     fun saveDarkThemeEnabled(enabled: Boolean) {
         secretStore.putSecret(KEY_DARK_THEME, enabled.toString())
     }
@@ -286,6 +297,7 @@ class KeystoreManager(
         private const val KEY_HOST_FINGERPRINT = "host_fingerprint"
         private const val KEY_PAIRED_AT_MS = "paired_at_ms"
         private const val KEY_GEMINI_API_ENC = "gemini_api_key_enc"
+        private const val KEY_GEMINI_MODEL = "gemini_model_name"
         private const val KEY_DARK_THEME = "pref_dark_theme"
         private const val KEY_ONBOARDING_COMPLETE = "pref_onboarding_complete"
         private const val KEY_AUTO_RUN = "pref_auto_run"
