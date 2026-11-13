@@ -66,10 +66,10 @@ jobs:
           grep -q '/javo-agents/' out/index.html
           touch out/.nojekyll
 
-      - name: Set up GitHub Pages (enable on first deployment)
+      - name: Set up GitHub Pages
+        # One-time setup: Settings → Pages → Source: GitHub Actions.
+        # GITHUB_TOKEN cannot create a Pages site automatically.
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
