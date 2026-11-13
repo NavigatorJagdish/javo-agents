@@ -54,6 +54,7 @@ data class VoiceDiagnosticsData(
     val reconnectAttemptCount: Int
 )
 
+@Serializable
 enum class VoiceLanguage(val displayName: String, val code: String) {
     English("English", "en"),
     Hindi("Hindi", "hi"),
@@ -167,6 +168,7 @@ object AgentRoster {
     )
 }
 
+@Serializable
 data class VoiceMessage(
     val id: String,
     val isUser: Boolean,
