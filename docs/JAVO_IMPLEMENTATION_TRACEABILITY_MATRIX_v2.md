@@ -84,6 +84,20 @@ The owner requested continuation. The following source-level work was implemente
 - **Tests:** `KeystoreManagerTest` includes two new consent/persistence/deletion cases; `GeminiApiClientTest` includes bounded context and invalid-role tests.
 - **CI blocker:** multiple GitHub Actions runs for the same latest PR head failed extremely early across Android, Windows, Backend, Frontend and Security. The job logs for at least one failed run returned `BlobNotFound`, and step summaries were empty. Without actual lint/unit/assemble steps, these runs **cannot verify or disprove** Kotlin compilation. Investigate GitHub Actions runner/billing/permissions and rerun CI on the exact final commit; do not declare APK/build PASS.
 
+## Additional Android standalone source patches (13 November 2026)
+
+- `VoiceModeScreen.kt`: successful AI replies show an explicit Save as Content Draft action and platform selection. Only a response tagged `isVerifiedAiReply` after genuine provider success can be offered; never publishes automatically.
+- `MainViewModel.kt`: saved reply creates a real Room `offline_draft`; deprecated handle-only social add path cannot create a fake account.
+- `ConnectedAccountsScreen.kt`: no more Queue Channel placeholder; official OAuth prerequisites and honest no-Windows dependency explained.
+- `GeminiApiClient.kt` and provider UI: replaced discontinued Gemini 2.0 with Gemini 3.5 Flash-Lite / 3.8 Flash choices and kept legacy 2.5 as account-dependent; removed fixed 15 RPM and unsupported multilingual-test claims.
+- `HomeScreen.kt`: configured AI readiness only considers the selected provider, not unrelated keys.
+- `MobileAgentOrchestrator.kt`: prevents sending secrets to HTTP custom endpoints; custom endpoint errors redacted.
+- `AgentRoster`: removed default fake "Active" status; separate configured vs running.
+- `AIProvidersScreen.kt`: unimplemented zero-cost budget enforcement clearly marked NOT ACTIVE.
+- GitHub issues: CI blocker #2, owner hardware acceptance #3, official mobile OAuth #4.
+
+**Evidence status:** all are source-level commits; latest GitHub Actions jobs fail before usable steps. No new, owner-tested APK has been delivered. Exact source SHA must be tested once CI is restored.
+
 ## Immediate implementation milestones
 ### M0 — current source stabilization (owner blocker)
 1. Ensure Android CI lint, unit and debug assembly passes on the exact latest commit.
