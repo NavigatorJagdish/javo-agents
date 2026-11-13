@@ -20,7 +20,19 @@ The following artifacts have been built, verified, and attached directly to GitH
 | `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,127,677 bytes (~18.2 MB) | `a8f58a573e0a3fe868f917a42790d74573194947999a4cc93dd64719900fe1a8` | Asset ID: `742257996` (Verified in Storage) |
 | `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,741,367 bytes (~1.66 MB) | CI Verification Package | Asset ID: `742258062` (Verified in Storage) |
 
-### Latest Android Release Artifacts (v0.1.2-alpha Speech Recognition Hotfix)
+### Latest Android Release Artifacts (v0.1.3-alpha Unified Standalone Ecosystem)
+
+Attached to GitHub Draft Release `444054891` (`v0.1.3-alpha`):
+
+| Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Release Asset ID / Status |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| `javo-agents-android-v0.1.3-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,325,421 bytes (~18.4 MB) | `2869cc5db938990963396e31e4de34f9715e2f9574bc553250d96f034311b04b` | Asset ID: `743104612` (Verified in Storage) |
+| `javo-agents-android-v0.1.3-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,808,035 bytes (~1.72 MB) | `242ce2bdf35c2e42a2ad21aa3ec0c3e454e9003077fef07b22ed22c5debbee16` | Asset ID: `743107757` (Verified in Storage) |
+| `javo-agents-android-v0.1.3-alpha-release-unsigned.aab` | Android 10+ (API 29+) | Release AAB (Unsigned) | 4,579,343 bytes (~4.36 MB) | `b14ac54932404838c26ca0273d5f90021133f0c03c97293f24dd6471480b5b42` | Asset ID: `743108084` (Verified in Storage) |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 349 bytes | Cryptographic hashes for v0.1.3-alpha | Asset ID: `743108351` (Verified in Storage) |
+| `build-metadata.json` | JSON | Build Metadata | 180 bytes | CI run metadata for v0.1.3-alpha | Asset ID: `743106456` (Verified in Storage) |
+
+### Previous Android Release Artifacts (v0.1.2-alpha Speech Recognition Hotfix)
 
 Attached to GitHub Draft Release `443956759` (`v0.1.2-alpha`):
 
