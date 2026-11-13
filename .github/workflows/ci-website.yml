@@ -1,0 +1,54 @@
+name: CI — Website Static Build
+on:
+  push:
+    branches: [main, develop, "fix/**"]
+    paths:
+      - "apps/website/**"
+      - ".github/workflows/ci-website.yml"
+  pull_request:
+    paths:
+      - "apps/website/**"
+      - ".github/workflows/ci-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  website-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/website
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: apps/website/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: TypeScript check
+        run: pnpm run typecheck
+      - name: Build static export
+        run: pnpm run build
+      - name: Verify deployed static pages are generated
+        run: |
+          test -s out/index.html
+          test -s out/features/index.html
+          test -s out/download/index.html
+          test -s out/sitemap.xml
+          test -s out/robots.txt
+      - name: Upload built website preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: javo-website-static-export
+          path: apps/website/out
+          if-no-files-found: error
