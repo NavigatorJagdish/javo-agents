@@ -1,10 +1,10 @@
 # Javo Agents
 
-[![Open Javo Website](https://img.shields.io/badge/OPEN_JAVO_WEBSITE-00C8FF?style=for-the-badge&logo=googlechrome&logoColor=white)](https://javoagents.org)
+[![Open Javo Website](https://img.shields.io/badge/OPEN_JAVO_WEBSITE-00C8FF?style=for-the-badge&logo=googlechrome&logoColor=white)](https://navigatorjagdish.github.io/javo-agents/)
 
-**[🌐 Open Javo Website](https://javoagents.org)** · [🚀 Deploy / Repair Website](apps/website/DEPLOYMENT.md) · [View Website Source](https://github.com/NavigatorJagdish/javo-agents/tree/main/apps/website) · [Website Documentation](https://github.com/NavigatorJagdish/javo-agents/tree/main/docs)
+**[🌐 Open Javo Website](https://navigatorjagdish.github.io/javo-agents/)** · [🚀 GitHub Pages Setup](apps/website/GITHUB_PAGES.md) · [View Website Source](https://github.com/NavigatorJagdish/javo-agents/tree/fix/android-ci-and-production-hardening/apps/website) · [Website Documentation](https://github.com/NavigatorJagdish/javo-agents/tree/main/docs)
 
-> **Website deployment pending:** `javoagents.org` is an intended domain configured in the source, **not a verified live website**. If you see "Site can't be reached", use the [deployment & DNS repair instructions](apps/website/DEPLOYMENT.md). A public hosting deployment and domain connection are required before this button can work.
+> **Website deployment pending:** `navigatorjagdish.github.io/javo-agents/` is the **expected** GitHub Pages URL, but it is **not yet confirmed live**. GitHub Pages must be enabled and successfully deployed; see the [GitHub Pages setup guide](apps/website/GITHUB_PAGES.md). This private repository also needs an eligible GitHub plan to serve Pages.
 
 Local-first, privacy-preserving multi-agent automation platform for creators, social growth, and personal workflows.
 
