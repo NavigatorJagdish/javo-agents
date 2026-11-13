@@ -4,7 +4,7 @@
 
 **[🌐 Open Javo Website](https://navigatorjagdish.github.io/javo-agents/)** · [🚀 GitHub Pages Setup](apps/website/GITHUB_PAGES.md) · [View Website Source](https://github.com/NavigatorJagdish/javo-agents/tree/main/apps/website) · [Website Documentation](https://github.com/NavigatorJagdish/javo-agents/tree/main/docs)
 
-> **GitHub Pages setup required:** This repository is now **Public**, and the Next.js site builds successfully. However, GitHub Pages hosting is **not yet activated**. In [Settings → Pages](https://github.com/NavigatorJagdish/javo-agents/settings/pages), set **Source → GitHub Actions** once, then [run the deployment workflow](https://github.com/NavigatorJagdish/javo-agents/actions/workflows/deploy-github-pages.yml). The website link above will work after successful deployment.
+> **GitHub Pages deployment succeeded:** [Open Javo Website](https://navigatorjagdish.github.io/javo-agents/) · [Successful GitHub Actions run](https://github.com/NavigatorJagdish/javo-agents/actions/runs/43461141799). GitHub reports that the site was published; if the link temporarily does not load, retry after GitHub Pages propagation.
 
 Local-first, privacy-preserving multi-agent automation platform for creators, social growth, and personal workflows.
 
