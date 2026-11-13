@@ -20,7 +20,19 @@ The following artifacts have been built, verified, and attached directly to GitH
 | `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,127,677 bytes (~18.2 MB) | `a8f58a573e0a3fe868f917a42790d74573194947999a4cc93dd64719900fe1a8` | Asset ID: `742257996` (Verified in Storage) |
 | `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,741,367 bytes (~1.66 MB) | CI Verification Package | Asset ID: `742258062` (Verified in Storage) |
 
-### Latest Android Release Artifacts (v0.1.3-alpha Unified Standalone Ecosystem)
+### Latest Android Release Artifacts (v0.1.4-alpha Voice State Machine & Lifecycle TTS)
+
+Targeting GitHub Draft Release `v0.1.4-alpha`:
+
+| Asset File | Target Architecture | Package Type | Verified SHA-256 Checksum | Release Status |
+| :--- | :---: | :---: | :---: | :--- |
+| `javo-agents-android-v0.1.4-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | *Computed upon CI build* | Pending CI Build |
+| `javo-agents-android-v0.1.4-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | *Computed upon CI build* | Pending CI Build |
+| `javo-agents-android-v0.1.4-alpha-release-unsigned.aab` | Android 10+ (API 29+) | Release AAB (Unsigned) | *Computed upon CI build* | Pending CI Build |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | *Computed upon CI build* | Pending CI Build |
+| `build-metadata.json` | JSON | Build Metadata | *Computed upon CI build* | Pending CI Build |
+
+### Previous Android Release Artifacts (v0.1.3-alpha Unified Standalone Ecosystem)
 
 Attached to GitHub Draft Release `444054891` (`v0.1.3-alpha`):
 

@@ -7,9 +7,17 @@ enum class WaveformState(val label: String) {
     Idle("Idle"),
     Connecting("Connecting..."),
     Listening("Listening"),
+    Finalizing("Finalizing..."),
     Thinking("Thinking"),
+    Responding("Responding"),
+    Speaking("Speaking"),
     Executing("Executing"),
     Finished("Finished")
+}
+
+enum class VoiceConversationMode(val displayName: String, val badge: String, val description: String) {
+    TAP_TO_TALK("Tap to Talk", "💬 Tap-to-Talk", "Tap mic to speak, get response, then stop."),
+    HANDS_FREE("Hands-Free", "🔄 Hands-Free", "Continuous voice dialogue: resumes listening automatically after Javo speaks.")
 }
 
 enum class RecognizerMode(val displayName: String, val description: String) {

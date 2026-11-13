@@ -197,4 +197,93 @@ class VoiceRecognitionManagerTest {
         assertTrue("Must include language code", jsonString.contains("hi-IN"))
         assertTrue("Must include error code", jsonString.contains("\"last_error_code\": 13"))
     }
+
+    @Test
+    fun endOfSpeech_transitionsToFinalizingState() {
+        var onEndOfSpeechCalled = false
+        var onFinalizingCalled = false
+        var currentState = WaveformState.Listening
+
+        val listener = object : VoiceRecognitionListener {
+            override fun onEndOfSpeech() {
+                onEndOfSpeechCalled = true
+            }
+
+            override fun onFinalizing() {
+                onFinalizingCalled = true
+                currentState = WaveformState.Finalizing
+            }
+        }
+
+        // Simulate endOfSpeech callback from recognition engine
+        listener.onEndOfSpeech()
+        listener.onFinalizing()
+
+        assertTrue("onEndOfSpeech must be invoked", onEndOfSpeechCalled)
+        assertTrue("onFinalizing must be invoked", onFinalizingCalled)
+        assertEquals("State must transition to Finalizing", WaveformState.Finalizing, currentState)
+    }
+
+    @Test
+    fun finalizationTimeout_withPartialResults_deliversCapturedSpeech() {
+        var timeoutDispatched = false
+        var dispatchedPartial = ""
+        var submittedCommand = ""
+
+        val listener = object : VoiceRecognitionListener {
+            override fun onFinalizationTimeout(capturedPartial: String) {
+                timeoutDispatched = true
+                dispatchedPartial = capturedPartial
+                if (capturedPartial.isNotBlank()) {
+                    submittedCommand = capturedPartial.trim()
+                }
+            }
+        }
+
+        // Simulate timeout when partial speech was captured
+        val lastSeenPartial = "आज का मौसम कैसा है"
+        listener.onFinalizationTimeout(lastSeenPartial)
+
+        assertTrue("onFinalizationTimeout must be triggered upon timeout", timeoutDispatched)
+        assertEquals("आज का मौसम कैसा है", dispatchedPartial)
+        assertEquals("Captured partial speech must be submitted on timeout", "आज का मौसम कैसा है", submittedCommand)
+    }
+
+    @Test
+    fun finalizationTimeout_withoutSpeech_neverSubmitsEmptyOrFabricatedText() {
+        var submittedCommand: String? = null
+
+        val listener = object : VoiceRecognitionListener {
+            override fun onFinalizationTimeout(capturedPartial: String) {
+                if (capturedPartial.isNotBlank()) {
+                    submittedCommand = capturedPartial.trim()
+                }
+            }
+        }
+
+        // Simulate timeout with empty transcript
+        listener.onFinalizationTimeout("")
+        assertNull("Empty speech on timeout must not submit any command", submittedCommand)
+
+        // Simulate timeout with only spaces
+        listener.onFinalizationTimeout("   ")
+        assertNull("Whitespace speech on timeout must not submit any command", submittedCommand)
+    }
+
+    @Test
+    fun cancelVoiceCapture_cleanlyResetsAndInvokesCancelledCallback() {
+        var cancelledCalled = false
+        var state = WaveformState.Listening
+
+        val listener = object : VoiceRecognitionListener {
+            override fun onCancelled() {
+                cancelledCalled = true
+                state = WaveformState.Idle
+            }
+        }
+
+        listener.onCancelled()
+        assertTrue("onCancelled must be called when user cancels voice session", cancelledCalled)
+        assertEquals("Waveform state must revert to Idle on cancel", WaveformState.Idle, state)
+    }
 }

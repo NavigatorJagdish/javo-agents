@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.javo.agents.data.model.RecognizerMode
+import com.javo.agents.data.model.VoiceConversationMode
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.ui.components.BottomNavBar
@@ -87,12 +89,14 @@ fun VoiceModeScreen(
     val isTtsSpeaking by viewModel.isTtsSpeaking.collectAsState()
     val operatingMode by viewModel.operatingMode.collectAsState()
     val aiConfig by viewModel.aiConfig.collectAsState()
+    val conversationMode by viewModel.voiceConversationMode.collectAsState()
+    val isHandsFreeActive by viewModel.isHandsFreeSessionActive.collectAsState()
 
     var commandDraft by remember { mutableStateOf("") }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
 
-    val isListening = waveformState == WaveformState.Listening || waveformState == WaveformState.Connecting
+    val isListening = waveformState == WaveformState.Listening || waveformState == WaveformState.Connecting || waveformState == WaveformState.Finalizing
     val context = LocalContext.current
 
     if (showDiagnosticsDialog) {
@@ -245,6 +249,32 @@ fun VoiceModeScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
+            // Conversation Mode Chips (Tap-to-Talk vs Hands-Free)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = conversationMode == VoiceConversationMode.TAP_TO_TALK,
+                    onClick = { viewModel.setVoiceConversationMode(VoiceConversationMode.TAP_TO_TALK) },
+                    label = { Text("💬 Tap to Talk") }
+                )
+                FilterChip(
+                    selected = conversationMode == VoiceConversationMode.HANDS_FREE,
+                    onClick = { viewModel.setVoiceConversationMode(VoiceConversationMode.HANDS_FREE) },
+                    label = { Text("🔄 Hands-Free") }
+                )
+                if (conversationMode == VoiceConversationMode.HANDS_FREE) {
+                    StatusPill(
+                        text = if (isHandsFreeActive) "Continuous Active" else "Ready",
+                        color = if (isHandsFreeActive) EmeraldSuccess else ElectricCyan
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             // AI Unconfigured Advisory Banner for Standalone Mode
             if (!aiConfig.hasGeminiKeyStored && operatingMode == com.javo.agents.data.model.OperatingMode.ANDROID_STANDALONE) {
                 StatusCard(onClick = { onNavigate(com.javo.agents.ui.navigation.Routes.AI_PROVIDERS) }) {
@@ -353,12 +383,19 @@ fun VoiceModeScreen(
                 Text(
                     text = when {
                         waveformState == WaveformState.Connecting -> "Connecting to ${recognizerMode.displayName} speech service..."
+                        waveformState == WaveformState.Finalizing -> "Finalizing speech transcript..."
+                        waveformState == WaveformState.Speaking -> "Javo is speaking... (Tap mic to interrupt)"
                         isListening && liveTranscript.isNotBlank() -> "\"$liveTranscript\""
                         isListening -> "Listening in ${selectedLanguage.displayName}... Speak now"
                         waveformState == WaveformState.Thinking -> "Processing ${selectedLanguage.displayName} intent with AI..."
+                        waveformState == WaveformState.Responding -> "Formulating response..."
                         waveformState == WaveformState.Executing -> "Coordinating agent response..."
                         waveformState == WaveformState.Finished -> "Done! Ready for next command."
-                        else -> "Tap mic for Push-to-Talk (${selectedLanguage.displayName}) or type below"
+                        else -> if (conversationMode == VoiceConversationMode.HANDS_FREE && isHandsFreeActive) {
+                            "Hands-Free active: waiting to listen..."
+                        } else {
+                            "Tap mic for Push-to-Talk (${selectedLanguage.displayName}) or type below"
+                        }
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isListening && liveTranscript.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
@@ -523,11 +560,31 @@ fun VoiceModeScreen(
                         }
                     }
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+
+                if (isListening || waveformState == WaveformState.Finalizing) {
+                    IconButton(
+                        onClick = { viewModel.cancelVoiceCapture() },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Cancel voice recognition",
+                            tint = CoralDanger
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+
                 FloatingActionButton(
                     onClick = {
                         if (!hasAudioPermission) {
                             onRequestAudioPermission()
+                        } else if (isTtsSpeaking || waveformState == WaveformState.Speaking) {
+                            viewModel.stopSpeaking()
                         } else if (!isListening) {
                             viewModel.startVoiceCapture(true)
                         } else {
@@ -540,13 +597,25 @@ fun VoiceModeScreen(
                         }
                     },
                     shape = CircleShape,
-                    containerColor = if (isListening) CoralDanger else ElectricCyan,
+                    containerColor = when {
+                        isListening -> CoralDanger
+                        isTtsSpeaking || waveformState == WaveformState.Speaking -> VioletAccent
+                        else -> ElectricCyan
+                    },
                     contentColor = MidnightNavy,
                     modifier = Modifier.size(56.dp)
                 ) {
                     Icon(
-                        imageVector = if (isListening) Icons.Rounded.Stop else Icons.Rounded.Mic,
-                        contentDescription = if (isListening) "Stop listening" else "Push to talk"
+                        imageVector = when {
+                            isListening -> Icons.Rounded.Stop
+                            isTtsSpeaking || waveformState == WaveformState.Speaking -> Icons.Rounded.Stop
+                            else -> Icons.Rounded.Mic
+                        },
+                        contentDescription = when {
+                            isListening -> "Stop listening"
+                            isTtsSpeaking || waveformState == WaveformState.Speaking -> "Stop speaking"
+                            else -> "Push to talk"
+                        }
                     )
                 }
             }

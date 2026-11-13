@@ -30,6 +30,7 @@ import com.javo.agents.data.model.SocialConnectionInfo
 import com.javo.agents.data.model.SocialPlatform
 import com.javo.agents.data.model.VoiceDiagnosticsData
 import com.javo.agents.data.model.VoiceLanguage
+import com.javo.agents.data.model.VoiceConversationMode
 import com.javo.agents.data.model.VoiceMessage
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.data.model.WorkflowInfo
@@ -43,6 +44,8 @@ import com.javo.agents.service.VoiceTtsManager
 import com.javo.agents.workers.TaskReminderWorker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -182,6 +185,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _actionableVoiceError = MutableStateFlow<String?>(null)
     val actionableVoiceError: StateFlow<String?> = _actionableVoiceError.asStateFlow()
 
+    private val _voiceConversationMode = MutableStateFlow(keystore.getVoiceConversationMode())
+    val voiceConversationMode: StateFlow<VoiceConversationMode> = _voiceConversationMode.asStateFlow()
+
+    private val _isHandsFreeSessionActive = MutableStateFlow(false)
+    val isHandsFreeSessionActive: StateFlow<Boolean> = _isHandsFreeSessionActive.asStateFlow()
+
+    private val _ttsSpeechRate = MutableStateFlow(keystore.getTtsSpeechRate())
+    val ttsSpeechRate: StateFlow<Float> = _ttsSpeechRate.asStateFlow()
+
+    private val isProcessingVoiceCommand = AtomicBoolean(false)
+
     private val voiceManager by lazy {
         VoiceRecognitionManager(
             context = app,
@@ -208,20 +222,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _liveSpeechTranscript.value = partialText
                 }
 
+                override fun onEndOfSpeech() {
+                    _liveRmsAmplitude.value = 0f
+                    _waveformState.value = WaveformState.Finalizing
+                }
+
+                override fun onFinalizing() {
+                    _liveRmsAmplitude.value = 0f
+                    _waveformState.value = WaveformState.Finalizing
+                }
+
                 override fun onResults(finalText: String) {
+                    val candidate = if (finalText.isNotBlank()) finalText else _liveSpeechTranscript.value
                     _liveSpeechTranscript.value = ""
                     _liveRmsAmplitude.value = 0f
-                    if (finalText.isNotBlank()) {
-                        stopAndProcessVoiceCommand(finalText)
+                    if (candidate.isNotBlank()) {
+                        stopAndProcessVoiceCommand(candidate)
                     } else {
                         _waveformState.value = WaveformState.Idle
                     }
+                }
+
+                override fun onFinalizationTimeout(capturedPartial: String) {
+                    val candidate = if (capturedPartial.isNotBlank()) capturedPartial else _liveSpeechTranscript.value
+                    _liveSpeechTranscript.value = ""
+                    _liveRmsAmplitude.value = 0f
+                    if (candidate.isNotBlank()) {
+                        stopAndProcessVoiceCommand(candidate)
+                    } else {
+                        _waveformState.value = WaveformState.Idle
+                        _actionableVoiceError.value = "Listening finished. Tap mic to retry."
+                    }
+                }
+
+                override fun onCancelled() {
+                    _liveSpeechTranscript.value = ""
+                    _liveRmsAmplitude.value = 0f
+                    _waveformState.value = WaveformState.Idle
+                    _isHandsFreeSessionActive.value = false
+                    isProcessingVoiceCommand.set(false)
                 }
 
                 override fun onError(errorCode: Int, errorMessage: String, isActionable: Boolean) {
                     _liveSpeechTranscript.value = ""
                     _liveRmsAmplitude.value = 0f
                     _waveformState.value = WaveformState.Idle
+                    isProcessingVoiceCommand.set(false)
                     if (isActionable) {
                         _actionableVoiceError.value = errorMessage
                     }
@@ -236,13 +282,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _liveSpeechTranscript.value = ""
                     _liveRmsAmplitude.value = 0f
                     _waveformState.value = WaveformState.Idle
+                    isProcessingVoiceCommand.set(false)
                     _languageUnavailableEvent.value = LanguageUnavailableEvent(language, messageHindi, messageEnglish)
                     _statusToast.value = messageHindi
-                }
-
-                override fun onEndOfSpeech() {
-                    _liveRmsAmplitude.value = 0f
-                    // Recognizer is finalizing audio; wait for onResults before showing Thinking
                 }
             }
         )
@@ -421,15 +463,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startVoiceCapture(hasAudioPermission: Boolean) {
+        if (ttsManager.isSpeaking.value) {
+            ttsManager.stop()
+        }
+
         if (!hasAudioPermission) {
-            _statusToast.value = "Microphone permission is required for Push-to-Talk."
+            _statusToast.value = "Microphone permission is required for Voice Mode."
             return
         }
+
+        if (_waveformState.value == WaveformState.Connecting ||
+            _waveformState.value == WaveformState.Listening
+        ) {
+            stopVoiceListening()
+            return
+        }
+
         _languageUnavailableEvent.value = null
         _actionableVoiceError.value = null
         _waveformState.value = WaveformState.Connecting
         _liveSpeechTranscript.value = ""
         _liveRmsAmplitude.value = 0f
+        if (_voiceConversationMode.value == VoiceConversationMode.HANDS_FREE) {
+            _isHandsFreeSessionActive.value = true
+        }
         voiceManager.startListening(_selectedVoiceLanguage.value, _recognizerMode.value)
     }
 
@@ -439,11 +496,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {}
     }
 
+    fun cancelVoiceCapture() {
+        try {
+            voiceManager.cancel()
+        } catch (_: Exception) {}
+        _liveSpeechTranscript.value = ""
+        _liveRmsAmplitude.value = 0f
+        _waveformState.value = WaveformState.Idle
+        _isHandsFreeSessionActive.value = false
+        isProcessingVoiceCommand.set(false)
+    }
+
+    fun stopSpeaking() {
+        ttsManager.stop()
+        _waveformState.value = WaveformState.Idle
+    }
+
+    fun setVoiceConversationMode(mode: VoiceConversationMode) {
+        _voiceConversationMode.value = mode
+        keystore.saveVoiceConversationMode(mode)
+        if (mode == VoiceConversationMode.TAP_TO_TALK) {
+            _isHandsFreeSessionActive.value = false
+        }
+    }
+
+    fun setTtsSpeechRate(rate: Float) {
+        _ttsSpeechRate.value = rate
+        ttsManager.setSpeechRate(rate)
+        keystore.saveTtsSpeechRate(rate)
+    }
+
     fun stopAndProcessVoiceCommand(spokenOrTypedText: String) {
+        if (!isProcessingVoiceCommand.compareAndSet(false, true)) {
+            return
+        }
         stopVoiceListening()
         val query = spokenOrTypedText.trim()
         if (query.isBlank()) {
             _waveformState.value = WaveformState.Idle
+            isProcessingVoiceCommand.set(false)
             return
         }
 
@@ -459,8 +550,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _waveformState.value = WaveformState.Thinking
-            delay(300)
-            _waveformState.value = WaveformState.Executing
 
             var replyText: String
             var actionHint: String? = null
@@ -468,29 +557,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Route 1: Paired & reachable Windows Local Runtime (Enhanced Mode only)
             val isBridgeConnected = connectionState.value == BridgeConnectionState.Connected
             if (_operatingMode.value == OperatingMode.WINDOWS_ENHANCED && isBridgeConnected) {
-                val remoteReply = bridge.sendVoiceCommand(query, lang.code)
-                if (remoteReply.isSuccess) {
+                val remoteReply = withTimeoutOrNull(25_000L) {
+                    bridge.sendVoiceCommand(query, lang.code)
+                }
+                if (remoteReply != null && remoteReply.isSuccess) {
                     val body = remoteReply.getOrNull()
                     replyText = body?.reply ?: "Received confirmation from Windows runtime."
                     actionHint = "Executed via ${body?.routedAgent ?: "Javo Desktop"}"
                 } else {
-                    val err = remoteReply.exceptionOrNull()?.message ?: "Host unreachable"
+                    val err = remoteReply?.exceptionOrNull()?.message ?: "Windows request timed out or host unreachable"
                     replyText = "Failed to deliver voice command to Windows runtime: $err"
                     actionHint = "Windows Delivery Failed • Tap to Retry"
                 }
             } else if (keystore.hasGeminiApiKey()) {
                 // Route 2: Direct Gemini API via user-provided developer key in Keystore
-                val activeModel = keystore.getGeminiModel()
-                val systemPrompt = "You are Javo, a local-first, privacy-respecting AI assistant for social media creators and entrepreneurs. You are helpful, concise, and communicate fluently in English, Hindi, and Hinglish. Answer general questions naturally. If the user asks you to draft content, provide creative, ready-to-use hooks and captions."
-                val geminiRes = gemini.generateResponse(
-                    prompt = query,
-                    apiKey = keystore.getGeminiApiKey().orEmpty(),
-                    model = activeModel,
-                    systemInstruction = systemPrompt
-                )
-                if (geminiRes.isSuccess) {
+                val activeModel = keystore.getGeminiModel().takeIf { !it.isNullOrBlank() } ?: com.javo.agents.data.remote.GeminiApiClient.MODEL_GEMINI_2_5_FLASH
+                val systemPrompt = "You are Javo, a helpful, local-first conversational AI assistant. You answer concisely and speak naturally in English, Hindi, and Hinglish. Answer general questions accurately and helpfully. If the user asks for content or scripts, provide ready-to-use hooks and drafts."
+                val geminiRes = withTimeoutOrNull(25_000L) {
+                    gemini.generateResponse(
+                        prompt = query,
+                        apiKey = keystore.getGeminiApiKey().orEmpty(),
+                        model = activeModel,
+                        systemInstruction = systemPrompt
+                    )
+                }
+                if (geminiRes != null && geminiRes.isSuccess) {
                     replyText = geminiRes.getOrThrow()
                     actionHint = "Generated via Google Gemini ($activeModel)"
+                } else if (geminiRes == null) {
+                    replyText = "Gemini API request timed out after 25 seconds. Please check your internet connection."
+                    actionHint = "Connection Timeout"
                 } else {
                     val ex = geminiRes.exceptionOrNull()
                     replyText = when (ex) {
@@ -505,10 +601,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Route 2b: Custom AI Endpoint
                 val endpoint = keystore.getCustomAiEndpoint()
                 val systemPrompt = "You are Javo, a local-first AI assistant. You are helpful, concise, and communicate in English, Hindi, and Hinglish."
-                val customRes = orchestrator.callCustomEndpoint(endpoint, query, systemPrompt)
-                if (customRes.isSuccess) {
+                val customRes = withTimeoutOrNull(25_000L) {
+                    orchestrator.callCustomEndpoint(endpoint, query, systemPrompt)
+                }
+                if (customRes != null && customRes.isSuccess) {
                     replyText = customRes.getOrThrow()
                     actionHint = "Custom AI (${endpoint.modelName})"
+                } else if (customRes == null) {
+                    replyText = "Custom AI request timed out after 25 seconds."
+                    actionHint = "Endpoint Timeout"
                 } else {
                     val err = customRes.exceptionOrNull()?.message ?: "Custom AI call failed"
                     replyText = "Custom AI Endpoint error: $err"
@@ -549,12 +650,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 actionHint = actionHint
             )
             _voiceMessages.update { it + assistantMsg }
-            _waveformState.value = WaveformState.Finished
+            _waveformState.value = WaveformState.Responding
+            isProcessingVoiceCommand.set(false)
+
             if (_ttsEnabled.value) {
-                ttsManager.speak(replyText, lang)
+                _waveformState.value = WaveformState.Speaking
+                val started = ttsManager.speak(replyText, lang) {
+                    viewModelScope.launch {
+                        _waveformState.value = WaveformState.Idle
+                        if (_voiceConversationMode.value == VoiceConversationMode.HANDS_FREE &&
+                            _isHandsFreeSessionActive.value &&
+                            _waveformState.value == WaveformState.Idle
+                        ) {
+                            delay(650)
+                            if (_isHandsFreeSessionActive.value && _waveformState.value == WaveformState.Idle) {
+                                startVoiceCapture(hasAudioPermission = true)
+                            }
+                        }
+                    }
+                }
+                if (!started) {
+                    _waveformState.value = WaveformState.Idle
+                }
+            } else {
+                delay(600)
+                _waveformState.value = WaveformState.Idle
             }
-            delay(1000)
-            _waveformState.value = WaveformState.Idle
         }
     }
 

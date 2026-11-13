@@ -9,6 +9,7 @@ import androidx.security.crypto.MasterKey
 import com.javo.agents.data.model.CustomAiEndpointConfig
 import com.javo.agents.data.model.OperatingMode
 import com.javo.agents.data.model.RecognizerMode
+import com.javo.agents.data.model.VoiceConversationMode
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -296,6 +297,27 @@ class KeystoreManager(
 
     fun isTtsEnabled(): Boolean = secretStore.getSecret(KEY_TTS_ENABLED)?.toBooleanStrictOrNull() ?: true
 
+    fun saveVoiceConversationMode(mode: VoiceConversationMode) {
+        secretStore.putSecret(KEY_VOICE_CONVERSATION_MODE, mode.name)
+    }
+
+    fun getVoiceConversationMode(): VoiceConversationMode {
+        val raw = secretStore.getSecret(KEY_VOICE_CONVERSATION_MODE) ?: return VoiceConversationMode.TAP_TO_TALK
+        return try {
+            VoiceConversationMode.valueOf(raw)
+        } catch (_: Exception) {
+            VoiceConversationMode.TAP_TO_TALK
+        }
+    }
+
+    fun saveTtsSpeechRate(rate: Float) {
+        secretStore.putSecret(KEY_TTS_SPEECH_RATE, rate.toString())
+    }
+
+    fun getTtsSpeechRate(): Float {
+        return secretStore.getSecret(KEY_TTS_SPEECH_RATE)?.toFloatOrNull() ?: 1.0f
+    }
+
     fun saveCustomAiEndpoint(url: String, apiKey: String, model: String, enabled: Boolean) {
         secretStore.putSecret(KEY_CUSTOM_AI_URL, url.trim())
         if (apiKey.isNotBlank()) {
@@ -391,6 +413,8 @@ class KeystoreManager(
         private const val KEY_DEMO_MODE = "pref_demo_mode_enabled"
         private const val KEY_OPERATING_MODE = "pref_operating_mode"
         private const val KEY_TTS_ENABLED = "pref_tts_enabled"
+        private const val KEY_VOICE_CONVERSATION_MODE = "pref_voice_conv_mode"
+        private const val KEY_TTS_SPEECH_RATE = "pref_tts_speech_rate"
         private const val KEY_CUSTOM_AI_URL = "custom_ai_url"
         private const val KEY_CUSTOM_AI_KEY_ENC = "custom_ai_key_enc"
         private const val KEY_CUSTOM_AI_MODEL = "custom_ai_model"

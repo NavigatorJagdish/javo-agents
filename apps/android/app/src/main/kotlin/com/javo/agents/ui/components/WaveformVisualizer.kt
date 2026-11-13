@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.javo.agents.data.model.WaveformState
+import com.javo.agents.ui.theme.AmberWarning
 import com.javo.agents.ui.theme.ElectricCyan
 import com.javo.agents.ui.theme.EmeraldSuccess
 import com.javo.agents.ui.theme.VioletAccent
@@ -54,7 +55,10 @@ fun WaveformVisualizer(
         WaveformState.Idle -> 2400
         WaveformState.Connecting -> 1400
         WaveformState.Listening -> 750
+        WaveformState.Finalizing -> 600
         WaveformState.Thinking -> 1100
+        WaveformState.Responding -> 800
+        WaveformState.Speaking -> 700
         WaveformState.Executing -> 550
         WaveformState.Finished -> 1800
     }
@@ -74,7 +78,10 @@ fun WaveformVisualizer(
         WaveformState.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
         WaveformState.Connecting -> ElectricCyan
         WaveformState.Listening -> ElectricCyan
+        WaveformState.Finalizing -> AmberWarning
         WaveformState.Thinking -> VioletAccent
+        WaveformState.Responding -> ElectricCyan
+        WaveformState.Speaking -> VioletAccent
         WaveformState.Executing -> ElectricCyan
         WaveformState.Finished -> EmeraldSuccess
     }
@@ -98,8 +105,11 @@ fun WaveformVisualizer(
                 WaveformState.Finished -> Brush.horizontalGradient(
                     listOf(ElectricCyan, EmeraldSuccess)
                 )
-                WaveformState.Thinking -> Brush.horizontalGradient(
+                WaveformState.Thinking, WaveformState.Speaking -> Brush.horizontalGradient(
                     listOf(VioletAccent, ElectricCyan, VioletAccent)
+                )
+                WaveformState.Finalizing -> Brush.horizontalGradient(
+                    listOf(AmberWarning, ElectricCyan)
                 )
                 else -> Brush.horizontalGradient(
                     listOf(ElectricCyan, VioletAccent)
@@ -120,7 +130,10 @@ fun WaveformVisualizer(
                             0.25f + 0.68f * ((sin(phase * 1.8f + i * 0.65f) + 1f) / 2f) * envelope
                         }
                     }
+                    WaveformState.Finalizing -> 0.28f + 0.38f * ((sin(phase * 2.5f + i * 0.9f) + 1f) / 2f) * envelope
                     WaveformState.Thinking -> 0.22f + 0.45f * ((sin(phase + i * 0.9f) + 1f) / 2f) * envelope
+                    WaveformState.Responding -> 0.30f + 0.48f * ((sin(phase * 1.8f + i * 0.7f) + 1f) / 2f) * envelope
+                    WaveformState.Speaking -> 0.35f + 0.58f * ((sin(phase * 2.0f + i * 0.8f) + 1f) / 2f) * envelope
                     WaveformState.Executing -> 0.35f + 0.60f * ((sin(phase * 2.2f + i * 0.8f) + 1f) / 2f)
                     WaveformState.Finished -> 0.22f + 0.22f * envelope
                 }
