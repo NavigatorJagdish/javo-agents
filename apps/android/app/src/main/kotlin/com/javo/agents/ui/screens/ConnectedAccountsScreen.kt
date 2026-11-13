@@ -58,30 +58,28 @@ fun ConnectedAccountsScreen(
     var showAddDialog by remember { mutableStateOf(false) }
 
     if (showAddDialog) {
-        var platform by remember { mutableStateOf("Instagram Professional") }
-        var handle by remember { mutableStateOf("") }
-        var brand by remember { mutableStateOf("Javo Studio") }
-
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("Add Social Channel") },
+            title = { Text("Connect an official account") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = platform, onValueChange = { platform = it }, label = { Text("Platform") }, singleLine = true)
-                    OutlinedTextField(value = handle, onValueChange = { handle = it }, label = { Text("Handle / Page Name") }, singleLine = true)
-                    OutlinedTextField(value = brand, onValueChange = { brand = it }, label = { Text("Brand Profile") }, singleLine = true)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Facebook Pages, Instagram Professional and YouTube require official authorization. Typing a handle cannot connect an account.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Required: a platform developer app/OAuth client, user login and consent, approved scopes, and a secure callback/token exchange where needed.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Android Standalone does NOT require Windows. Until the mobile OAuth broker is configured, use local Content Studio drafts and manual sharing. Account linking is not yet available.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AmberWarning
+                    )
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.addAccount(platform, handle, brand)
-                        showAddDialog = false
-                    }
-                ) { Text("Queue Channel") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showAddDialog = false }) { Text("Understood") }
             }
         )
     }
@@ -95,7 +93,7 @@ fun ConnectedAccountsScreen(
                 containerColor = ElectricCyan,
                 contentColor = MidnightNavy
             ) {
-                Icon(Icons.Rounded.Add, contentDescription = "Add account")
+                Icon(Icons.Rounded.Add, contentDescription = "Account connection requirements")
             }
         }
     ) { padding ->
@@ -115,7 +113,7 @@ fun ConnectedAccountsScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "In Android Standalone mode, drafts and media are prepared locally. Direct publishing requires official OAuth Client IDs or pairing with your Windows PC DPAPI tokens.",
+                        "In Android Standalone mode, drafts and media are prepared locally. Direct publishing requires official OAuth authorization, eligible permissions and sometimes a secure server broker. Windows is optional, not mandatory.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -162,7 +160,7 @@ fun ConnectedAccountsScreen(
             if (accounts.isNotEmpty()) {
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Configured Profiles", style = MaterialTheme.typography.titleMedium)
+                    Text("Locally listed profiles (not verified connections)", style = MaterialTheme.typography.titleMedium)
                 }
                 items(accounts, key = { it.id }) { account ->
                     val pillColor = when (account.status) {
