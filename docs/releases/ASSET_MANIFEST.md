@@ -1,66 +1,80 @@
-# Javo Agents v0.1.0-alpha — Tested Asset Manifest
+# Javo Agents v0.1.0-alpha — Tested Asset Manifest & Provenance
 
 **Build Date:** 2026-11-13  
 **Repository:** `NavigatorJagdish/javo-agents` (Private)  
 **Version:** `0.1.0-alpha`  
-**Commit SHA:** Verified on working branch `fix/android-ci-and-production-hardening`  
+**Working PR:** `#1` (`fix/android-ci-and-production-hardening`)  
+**Draft Release ID:** `443379038` (`v0.1.0-alpha`)
 
 ---
 
-## 1. Windows Desktop Package Artifacts
+## 1. Verified Release Package Artifacts & Checksums
 
-| Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Provenance / CI Workflow |
+The following artifacts have been built, verified, and attached directly to GitHub Draft Release `443379038` on the private repository `NavigatorJagdish/javo-agents`:
+
+| Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Release Asset ID / Status |
 | :--- | :---: | :---: | :---: | :--- | :--- |
-| `JavoAgents-0.1.0-x64.exe` | Windows 10/11 x64 | NSIS Installer | 82,823,342 bytes (~79 MB) | `5d6f13f07a3b84957814f5a079c8de78ee14bbfbae91eda5764d03df1e8e8fd0` | Built via `pnpm run dist:win` & `.github/workflows/ci-windows.yml` |
-| `JavoAgents-Portable-0.1.0-x64.exe` | Windows 10/11 x64 | Portable Executable | 82,570,280 bytes (~78.7 MB) | `c8e092aa339137d615e474ca0b7ed598f0cc74bd76cca10d82c601620f51b7e7` | Built via `pnpm run dist:win` & `.github/workflows/ci-windows.yml` |
-| `win-unpacked/Javo Agents.exe` | Windows 10/11 x64 | Unpacked PE Binary | 188,784,128 bytes | `4f839a05005fec5a91bcba39dffb52cb8b5840bf247343e74c84eb63e00787fa` | Unpacked Electron shell container |
-| `SHA256SUMS.txt` | Text / ASCII | Checksum Ledger | 388 bytes | N/A | Included in release package |
-
-### Windows Packaging Verification
-- **PE Executable Signature:** Verified (`MZ` header and `PE\0\0` signature at offset 0x3c).
-- **Bundled Resource Containment:** Verified `resources/dashboard/` (React SPA), `resources/local-runtime/` (FastAPI backend + 29 specialist agents), `resources/icons/` (app icons), and `app.asar`.
-- **Runtime Lifecycle:** Verified background startup on dynamic port `51740`, clean healthcheck HTTP 200 at `/health/`, and clean SIGTERM shutdown.
+| `JavoAgents-0.1.0-x64.exe` | Windows 10/11 x64 | NSIS Setup Installer | 82,823,342 bytes (~79 MB) | `5d6f13f07a3b84957814f5a079c8de78ee14bbfbae91eda5764d03df1e8e8fd0` | Asset ID: `740691815` (Attached) |
+| `JavoAgents-Portable-0.1.0-x64.exe` | Windows 10/11 x64 | Standalone Portable PE | 82,570,280 bytes (~78.7 MB) | `c8e092aa339137d615e474ca0b7ed598f0cc74bd76cca10d82c601620f51b7e7` | Asset ID: `740695186` (Attached) |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 388 bytes | `9a752677d294863f69fc871032dfa5bf14a275463ae3df974f07a1be82be1be6` | Asset ID: `740691746` (Attached) |
+| `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | ~12 MB | `17c5829880e81b85024802054ba70f0b4a362e2a404eb79848d463a22b0f2311` | Automated CI Release Upload |
 
 ---
 
-## 2. Android Companion Package Artifacts
+## 2. Release Provenance & Checksum Reconciliation
 
-| Asset File | Target OS / API | Package Type | Provenance / CI Workflow | Verification Notes |
-| :--- | :---: | :---: | :--- | :--- |
-| `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | `.github/workflows/ci-android.yml` (`gradle assembleDebug`) | Test APK for internal testing and sideloading |
-| `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Unsigned Release APK | `.github/workflows/ci-android.yml` (`gradle assembleRelease`) | Built with ProGuard/R8 release rules |
-| `javo-agents-android-v0.1.0-alpha-release-unsigned.aab` | Android 10+ (API 29+) | App Bundle (AAB) | `.github/workflows/ci-android.yml` (`gradle bundleRelease`) | Store-ready architecture (signing withheld) |
-| `build-metadata.json` | JSON | CI Build Metadata | `.github/workflows/ci-android.yml` | Git commit, branch, and timestamp stamp |
-
-### Android Packaging Verification
-- **Automated Unit Tests:** `OfflineDraftRepositoryTest.kt`, `KeystoreManagerTest.kt`, `PairingTokenValidatorTest.kt` passing.
-- **Android Lint:** `gradle lintDebug` passed with 0 errors.
-- **R8 ProGuard Rules:** Verified `-dontwarn` rules for `com.google.errorprone.annotations.*` in `apps/android/app/proguard-rules.pro`.
+### Why CI Run Hashes Differ from Packaged Release Binaries
+1. **Packaging Non-Determinism in Electron Builder:** Electron-builder embeds build timestamps, temporary UUIDs, and host environment paths into the NSIS 7z archive container on each invocation. As a consequence, running `electron-builder` on an ephemeral GitHub Actions `windows-latest` runner generates a fresh binary hash (e.g. `954ee4...` in run `43285582744` or `2005c7...` in run `43284085211`) that differs from the local release build (`5d6f13...`).
+2. **Delivery Decoupling:** In previous CI runs, the step `actions/upload-artifact@v4` was rejected due to the GitHub account's 500 MB Actions storage quota, while `continue-on-error: true` concealed the upload failure. The only binaries actually delivered to GitHub storage are the verified packages attached to Draft Release `443379038`.
+3. **Cryptographic Ledger Integrity:** `apps/windows/release/SHA256SUMS.txt`, `apps/website/src/data/site.ts`, and this manifest are strictly bound to the exact binaries hosted on Draft Release `443379038`.
 
 ---
 
-## 3. High-Definition Visual Deliverables (`docs/screenshots/`)
+## 3. Desktop Authenticated Control Remediation
 
-All 10 visual screenshots were generated from the live running application servers using headless Google Chrome (`1440x900` desktop, `390x844` mobile):
+### The Vulnerability Identified
+In `apps/windows/src/backendManager.ts`, `callControlEndpoint(endpoint, body)` previously issued plain HTTP POST requests without an `Authorization: Bearer <owner_token>` header. Because FastAPI enforces `Depends(require_owner)` on `/security/pause`, `/security/resume`, and `/security/emergency-stop`, all requests were rejected with `HTTP 401 Unauthorized`. The desktop shell ignored the failure and falsely reported UI actions as successful.
 
-1. `01_homepage_desktop.png` (228 KB) — Homepage hero with dark theme, live stat badges, and feature highlights.
-2. `02_features_desktop.png` (155 KB) — Features overview emphasizing local-first privacy and $0 budget.
-3. `03_agents_desktop.png` (153 KB) — 29 Specialist AI Agents grid with category filters.
-4. `04_workflows_desktop.png` (182 KB) — Interactive visual workflow automation designer.
-5. `05_voice_desktop.png` (163 KB) — Hinglish Voice Mode demonstration and confirmation gate.
-6. `06_download_windows_desktop.png` (168 KB) — Windows download card with verified SHA-256 checksums and setup instructions.
-7. `07_download_android_desktop.png` (168 KB) — Android download card with debug APK test package and pairing guide.
-8. `08_pricing_desktop.png` (183 KB) — Transparent $0/month free pricing comparison table.
-9. `09_dashboard_desktop.png` (257 KB) — Local React Dashboard interface showing active agents, content pipeline, and smart memory.
-10. `10_homepage_mobile.png` (97 KB) — Mobile responsive view (390x844) validating mobile navigation and responsiveness.
+### The Remediation Implemented
+1. **Secure In-Memory Token Management:** `LocalRuntimeManager` generates or loads the durable owner token (`crypto.randomBytes(32).toString('base64url')` or `JAVO_OWNER_TOKEN`) and injects `JAVO_OWNER_TOKEN` into the Python backend process `env`.
+2. **Authenticated Control Requests:** `callControlEndpoint` includes `Authorization: Bearer <token>` on all requests.
+3. **Honest Status & Error Reporting:** `callControlEndpoint` checks `res.ok`, records server error details on failure, and returns `false` on non-2xx status. The UI only records state transitions and notifications when `ok === true`.
+4. **Zero Query String / Storage Leakage:** Auth credentials are exchanged between Electron main and the React dashboard via Electron IPC (`javo:get-api-config`) in-memory, without exposing tokens in browser URLs (`?token=...`) or browser localStorage.
+5. **Verified by Regression Test:** Tested and confirmed passing in `test_desktop_control_endpoints_require_owner_token` in `tests/security/test_security_remediation.py`.
 
 ---
 
-## 4. How to Download Artifacts from GitHub Actions
+## 4. Windows Standalone Execution & Python Runtime Handling
 
-1. Log into your GitHub account with collaborator access to `https://github.com/NavigatorJagdish/javo-agents`.
-2. Navigate to **Actions** (`https://github.com/NavigatorJagdish/javo-agents/actions`).
-3. Select the target workflow run:
-   - For Android test APK: **CI — Android Companion** &rarr; Download artifact `javo-agents-android-v0.1.0-alpha`.
-   - For Windows installer: **CI — Windows Desktop Package** &rarr; Download artifact `javo-agents-windows-v0.1.0-alpha`.
-4. Unzip the downloaded archive to extract the binaries and verify checksums against `SHA256SUMS.txt`.
+### Problem
+Clean Windows installations lacking Python on PATH would fail on `spawn("python")` with `ENOENT`, which was previously unhandled and left the shell hanging on healthcheck timeout.
+
+### Solution
+1. **Multi-Path Python Search:** `resolvePythonExecutable()` in `backendManager.ts` inspects:
+   - `process.env.JAVO_PYTHON_PATH`
+   - Bundled Python paths in `resources/python` and `local-runtime/.venv`
+   - Windows user Python installations (`%LOCALAPPDATA%\Programs\Python\Python311`, `Python312`, `Python310`)
+   - System installations (`C:\Program Files\Python31*`, `C:\Python31*`)
+   - PATH fallback (`python`)
+2. **Graceful ENOENT Trap:** Spawning errors are caught and logged as: `"Python runtime not found. Please install Python 3.10+ from https://www.python.org or set JAVO_PYTHON_PATH."`
+3. **Actionable UI Disclosure:** `apps/windows/public/fallback.html` displays the runtime diagnostic alert with actionable resolution steps when offline.
+
+---
+
+## 5. How to Download Private Alpha Packages
+
+Because `NavigatorJagdish/javo-agents` is a **Private Repository**, unauthorized or unauthenticated requests to GitHub release URLs will receive an HTTP 404 response.
+
+To download:
+1. Ensure you are signed into GitHub with an account that has **collaborator access** to `NavigatorJagdish/javo-agents`.
+2. Access the **Private Release Hub**:
+   `https://github.com/NavigatorJagdish/javo-agents/releases`
+3. Under **Javo Agents v0.1.0-alpha (Private Alpha Test)**, click the desired asset:
+   - `JavoAgents-0.1.0-x64.exe` (NSIS Installer)
+   - `JavoAgents-Portable-0.1.0-x64.exe` (Portable Executable)
+   - `javo-agents-android-v0.1.0-alpha-debug.apk` (Android Test APK)
+   - `SHA256SUMS.txt` (Cryptographic verification checksums)
+4. Verify checksums locally:
+   ```powershell
+   Get-FileHash .\JavoAgents-0.1.0-x64.exe -Algorithm SHA256
+   ```

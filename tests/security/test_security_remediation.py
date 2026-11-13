@@ -615,3 +615,40 @@ def test_tampered_manifest_and_unsafe_upgrade_privilege_escalation_blocked(sec_e
         )
         assert apply_escalate.status_code == 403
         assert "escalation" in apply_escalate.json()["detail"].lower()
+
+
+def test_desktop_control_endpoints_require_owner_token(sec_env: Path):
+    """Desktop control endpoints (/security/pause, /security/resume, /security/emergency-stop)
+
+    must reject unauthenticated requests with HTTP 401 and succeed when provided
+    with the securely provisioned local owner token.
+    """
+    settings = get_settings()
+    owner_token = settings.owner_token
+    assert owner_token, "Owner token must be set in sec_env"
+
+    app = create_app()
+    with TestClient(app) as client:
+        # 1. Unauthenticated calls must return 401 Unauthorized
+        assert client.post("/security/pause").status_code == 401
+        assert client.post("/security/resume").status_code == 401
+        assert client.post("/security/emergency-stop").status_code == 401
+
+        # 2. Authenticated calls with Bearer <owner_token> must succeed (200 OK)
+        auth_headers = {"Authorization": f"Bearer {owner_token}"}
+        res_pause = client.post("/security/pause", headers=auth_headers)
+        assert res_pause.status_code == 200
+        assert res_pause.json().get("paused") is True
+
+        res_resume = client.post("/security/resume", headers=auth_headers)
+        assert res_resume.status_code == 200
+        assert res_resume.json().get("paused") is False
+
+        res_stop = client.post(
+            "/security/emergency-stop",
+            headers=auth_headers,
+            json={"reason": "Automated verification test"},
+        )
+        assert res_stop.status_code == 200
+        assert "cancelled" in res_stop.json().get("message", "").lower()
+

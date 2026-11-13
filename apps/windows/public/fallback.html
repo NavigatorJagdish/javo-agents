@@ -16,11 +16,11 @@
       justify-content: center;
     }
     .card {
-      background: rgba(17, 25, 56, 0.9);
+      background: rgba(17, 25, 56, 0.95);
       border: 1px solid rgba(0, 229, 255, 0.25);
       border-radius: 18px;
       padding: 36px;
-      max-width: 540px;
+      max-width: 580px;
       box-shadow: 0 0 36px rgba(0, 229, 255, 0.12);
     }
     h1 { color: #ffffff; margin: 0 0 8px; font-size: 26px; }
@@ -33,7 +33,18 @@
       color: #00e5ff;
       font-size: 13px;
     }
-    .actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .alert-box {
+      margin-top: 16px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 13px;
+      line-height: 1.5;
+      display: none;
+    }
+    .actions { margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; }
     button {
       border: none;
       border-radius: 10px;
@@ -49,6 +60,7 @@
   <div class="card">
     <h1><span class="accent">JAVO</span> AGENTS</h1>
     <p id="status">Checking local runtime &amp; hardware profile...</p>
+    <div id="error-alert" class="alert-box"></div>
     <p>If the React dashboard bundle has not been built yet, run <code>scripts/start-windows.ps1</code> or <code>pnpm --filter @javo/dashboard build</code>.</p>
     <div class="actions">
       <button class="primary" onclick="refreshStatus()">Refresh Status</button>
@@ -58,6 +70,7 @@
   <script>
     async function refreshStatus() {
       const el = document.getElementById('status');
+      const alertEl = document.getElementById('error-alert');
       if (!window.javoDesktop) {
         el.textContent = 'Desktop bridge unavailable.';
         return;
@@ -65,8 +78,15 @@
       const st = await window.javoDesktop.getRuntimeStatus();
       const hw = await window.javoDesktop.getHardwareProfile();
       el.innerHTML =
-        'Backend: <strong>' + (st.running ? 'Online' : 'Offline') + '</strong> (' + st.baseUrl + ')<br/>' +
+        'Backend: <strong>' + (st.running ? '<span style="color:#4ade80">Online</span>' : '<span style="color:#f87171">Offline</span>') + '</strong> (' + st.baseUrl + ')<br/>' +
         'Recommended AI Tier: <code>' + hw.recommendedOllamaModel + '</code> (' + hw.totalRamGb + ' GB RAM)';
+
+      if (!st.running && st.lastError) {
+        alertEl.style.display = 'block';
+        alertEl.innerHTML = '<strong>Runtime Diagnostic:</strong> ' + st.lastError;
+      } else {
+        alertEl.style.display = 'none';
+      }
     }
     async function triggerStop() {
       if (window.javoDesktop) await window.javoDesktop.emergencyStop();

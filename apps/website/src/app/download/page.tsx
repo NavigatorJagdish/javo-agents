@@ -44,7 +44,22 @@ export default function DownloadPage() {
                 Private Alpha Channel: Version {SITE_CONFIG.version} (Reproducible CI Builds)
               </p>
               <p className="mt-1 text-slate-700 dark:text-[#E2E6F0]/85">
-                Build artifacts are compiled and cryptographically verified on every push by automated GitHub Actions runners. Because this repository is currently in <strong>Private Alpha</strong>, downloading test binaries requires logging into an authorized GitHub account with repository access.
+                Build artifacts are compiled and cryptographically verified on every push by automated GitHub Actions runners. Because this repository is currently in <strong>Private Alpha</strong>, downloading test binaries requires logging into an authorized GitHub account with repository collaborator access.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* GitHub Authentication Helper */}
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 text-sm text-slate-800 dark:text-[#E2E6F0]">
+          <div className="flex items-start gap-3">
+            <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            <div>
+              <p className="font-semibold text-slate-900 dark:text-white">
+                GitHub Authenticated Download
+              </p>
+              <p className="mt-1 text-slate-700 dark:text-[#E2E6F0]/85">
+                Clicking the verified download buttons directs your browser to GitHub release asset storage. If you are signed out or your account lacks collaborator access to <code>NavigatorJagdish/javo-agents</code>, GitHub will return HTTP 404 per GitHub&apos;s standard private repository security posture. Ensure you are signed into GitHub with collaborator permissions before downloading.
               </p>
             </div>
           </div>
@@ -233,14 +248,23 @@ export default function DownloadPage() {
 
             <div className="mt-8 flex flex-wrap gap-3">
               <a
-                href={SITE_CONFIG.androidArtifacts.actionsRunsUrl}
+                href={SITE_CONFIG.androidArtifacts.debugApkDownloadUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-primary"
               >
                 <Download className="h-4 w-4" />
-                Download Android Test APK
+                Download Test APK
                 <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              <a
+                href={SITE_CONFIG.androidArtifacts.releasesHubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+              >
+                <Github className="h-4 w-4" />
+                Release Hub
               </a>
               <a
                 href={SITE_CONFIG.androidArtifacts.workflowUrl}

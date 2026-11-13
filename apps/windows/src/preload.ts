@@ -9,6 +9,10 @@ export interface JavoDesktopBridge {
     lastError: string | null;
     paused: boolean;
   }>;
+  getApiConfig: () => Promise<{
+    baseUrl: string;
+    authToken: string | null;
+  }>;
   getHardwareProfile: () => Promise<Record<string, unknown>>;
   pauseAgents: () => Promise<boolean>;
   resumeAgents: () => Promise<boolean>;
@@ -19,6 +23,7 @@ export interface JavoDesktopBridge {
 
 const bridge: JavoDesktopBridge = {
   getRuntimeStatus: () => ipcRenderer.invoke("javo:runtime-status"),
+  getApiConfig: () => ipcRenderer.invoke("javo:get-api-config"),
   getHardwareProfile: () => ipcRenderer.invoke("javo:hardware-profile"),
   pauseAgents: () => ipcRenderer.invoke("javo:pause-agents"),
   resumeAgents: () => ipcRenderer.invoke("javo:resume-agents"),

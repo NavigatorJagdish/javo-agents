@@ -17,6 +17,9 @@ on:
       - "packages/**"
       - ".github/workflows/ci-windows.yml"
 
+permissions:
+  contents: write
+
 jobs:
   package-windows:
     runs-on: windows-latest
@@ -69,9 +72,16 @@ jobs:
           } | ConvertTo-Json
           $meta | Out-File -FilePath build-metadata.json -Encoding ascii
 
+      - name: Attach Windows Desktop Packages to Private Draft Release
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/fix/')
+        working-directory: apps/windows/release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v0.1.0-alpha JavoAgents-0.1.0-x64.exe JavoAgents-Portable-0.1.0-x64.exe SHA256SUMS.txt --clobber
+
       - name: Upload Windows Desktop Artifacts (Private Alpha)
         uses: actions/upload-artifact@v4
-        continue-on-error: true
         with:
           name: javo-agents-windows-v0.1.0-alpha
           path: |
