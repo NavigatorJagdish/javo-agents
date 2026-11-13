@@ -12,6 +12,7 @@ import com.javo.agents.data.model.CustomAiEndpointConfig
 import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.remote.GeminiApiClient
+import com.javo.agents.data.remote.GeminiTurn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -205,7 +206,8 @@ class MobileAgentOrchestrator(
     suspend fun callCustomEndpoint(
         config: CustomAiEndpointConfig,
         userPrompt: String,
-        systemInstruction: String
+        systemInstruction: String,
+        history: List<GeminiTurn> = emptyList()
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val url = config.endpointUrl.trim()
@@ -218,6 +220,12 @@ class MobileAgentOrchestrator(
                         put("role", "system")
                         put("content", systemInstruction)
                     })
+                    GeminiApiClient.boundedHistory(history).forEach { turn ->
+                        put(JSONObject().apply {
+                            put("role", if (turn.role == "model") "assistant" else "user")
+                            put("content", turn.text)
+                        })
+                    }
                     put(JSONObject().apply {
                         put("role", "user")
                         put("content", userPrompt)
@@ -239,7 +247,7 @@ class MobileAgentOrchestrator(
             response.use { res ->
                 if (!res.isSuccessful) {
                     val err = res.body?.string().orEmpty()
-                    return@withContext Result.failure(Exception("Custom AI Endpoint error HTTP ${res.code}: ${err.take(120)}"))
+                    return@withContext Result.failure(Exception("Custom AI Endpoint error HTTP ${res.code}: ${err.replace(config.apiKey, "[REDACTED_API_KEY]").take(120)}"))
                 }
                 val resBody = res.body?.string().orEmpty()
                 val json = JSONObject(resBody)
@@ -259,7 +267,7 @@ class MobileAgentOrchestrator(
                 Result.failure(Exception("Could not parse AI response from custom endpoint."))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Custom AI Endpoint network error: ${e.message}"))
+            Result.failure(Exception("Custom AI Endpoint network error: ${e.message?.replace(config.apiKey, "[REDACTED_API_KEY]") ?: "Connection failed"}"))
         }
     }
 }
