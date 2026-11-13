@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.javo.agents.data.model.RecognizerMode
+import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.VoiceConversationMode
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.model.WaveformState
@@ -89,6 +90,8 @@ fun VoiceModeScreen(
     val isTtsSpeaking by viewModel.isTtsSpeaking.collectAsState()
     val operatingMode by viewModel.operatingMode.collectAsState()
     val aiConfig by viewModel.aiConfig.collectAsState()
+    val customAiConfig by viewModel.customAiConfig.collectAsState()
+    val voiceHistoryEnabled by viewModel.voiceHistoryEnabled.collectAsState()
     val conversationMode by viewModel.voiceConversationMode.collectAsState()
     val isHandsFreeActive by viewModel.isHandsFreeSessionActive.collectAsState()
 
@@ -273,17 +276,38 @@ fun VoiceModeScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = voiceHistoryEnabled,
+                    onClick = { viewModel.setVoiceHistoryEnabled(!voiceHistoryEnabled) },
+                    label = { Text(if (voiceHistoryEnabled) "Encrypted chat history: ON" else "Save chat on this phone") }
+                )
+            }
+            Text(
+                "Optional. Only chat text is saved on-device, never microphone audio. Clear chat deletes saved history.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(modifier = Modifier.height(6.dp))
 
             // AI Unconfigured Advisory Banner for Standalone Mode
-            if (!aiConfig.hasGeminiKeyStored && operatingMode == com.javo.agents.data.model.OperatingMode.ANDROID_STANDALONE) {
+            val selectedProviderReady = when (aiConfig.activeProvider) {
+                ProviderType.GEMINI_DIRECT -> aiConfig.hasGeminiKeyStored
+                ProviderType.CUSTOM_ENDPOINT -> customAiConfig.isEnabled && customAiConfig.endpointUrl.isNotBlank()
+                ProviderType.LOCAL_PC_OLLAMA -> false
+            }
+            if (!selectedProviderReady && operatingMode == com.javo.agents.data.model.OperatingMode.ANDROID_STANDALONE) {
                 StatusCard(onClick = { onNavigate(com.javo.agents.ui.navigation.Routes.AI_PROVIDERS) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Warning, contentDescription = "AI Setup", tint = com.javo.agents.ui.theme.AmberWarning)
                         Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Gemini API Key Recommended", style = MaterialTheme.typography.titleSmall, color = com.javo.agents.ui.theme.AmberWarning)
-                            Text("Tap to add your free Google Gemini key in Settings for full voice intelligence.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Connect your selected AI provider", style = MaterialTheme.typography.titleSmall, color = com.javo.agents.ui.theme.AmberWarning)
+                            Text("Tap to configure ${aiConfig.activeProvider.label}. Voice recognition alone cannot generate AI replies.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text("Configure", style = MaterialTheme.typography.labelMedium, color = ElectricCyan)
                     }
