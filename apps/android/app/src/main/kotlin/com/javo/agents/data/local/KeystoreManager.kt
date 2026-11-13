@@ -240,7 +240,7 @@ class KeystoreManager(
     }
 
     fun getGeminiModel(): String {
-        return secretStore.getSecret(KEY_GEMINI_MODEL) ?: "gemini-2.5-flash"
+        return secretStore.getSecret(KEY_GEMINI_MODEL) ?: "gemini-3.5-flash-lite"
     }
 
     /**
