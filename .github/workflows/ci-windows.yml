@@ -79,14 +79,3 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload v0.1.0-alpha JavoAgents-0.1.0-x64.exe JavoAgents-Portable-0.1.0-x64.exe SHA256SUMS.txt --clobber
-
-      - name: Upload Windows Desktop Artifacts (Private Alpha)
-        uses: actions/upload-artifact@v4
-        with:
-          name: javo-agents-windows-v0.1.0-alpha
-          path: |
-            apps/windows/release/JavoAgents-0.1.0-x64.exe
-            apps/windows/release/JavoAgents-Portable-0.1.0-x64.exe
-            apps/windows/release/SHA256SUMS.txt
-            apps/windows/release/build-metadata.json
-          retention-days: 14

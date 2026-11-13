@@ -75,10 +75,3 @@ jobs:
             gh release upload v0.1.0-alpha javo-agents-android-v0.1.0-alpha-release-unsigned.apk --clobber || true
           fi
           cd ..
-
-      - name: Upload Android Build Artifacts (Private Alpha)
-        uses: actions/upload-artifact@v4
-        with:
-          name: javo-agents-android-v0.1.0-alpha
-          path: apps/android/build-artifacts/
-          retention-days: 14
