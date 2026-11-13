@@ -806,12 +806,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Legacy entrypoint retained to prevent consumers from silently creating fake OAuth identities. */
     fun addAccount(platform: String, handle: String, brand: String) {
-        if (handle.isBlank()) return
-        viewModelScope.launch {
-            repo.addAccountPlaceholder(platform, handle, brand.ifBlank { "Javo Studio" })
-            _statusToast.value = "$platform added. Complete OAuth on Windows desktop."
-        }
+        _statusToast.value =
+            "An entered handle is not a connected $platform account. Official OAuth setup is required; no account was added."
     }
 
     fun markNotificationRead(id: String) {
