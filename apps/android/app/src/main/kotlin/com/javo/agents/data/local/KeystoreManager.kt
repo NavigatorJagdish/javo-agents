@@ -8,6 +8,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.javo.agents.data.model.CustomAiEndpointConfig
 import com.javo.agents.data.model.OperatingMode
+import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.RecognizerMode
 import com.javo.agents.data.model.VoiceConversationMode
 import java.nio.charset.StandardCharsets
@@ -238,6 +239,32 @@ class KeystoreManager(
         return secretStore.getSecret(KEY_GEMINI_MODEL) ?: "gemini-2.5-flash"
     }
 
+    /**
+     * The provider choice is an explicit user preference and must survive app restart.
+     * Presence of a Gemini key is not permission to ignore a selected custom provider.
+     */
+    fun saveSelectedAiProvider(provider: ProviderType) {
+        secretStore.putSecret(KEY_SELECTED_AI_PROVIDER, provider.name)
+    }
+
+    fun getSelectedAiProvider(): ProviderType {
+        val stored = secretStore.getSecret(KEY_SELECTED_AI_PROVIDER)
+        val saved = ProviderType.entries.firstOrNull { it.name == stored }
+        if (saved != null) return saved
+
+        // Migration for installations created before provider preference persistence.
+        // Standalone users should never default to a Windows-only backend.
+        return if (getOperatingMode() == OperatingMode.WINDOWS_ENHANCED && isPaired()) {
+            ProviderType.LOCAL_PC_OLLAMA
+        } else if (hasGeminiApiKey()) {
+            ProviderType.GEMINI_DIRECT
+        } else if (getCustomAiEndpoint().isEnabled && getCustomAiEndpoint().endpointUrl.isNotBlank()) {
+            ProviderType.CUSTOM_ENDPOINT
+        } else {
+            ProviderType.GEMINI_DIRECT
+        }
+    }
+
     fun saveDarkThemeEnabled(enabled: Boolean) {
         secretStore.putSecret(KEY_DARK_THEME, enabled.toString())
     }
@@ -404,6 +431,7 @@ class KeystoreManager(
         private const val KEY_PAIRED_AT_MS = "paired_at_ms"
         private const val KEY_GEMINI_API_ENC = "gemini_api_key_enc"
         private const val KEY_GEMINI_MODEL = "gemini_model_name"
+        private const val KEY_SELECTED_AI_PROVIDER = "pref_selected_ai_provider"
         private const val KEY_DARK_THEME = "pref_dark_theme"
         private const val KEY_ONBOARDING_COMPLETE = "pref_onboarding_complete"
         private const val KEY_AUTO_RUN = "pref_auto_run"
