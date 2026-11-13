@@ -14,11 +14,11 @@ The following artifacts have been built, verified, and attached directly to GitH
 
 | Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Release Asset ID / Status |
 | :--- | :---: | :---: | :---: | :--- | :--- |
-| `JavoAgents-0.1.0-x64.exe` | Windows 10/11 x64 | NSIS Setup Installer | 81,863,491 bytes (~78 MB) | `f0cd79c0144701bb7a9f2fa8852f54f51ad0b5f606e4aa5b6b26cb388ddba1ff` | Asset ID: `742215572` (Verified in Storage) |
-| `JavoAgents-Portable-0.1.0-x64.exe` | Windows 10/11 x64 | Standalone Portable PE | 81,635,860 bytes (~77.8 MB) | `9aecb106a57d27567fd08980663431271440c1516076663ab8999b93fd927127` | Asset ID: `742215570` (Verified in Storage) |
-| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 193 bytes | Verified from build output | Asset ID: `742215571` (Verified in Storage) |
-| `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,127,677 bytes (~18.2 MB) | `5ab88a647f3ec223a70aa6f5d7fbf67a4dab4f2481ac1ff30f667114c3f1bbb8` | Asset ID: `742231566` (Verified in Storage) |
-| `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,741,367 bytes (~1.66 MB) | CI Verification Package | Asset ID: `742231738` (Verified in Storage) |
+| `JavoAgents-0.1.0-x64.exe` | Windows 10/11 x64 | NSIS Setup Installer | 81,863,491 bytes (~78 MB) | `5e4d760243703824f911c5c21109d4bed101e9ec7a4896c5c4e693ddc4e2ecac` | Asset ID: `742245240` (Verified in Storage) |
+| `JavoAgents-Portable-0.1.0-x64.exe` | Windows 10/11 x64 | Standalone Portable PE | 81,635,866 bytes (~77.8 MB) | `2adad28ad367402b9ba060445eb686017b5359877c83985a7a5e659d603686ce` | Asset ID: `742245232` (Verified in Storage) |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 193 bytes | Verified from build output | Asset ID: `742245234` (Verified in Storage) |
+| `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,127,677 bytes (~18.2 MB) | `a8f58a573e0a3fe868f917a42790d74573194947999a4cc93dd64719900fe1a8` | Asset ID: `742257996` (Verified in Storage) |
+| `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,741,367 bytes (~1.66 MB) | CI Verification Package | Asset ID: `742258062` (Verified in Storage) |
 
 ---
 

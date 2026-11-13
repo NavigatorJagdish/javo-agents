@@ -4,14 +4,14 @@ import { useAgentStore } from '../store/useAgentStore';
 import { useGoalStore } from '../store/useGoalStore';
 import { useContentStore } from '../store/useContentStore';
 
-const DEFAULT_HEALTH: HealthResponse = {
-  status: 'healthy',
-  version: '2.4.0',
-  uptime_seconds: 14820,
-  database: 'SQLite (WAL encrypted)',
-  ai_providers: { ollama: true, gemini: true, openai: false },
-  cpu_percent: 24,
-  memory_percent: 42,
+const OFFLINE_HEALTH: HealthResponse = {
+  status: 'offline',
+  version: '0.1.0-alpha',
+  uptime_seconds: 0,
+  database: 'Disconnected',
+  ai_providers: { ollama: false, gemini: false, openai: false },
+  cpu_percent: 0,
+  memory_percent: 0,
 };
 
 export function useHealthQuery() {
@@ -21,10 +21,10 @@ export function useHealthQuery() {
       try {
         return await apiClient.health.check();
       } catch {
-        return DEFAULT_HEALTH;
+        return OFFLINE_HEALTH;
       }
     },
-    refetchInterval: 15000,
+    refetchInterval: 10000,
     retry: false,
   });
 }

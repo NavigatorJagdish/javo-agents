@@ -73,6 +73,10 @@ export const MainLayout: React.FC = () => {
     }
   }, [theme]);
 
+  const isOffline = health?.status === 'offline';
+  const runtimeStatusText = emergencyStopped ? 'Halted' : isOffline ? 'Offline' : 'Online';
+  const runtimeBadgeStatus = emergencyStopped || isOffline ? 'error' : 'active';
+
   const navItems: SidebarNavItem[] = [
     { id: 'dashboard', label: 'Dashboard', path: '/', icon: <LayoutDashboard className="h-4 w-4" /> },
     { id: 'ai-team', label: 'AI Team', path: '/ai-team', icon: <Bot className="h-4 w-4" />, badge: activeAgentCount },
@@ -133,12 +137,12 @@ export const MainLayout: React.FC = () => {
               <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-[#131C40] border border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-700 dark:text-slate-300">Local Runtime</span>
-                  <Badge status={emergencyStopped ? 'error' : 'active'} size="sm" pulse={!emergencyStopped}>
-                    {emergencyStopped ? 'Halted' : 'Online'}
+                  <Badge status={runtimeBadgeStatus} size="sm" pulse={!emergencyStopped && !isOffline}>
+                    {runtimeStatusText}
                   </Badge>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  CPU {health?.cpu_percent ?? 24}% • RAM {health?.memory_percent ?? 42}%
+                  {isOffline ? 'Backend offline (127.0.0.1:8000)' : `CPU ${health?.cpu_percent ?? 24}% • RAM ${health?.memory_percent ?? 42}%`}
                 </p>
               </div>
               <button
@@ -253,6 +257,26 @@ export const MainLayout: React.FC = () => {
             <Button size="sm" variant="secondary" onClick={handleResumeSystem}>
               Restore Normal Operation
             </Button>
+          </div>
+        )}
+
+        {/* Offline Diagnostic Banner */}
+        {!emergencyStopped && isOffline && (
+          <div className="bg-amber-500/15 border-b border-amber-500/35 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 text-xs sm:text-sm text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2 min-w-0">
+              <OctagonAlert className="h-4 w-4 text-amber-500 shrink-0" />
+              <span className="truncate">
+                <strong>Local Runtime Offline:</strong> The Python backend (127.0.0.1:8000) is unreachable. Javo Agents requires Python 3.10+ with FastAPI and Uvicorn.
+              </span>
+            </div>
+            <a
+              href="https://www.python.org/downloads/"
+              target="_blank"
+              rel="noreferrer"
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 font-medium text-amber-900 dark:text-amber-100 transition-colors shrink-0 whitespace-nowrap"
+            >
+              Install Python 3.10+
+            </a>
           </div>
         )}
 

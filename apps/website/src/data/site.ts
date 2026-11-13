@@ -13,10 +13,10 @@ export const SITE_CONFIG = {
   websiteUrl: 'https://javoagents.org',
   windowsArtifacts: {
     installerName: 'JavoAgents-0.1.0-x64.exe',
-    installerSha256: 'f0cd79c0144701bb7a9f2fa8852f54f51ad0b5f606e4aa5b6b26cb388ddba1ff',
+    installerSha256: '5e4d760243703824f911c5c21109d4bed101e9ec7a4896c5c4e693ddc4e2ecac',
     installerDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/JavoAgents-0.1.0-x64.exe',
     portableName: 'JavoAgents-Portable-0.1.0-x64.exe',
-    portableSha256: '9aecb106a57d27567fd08980663431271440c1516076663ab8999b93fd927127',
+    portableSha256: '2adad28ad367402b9ba060445eb686017b5359877c83985a7a5e659d603686ce',
     portableDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/JavoAgents-Portable-0.1.0-x64.exe',
     checksumsUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/SHA256SUMS.txt',
     draftReleaseUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases',
@@ -24,7 +24,7 @@ export const SITE_CONFIG = {
   },
   androidArtifacts: {
     debugApkName: 'javo-agents-android-v0.1.0-alpha-debug.apk',
-    debugApkSha256: '5ab88a647f3ec223a70aa6f5d7fbf67a4dab4f2481ac1ff30f667114c3f1bbb8',
+    debugApkSha256: 'a8f58a573e0a3fe868f917a42790d74573194947999a4cc93dd64719900fe1a8',
     debugApkDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-793724ecd9d08a285337/javo-agents-android-v0.1.0-alpha-debug.apk',
     releaseApkName: 'javo-agents-android-v0.1.0-alpha-release-unsigned.apk',
     releaseAabName: 'javo-agents-android-v0.1.0-alpha-release-unsigned.aab',
