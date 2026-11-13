@@ -1,0 +1,86 @@
+# Public project website generated from the existing private Javo Agents code.
+# Intentional: the app/desktop PR is not merged. This website preview builds
+# the latest website source from the existing development branch until approval.
+name: Deploy Javo Website to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-github-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/website
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      GITHUB_PAGES: "true"
+    steps:
+      - name: Checkout Javo website code (existing private development branch)
+        uses: actions/checkout@v4
+        with:
+          ref: fix/android-ci-and-production-hardening
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: apps/website/pnpm-lock.yaml
+
+      - name: Install exact dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate TypeScript
+        run: pnpm run typecheck
+
+      - name: Export Next.js website
+        run: pnpm run build
+
+      - name: Confirm all static website files
+        run: |
+          test -s out/index.html
+          test -s out/features/index.html
+          test -s out/download/index.html
+          test -s out/sitemap.xml
+          test -s out/robots.txt
+          grep -q '/javo-agents/' out/index.html
+          touch out/.nojekyll
+
+      - name: Set up GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/website/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
