@@ -11,6 +11,10 @@ import com.javo.agents.data.model.OperatingMode
 import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.RecognizerMode
 import com.javo.agents.data.model.VoiceConversationMode
+import com.javo.agents.data.model.VoiceMessage
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -243,6 +247,43 @@ class KeystoreManager(
      * The provider choice is an explicit user preference and must survive app restart.
      * Presence of a Gemini key is not permission to ignore a selected custom provider.
      */
+    /**
+     * Personal speech transcripts are stored only after explicit opt-in.
+     * No audio recordings are stored. This history remains on-device in the
+     * existing Keystore-backed encrypted secret store and can be deleted.
+     */
+    fun isVoiceHistoryEnabled(): Boolean =
+        secretStore.getSecret(KEY_VOICE_HISTORY_ENABLED)?.toBooleanStrictOrNull() ?: false
+
+    fun setVoiceHistoryEnabled(enabled: Boolean) {
+        secretStore.putSecret(KEY_VOICE_HISTORY_ENABLED, enabled.toString())
+        if (!enabled) clearVoiceConversation()
+    }
+
+    fun saveVoiceConversation(messages: List<VoiceMessage>) {
+        if (!isVoiceHistoryEnabled()) return
+        val bounded = messages.takeLast(36).map {
+            it.copy(text = it.text.take(2400), actionHint = it.actionHint?.take(120))
+        }
+        val serialized = Json.encodeToString(bounded)
+        secretStore.putSecret(KEY_VOICE_CONVERSATION_ENC, aesCipher.encryptToBase64(serialized))
+    }
+
+    fun getVoiceConversation(): List<VoiceMessage> {
+        if (!isVoiceHistoryEnabled()) return emptyList()
+        val encrypted = secretStore.getSecret(KEY_VOICE_CONVERSATION_ENC) ?: return emptyList()
+        return try {
+            Json.decodeFromString<List<VoiceMessage>>(aesCipher.decryptFromBase64(encrypted))
+                .takeLast(36)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun clearVoiceConversation() {
+        secretStore.removeSecret(KEY_VOICE_CONVERSATION_ENC)
+    }
+
     fun saveSelectedAiProvider(provider: ProviderType) {
         secretStore.putSecret(KEY_SELECTED_AI_PROVIDER, provider.name)
     }
@@ -432,6 +473,8 @@ class KeystoreManager(
         private const val KEY_GEMINI_API_ENC = "gemini_api_key_enc"
         private const val KEY_GEMINI_MODEL = "gemini_model_name"
         private const val KEY_SELECTED_AI_PROVIDER = "pref_selected_ai_provider"
+        private const val KEY_VOICE_HISTORY_ENABLED = "pref_voice_history_opt_in"
+        private const val KEY_VOICE_CONVERSATION_ENC = "voice_history_encrypted_v1"
         private const val KEY_DARK_THEME = "pref_dark_theme"
         private const val KEY_ONBOARDING_COMPLETE = "pref_onboarding_complete"
         private const val KEY_AUTO_RUN = "pref_auto_run"
