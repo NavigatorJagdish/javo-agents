@@ -22,15 +22,15 @@ The following artifacts have been built, verified, and attached directly to GitH
 
 ### Latest Android Release Artifacts (v0.1.4-alpha Voice State Machine & Lifecycle TTS)
 
-Targeting GitHub Draft Release `v0.1.4-alpha`:
+Attached to GitHub Draft Release `444076571` (`v0.1.4-alpha`):
 
-| Asset File | Target Architecture | Package Type | Verified SHA-256 Checksum | Release Status |
-| :--- | :---: | :---: | :---: | :--- |
-| `javo-agents-android-v0.1.4-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | *Computed upon CI build* | Pending CI Build |
-| `javo-agents-android-v0.1.4-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | *Computed upon CI build* | Pending CI Build |
-| `javo-agents-android-v0.1.4-alpha-release-unsigned.aab` | Android 10+ (API 29+) | Release AAB (Unsigned) | *Computed upon CI build* | Pending CI Build |
-| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | *Computed upon CI build* | Pending CI Build |
-| `build-metadata.json` | JSON | Build Metadata | *Computed upon CI build* | Pending CI Build |
+| Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Release Asset ID / Status |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| `javo-agents-android-v0.1.4-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,341,805 bytes (~18.4 MB) | `3ed9722b74d11f67b0183ced15c5839c3aa10c69abf7dd7eece095755c790d16` | Asset ID: `743207699` (Verified in Storage) |
+| `javo-agents-android-v0.1.4-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,808,035 bytes (~1.72 MB) | `0b529e404cb51dc1d175176fdca731ecad0aba9607d2966047ef2494aa3e73de` | Asset ID: `743207766` (Verified in Storage) |
+| `javo-agents-android-v0.1.4-alpha-release-unsigned.aab` | Android 10+ (API 29+) | Release AAB (Unsigned) | 4,596,706 bytes (~4.38 MB) | `8291c898e575d7a95390ed40b74c92a4d9dbb7b06bf759904080da2bf4fe838c` | Asset ID: `743207854` (Verified in Storage) |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 349 bytes | Cryptographic hashes for v0.1.4-alpha | Asset ID: `743207695` (Verified in Storage) |
+| `build-metadata.json` | JSON | Build Metadata | 139 bytes | CI run metadata for v0.1.4-alpha | Asset ID: `743207698` (Verified in Storage) |
 
 ### Previous Android Release Artifacts (v0.1.3-alpha Unified Standalone Ecosystem)
 
