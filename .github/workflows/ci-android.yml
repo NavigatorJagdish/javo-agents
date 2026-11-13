@@ -70,22 +70,22 @@ jobs:
           cat SHA256SUMS.txt
           cd ..
 
-      - name: Attach Android Test Package to Private Draft Release
-        if: github.repository == 'NavigatorJagdish/javo-agents'
+      - name: Attach Android Test Package to Private Draft Release (Explicit Manual Opt-in Only)
+        if: github.repository == 'NavigatorJagdish/javo-agents' && github.event_name == 'workflow_dispatch' && inputs.attach_release == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd build-artifacts
+          # Versioned release assets are immutable: upload fails if this name exists.
           gh release upload v0.1.4-alpha \
             javo-agents-android-v0.1.4-alpha-debug.apk \
             SHA256SUMS.txt \
-            build-metadata.json \
-            --clobber || true
+            build-metadata.json
           if [ -f javo-agents-android-v0.1.4-alpha-release-unsigned.apk ]; then
-            gh release upload v0.1.4-alpha javo-agents-android-v0.1.4-alpha-release-unsigned.apk --clobber || true
+            gh release upload v0.1.4-alpha javo-agents-android-v0.1.4-alpha-release-unsigned.apk
           fi
           if [ -f javo-agents-android-v0.1.4-alpha-release-unsigned.aab ]; then
-            gh release upload v0.1.4-alpha javo-agents-android-v0.1.4-alpha-release-unsigned.aab --clobber || true
+            gh release upload v0.1.4-alpha javo-agents-android-v0.1.4-alpha-release-unsigned.aab
           fi
           cd ..
 
