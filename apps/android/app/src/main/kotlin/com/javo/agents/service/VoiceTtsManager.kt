@@ -205,8 +205,9 @@ class VoiceTtsManager(
         }
 
         if (!isInitialized || tts == null) {
-            // Queue if initialization is still in progress
-            pendingSpeakRequest = Triple(sanitized, language, onComplete)
+            // Never queue audio behind a cancelled session: the caller must wait
+            // for isReady() and explicitly start playback when the engine is ready.
+            onComplete?.invoke()
             return false
         }
 
@@ -246,6 +247,11 @@ class VoiceTtsManager(
     }
 
     fun stop() {
+        // Cancelling voice output must also discard requests that were waiting
+        // for the Android engine: never start stale speech after user cancellation.
+        val pending = pendingSpeakRequest
+        pendingSpeakRequest = null
+        pending?.third?.invoke()
         try {
             tts?.stop()
         } catch (_: Exception) {}
