@@ -96,6 +96,7 @@ fun VoiceModeScreen(
     val isHandsFreeActive by viewModel.isHandsFreeSessionActive.collectAsState()
 
     var commandDraft by remember { mutableStateOf("") }
+    var draftSaveMessageId by remember { mutableStateOf<String?>(null) }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
 
@@ -171,6 +172,36 @@ fun VoiceModeScreen(
                 TextButton(onClick = { showModeDialog = false }) {
                     Text("Done")
                 }
+            }
+        )
+    }
+
+    if (draftSaveMessageId != null) {
+        AlertDialog(
+            onDismissRequest = { draftSaveMessageId = null },
+            title = { Text("Save AI reply as a draft") },
+            text = {
+                Column {
+                    Text(
+                        "Choose a content platform. This saves the actual AI text locally; nothing is posted.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    listOf("Facebook", "Instagram", "YouTube", "Other").forEach { platform ->
+                        TextButton(
+                            onClick = {
+                                draftSaveMessageId?.let { id ->
+                                    viewModel.saveVerifiedReplyAsDraft(id, platform)
+                                }
+                                draftSaveMessageId = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Save to $platform") }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { draftSaveMessageId = null }) { Text("Cancel") }
             }
         )
     }
@@ -519,6 +550,18 @@ fun VoiceModeScreen(
                                             text = msg.actionHint,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (msg.actionHint.contains("Error", ignoreCase = true)) CoralDanger else EmeraldSuccess
+                                        )
+                                    }
+                                    if (!msg.isUser && (
+                                            msg.actionHint?.startsWith("Google Gemini (") == true ||
+                                            msg.actionHint?.startsWith("Custom AI (") == true
+                                        )
+                                    ) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        JavoOutlinedButton(
+                                            text = "Save as Content Draft",
+                                            onClick = { draftSaveMessageId = msg.id },
+                                            borderColor = ElectricCyan
                                         )
                                     }
                                 }
