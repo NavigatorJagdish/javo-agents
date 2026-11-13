@@ -12,25 +12,28 @@ import org.junit.Test
 class GeminiApiClientTest {
 
     @Test
-    fun resolveModel_defaultsToGemini25Flash_whenBlankOrNull() {
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel(null))
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel(""))
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel("   "))
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel("unknown-model-xyz"))
+    fun resolveModel_defaultsToGemini35FlashLite_whenBlankOrNull() {
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel(null))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel(""))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("   "))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("unknown-model-xyz"))
     }
 
     @Test
-    fun resolveModel_migratesRetiredModelsToGemini25Flash() {
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel("gemini-1.5-flash"))
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel("gemini-1.5-pro"))
-        assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel("gemini-1.0-pro"))
+    fun resolveModel_migratesRetiredModelsToGemini35FlashLite() {
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("gemini-1.5-flash"))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("gemini-1.5-pro"))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("gemini-1.0-pro"))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("gemini-2.0-flash"))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("gemini-2.0-flash-lite"))
     }
 
     @Test
     fun resolveModel_preservesCurrentSupportedModels() {
+        assertEquals("gemini-3.8-flash", GeminiApiClient.resolveModel("gemini-3.8-flash"))
+        assertEquals("gemini-3.5-flash-lite", GeminiApiClient.resolveModel("gemini-3.5-flash-lite"))
         assertEquals("gemini-2.5-flash", GeminiApiClient.resolveModel("gemini-2.5-flash"))
         assertEquals("gemini-2.5-flash-lite", GeminiApiClient.resolveModel("gemini-2.5-flash-lite"))
-        assertEquals("gemini-2.0-flash", GeminiApiClient.resolveModel("gemini-2.0-flash"))
     }
 
     @Test
