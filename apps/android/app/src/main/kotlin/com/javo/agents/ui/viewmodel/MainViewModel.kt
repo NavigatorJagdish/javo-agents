@@ -18,10 +18,13 @@ import com.javo.agents.data.model.AgentRoster
 import com.javo.agents.data.model.AnalyticsMetric
 import com.javo.agents.data.model.DataProvenance
 import com.javo.agents.data.model.DiagnosticCheck
+import com.javo.agents.data.model.LanguageUnavailableEvent
 import com.javo.agents.data.model.PairingTokenPayload
 import com.javo.agents.data.model.PairingTokenValidator
 import com.javo.agents.data.model.PairingValidationResult
 import com.javo.agents.data.model.ProviderType
+import com.javo.agents.data.model.RecognizerMode
+import com.javo.agents.data.model.VoiceDiagnosticsData
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.model.VoiceMessage
 import com.javo.agents.data.model.WaveformState
@@ -30,7 +33,6 @@ import com.javo.agents.data.remote.BridgeConnectionState
 import com.javo.agents.data.remote.GeminiAuthException
 import com.javo.agents.data.remote.GeminiQuotaExceededException
 import com.javo.agents.data.remote.GeminiUnavailableException
-import com.javo.agents.service.VoiceCaptureService
 import com.javo.agents.service.VoiceRecognitionListener
 import com.javo.agents.service.VoiceRecognitionManager
 import kotlinx.coroutines.delay
@@ -133,12 +135,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _exportedSnapshot = MutableStateFlow<String?>(null)
     val exportedSnapshot: StateFlow<String?> = _exportedSnapshot.asStateFlow()
 
+    private val _recognizerMode = MutableStateFlow(keystore.getRecognizerMode())
+    val recognizerMode: StateFlow<RecognizerMode> = _recognizerMode.asStateFlow()
+
+    private val _languageUnavailableEvent = MutableStateFlow<LanguageUnavailableEvent?>(null)
+    val languageUnavailableEvent: StateFlow<LanguageUnavailableEvent?> = _languageUnavailableEvent.asStateFlow()
+
+    private val _actionableVoiceError = MutableStateFlow<String?>(null)
+    val actionableVoiceError: StateFlow<String?> = _actionableVoiceError.asStateFlow()
+
     private val voiceManager by lazy {
         VoiceRecognitionManager(
             context = app,
             listener = object : VoiceRecognitionListener {
+                override fun onConnecting() {
+                    _waveformState.value = WaveformState.Connecting
+                }
+
                 override fun onReadyForSpeech() {
                     _waveformState.value = WaveformState.Listening
+                    _actionableVoiceError.value = null
+                    _languageUnavailableEvent.value = null
+                }
+
+                override fun onBeginningOfSpeech() {
+                    // Speech detected
                 }
 
                 override fun onRmsChanged(amplitude: Float) {
@@ -159,10 +180,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                override fun onError(errorCode: Int, errorMessage: String) {
+                override fun onError(errorCode: Int, errorMessage: String, isActionable: Boolean) {
                     _liveSpeechTranscript.value = ""
                     _liveRmsAmplitude.value = 0f
                     _waveformState.value = WaveformState.Idle
+                    if (isActionable) {
+                        _actionableVoiceError.value = errorMessage
+                    }
                     if (errorCode != android.speech.SpeechRecognizer.ERROR_NO_MATCH &&
                         errorCode != android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                     ) {
@@ -170,8 +194,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                override fun onLanguageUnavailable(language: VoiceLanguage, messageHindi: String, messageEnglish: String) {
+                    _liveSpeechTranscript.value = ""
+                    _liveRmsAmplitude.value = 0f
+                    _waveformState.value = WaveformState.Idle
+                    _languageUnavailableEvent.value = LanguageUnavailableEvent(language, messageHindi, messageEnglish)
+                    _statusToast.value = messageHindi
+                }
+
                 override fun onEndOfSpeech() {
-                    _waveformState.value = WaveformState.Thinking
+                    _liveRmsAmplitude.value = 0f
+                    // Recognizer is finalizing audio; wait for onResults before showing Thinking
                 }
             }
         )
@@ -240,6 +273,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setVoiceLanguage(language: VoiceLanguage) {
         _selectedVoiceLanguage.value = language
+        _languageUnavailableEvent.value = null
+        _actionableVoiceError.value = null
+    }
+
+    fun setRecognizerMode(mode: RecognizerMode) {
+        keystore.saveRecognizerMode(mode)
+        _recognizerMode.value = mode
+        _languageUnavailableEvent.value = null
+        _actionableVoiceError.value = null
+        _statusToast.value = "Recognizer set to ${mode.displayName}"
+    }
+
+    fun switchRecognizerToOnlineAndRetry() {
+        setRecognizerMode(RecognizerMode.ONLINE_ONLY)
+        _languageUnavailableEvent.value = null
+        _actionableVoiceError.value = null
+        startVoiceCapture(hasAudioPermission = true)
+    }
+
+    fun triggerLanguageModelDownload() {
+        voiceManager.triggerModelDownload(_selectedVoiceLanguage.value)
+        _statusToast.value = "Triggered language model download request."
+    }
+
+    fun createOpenVoiceSettingsIntent(): android.content.Intent = voiceManager.createOpenVoiceSettingsIntent()
+
+    fun dismissLanguageUnavailable() {
+        _languageUnavailableEvent.value = null
+    }
+
+    fun clearActionableVoiceError() {
+        _actionableVoiceError.value = null
+    }
+
+    fun getVoiceDiagnostics(): VoiceDiagnosticsData {
+        return voiceManager.getDiagnostics(
+            selectedLanguage = _selectedVoiceLanguage.value,
+            recognizerMode = _recognizerMode.value,
+            waveformState = _waveformState.value,
+            hasRecordAudioPermission = true
+        )
+    }
+
+    fun exportVoiceDiagnosticsJson(): String {
+        val diag = getVoiceDiagnostics()
+        val json = org.json.JSONObject().apply {
+            put("android_version", diag.androidVersion)
+            put("api_level", diag.apiLevel)
+            put("device_model", diag.deviceModel)
+            put("system_recognition_available", diag.isSystemRecognitionAvailable)
+            put("on_device_recognition_available", diag.isOnDeviceRecognitionAvailable)
+            put("selected_recognizer_mode", diag.selectedRecognizerMode.name)
+            put("active_recognizer_type", diag.activeRecognizerType)
+            put("selected_language", diag.selectedLanguage.displayName)
+            put("language_code", diag.languageCode)
+            put("is_installed_on_device", diag.isInstalledOnDevice)
+            put("is_supported_on_device", diag.isSupportedOnDevice)
+            put("is_supported_online", diag.isSupportedOnline)
+            put("has_mic_permission", diag.hasRecordAudioPermission)
+            put("waveform_state", diag.waveformState.name)
+            put("last_error_code", diag.lastErrorCode ?: org.json.JSONObject.NULL)
+            put("last_error_message", diag.lastErrorMessage ?: org.json.JSONObject.NULL)
+            put("reconnect_attempts", diag.reconnectAttemptCount)
+            put("exported_at_ms", System.currentTimeMillis())
+        }
+        return json.toString(2)
     }
 
     fun startVoiceCapture(hasAudioPermission: Boolean) {
@@ -247,21 +346,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusToast.value = "Microphone permission is required for Push-to-Talk."
             return
         }
-        _waveformState.value = WaveformState.Listening
+        _languageUnavailableEvent.value = null
+        _actionableVoiceError.value = null
+        _waveformState.value = WaveformState.Connecting
         _liveSpeechTranscript.value = ""
         _liveRmsAmplitude.value = 0f
-        try {
-            VoiceCaptureService.start(app)
-        } catch (_: Exception) {
-            // Foreground service may be restricted if backgrounded; UI visualizer still operates cleanly
-        }
-        voiceManager.startListening(_selectedVoiceLanguage.value)
+        voiceManager.startListening(_selectedVoiceLanguage.value, _recognizerMode.value)
     }
 
     fun stopVoiceListening() {
         try {
             voiceManager.stopListening()
-            VoiceCaptureService.stop(app)
         } catch (_: Exception) {}
     }
 

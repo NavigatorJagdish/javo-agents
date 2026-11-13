@@ -52,6 +52,7 @@ fun WaveformVisualizer(
 ) {
     val durationMs = when (state) {
         WaveformState.Idle -> 2400
+        WaveformState.Connecting -> 1400
         WaveformState.Listening -> 750
         WaveformState.Thinking -> 1100
         WaveformState.Executing -> 550
@@ -71,6 +72,7 @@ fun WaveformVisualizer(
 
     val dotColor = when (state) {
         WaveformState.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+        WaveformState.Connecting -> ElectricCyan
         WaveformState.Listening -> ElectricCyan
         WaveformState.Thinking -> VioletAccent
         WaveformState.Executing -> ElectricCyan
@@ -110,6 +112,7 @@ fun WaveformVisualizer(
 
                 val amplitude = when (state) {
                     WaveformState.Idle -> 0.16f + 0.12f * ((sin(phase + i * 0.45f) + 1f) / 2f)
+                    WaveformState.Connecting -> 0.18f + 0.16f * ((sin(phase * 1.5f + i * 0.5f) + 1f) / 2f) * envelope
                     WaveformState.Listening -> {
                         if (liveAmplitude != null && liveAmplitude > 0.04f) {
                             (0.18f + 0.82f * liveAmplitude * ((sin(phase * 2.2f + i * 0.7f) + 1f) / 2f) * envelope).coerceIn(0.12f, 1.0f)
@@ -130,7 +133,7 @@ fun WaveformVisualizer(
                     topLeft = Offset(left, centerY - barHeight / 2f),
                     size = Size(barWidth, barHeight),
                     cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
-                    alpha = if (state == WaveformState.Idle) 0.55f else 0.95f
+                    alpha = if (state == WaveformState.Idle || state == WaveformState.Connecting) 0.65f else 0.95f
                 )
             }
         }

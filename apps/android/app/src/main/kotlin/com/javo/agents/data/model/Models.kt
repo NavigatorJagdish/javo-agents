@@ -5,11 +5,46 @@ import java.net.URI
 
 enum class WaveformState(val label: String) {
     Idle("Idle"),
+    Connecting("Connecting..."),
     Listening("Listening"),
     Thinking("Thinking"),
     Executing("Executing"),
     Finished("Finished")
 }
+
+enum class RecognizerMode(val displayName: String, val description: String) {
+    AUTOMATIC("Automatic", "Smart on-device with online fallback"),
+    ON_DEVICE_ONLY("On-Device Only", "Strictly offline / on-device"),
+    ONLINE_ONLY("Online Only", "Standard system speech recognizer")
+}
+
+data class LanguageUnavailableEvent(
+    val language: VoiceLanguage,
+    val messageHindi: String,
+    val messageEnglish: String,
+    val canSwitchToOnline: Boolean = true,
+    val canDownloadModel: Boolean = true
+)
+
+data class VoiceDiagnosticsData(
+    val androidVersion: String,
+    val apiLevel: Int,
+    val deviceModel: String,
+    val isSystemRecognitionAvailable: Boolean,
+    val isOnDeviceRecognitionAvailable: Boolean,
+    val selectedRecognizerMode: RecognizerMode,
+    val activeRecognizerType: String,
+    val selectedLanguage: VoiceLanguage,
+    val languageCode: String,
+    val isInstalledOnDevice: Boolean?,
+    val isSupportedOnDevice: Boolean?,
+    val isSupportedOnline: Boolean?,
+    val hasRecordAudioPermission: Boolean,
+    val waveformState: WaveformState,
+    val lastErrorCode: Int?,
+    val lastErrorMessage: String?,
+    val reconnectAttemptCount: Int
+)
 
 enum class VoiceLanguage(val displayName: String, val code: String) {
     English("English", "en"),

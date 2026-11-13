@@ -22,14 +22,19 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,13 +44,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.javo.agents.data.model.RecognizerMode
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.ui.components.BottomNavBar
+import com.javo.agents.ui.components.GradientButton
+import com.javo.agents.ui.components.JavoOutlinedButton
 import com.javo.agents.ui.components.JavoSubScreenScaffold
 import com.javo.agents.ui.components.StatusCard
+import com.javo.agents.ui.components.StatusPill
 import com.javo.agents.ui.components.WaveformVisualizer
 import com.javo.agents.ui.theme.CoralDanger
 import com.javo.agents.ui.theme.ElectricCyan
@@ -65,16 +75,110 @@ fun VoiceModeScreen(
     val waveformState by viewModel.waveformState.collectAsState()
     val messages by viewModel.voiceMessages.collectAsState()
     val selectedLanguage by viewModel.selectedVoiceLanguage.collectAsState()
+    val recognizerMode by viewModel.recognizerMode.collectAsState()
+    val languageUnavailable by viewModel.languageUnavailableEvent.collectAsState()
+    val actionableVoiceError by viewModel.actionableVoiceError.collectAsState()
     val approvals by viewModel.approvals.collectAsState()
     val liveTranscript by viewModel.liveSpeechTranscript.collectAsState()
     val liveRmsAmplitude by viewModel.liveRmsAmplitude.collectAsState()
 
     var commandDraft by remember { mutableStateOf("") }
-    val isListening = waveformState == WaveformState.Listening
+    var showDiagnosticsDialog by remember { mutableStateOf(false) }
+    var showModeDialog by remember { mutableStateOf(false) }
+
+    val isListening = waveformState == WaveformState.Listening || waveformState == WaveformState.Connecting
+    val context = LocalContext.current
+
+    if (showDiagnosticsDialog) {
+        val diag = viewModel.getVoiceDiagnostics()
+        AlertDialog(
+            onDismissRequest = { showDiagnosticsDialog = false },
+            title = { Text("Voice Recognition Diagnostics") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("• Device: ${diag.deviceModel} (${diag.androidVersion})", style = MaterialTheme.typography.bodySmall)
+                    Text("• Recognizer Mode: ${diag.selectedRecognizerMode.displayName}", style = MaterialTheme.typography.bodySmall)
+                    Text("• Active Engine: ${diag.activeRecognizerType}", style = MaterialTheme.typography.bodySmall)
+                    Text("• Requested Language: ${diag.selectedLanguage.displayName} (${diag.languageCode})", style = MaterialTheme.typography.bodySmall)
+                    Text("• System Engine Available: ${if (diag.isSystemRecognitionAvailable) "Yes" else "No"}", style = MaterialTheme.typography.bodySmall)
+                    Text("• On-Device Engine Available: ${if (diag.isOnDeviceRecognitionAvailable) "Yes" else "No"}", style = MaterialTheme.typography.bodySmall)
+                    Text("• Language Installed On-Device: ${when(diag.isInstalledOnDevice) { true -> "Installed"; false -> "Not Installed (Needs Online/Download)"; else -> "Unknown / API < 33" }}", style = MaterialTheme.typography.bodySmall)
+                    Text("• Mic Permission: ${if (diag.hasRecordAudioPermission) "Granted" else "Missing"}", style = MaterialTheme.typography.bodySmall)
+                    Text("• Waveform State: ${diag.waveformState.name}", style = MaterialTheme.typography.bodySmall)
+                    Text("• Last Error: ${diag.lastErrorCode?.let { "Error $it: ${diag.lastErrorMessage}" } ?: "None"}", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val json = viewModel.exportVoiceDiagnosticsJson()
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Javo Voice Diagnostics", json))
+                        showDiagnosticsDialog = false
+                    }
+                ) {
+                    Text("Copy JSON")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiagnosticsDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    if (showModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showModeDialog = false },
+            title = { Text("Select Speech Recognizer Mode") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RecognizerMode.entries.forEach { mode ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            RadioButton(
+                                selected = recognizerMode == mode,
+                                onClick = {
+                                    viewModel.setRecognizerMode(mode)
+                                    showModeDialog = false
+                                }
+                            )
+                            Column(modifier = Modifier.padding(start = 4.dp)) {
+                                Text(mode.displayName, style = MaterialTheme.typography.titleSmall)
+                                Text(mode.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showModeDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
 
     JavoSubScreenScaffold(
         title = "Voice Mode & Assistant",
         actions = {
+            IconButton(onClick = { showModeDialog = true }) {
+                Icon(
+                    Icons.Rounded.Tune,
+                    contentDescription = "Recognizer Mode",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { showDiagnosticsDialog = true }) {
+                Icon(
+                    Icons.Rounded.Warning,
+                    contentDescription = "Voice Diagnostics",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (messages.isNotEmpty()) {
                 IconButton(onClick = { viewModel.clearVoiceHistory() }) {
                     Icon(
@@ -99,21 +203,107 @@ fun VoiceModeScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
-            // Language Selector Chips
+            // Language Selector Chips & Recognizer Mode Pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                VoiceLanguage.entries.forEach { lang ->
-                    FilterChip(
-                        selected = selectedLanguage == lang,
-                        onClick = { viewModel.setVoiceLanguage(lang) },
-                        label = { Text(lang.displayName) }
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    VoiceLanguage.entries.forEach { lang ->
+                        FilterChip(
+                            selected = selectedLanguage == lang,
+                            onClick = { viewModel.setVoiceLanguage(lang) },
+                            label = { Text(lang.displayName) }
+                        )
+                    }
                 }
+                StatusPill(
+                    text = recognizerMode.displayName,
+                    color = ElectricCyan
+                )
             }
 
             Spacer(modifier = Modifier.height(6.dp))
+
+            // Actionable Error 13 Banner (Missing Language Model)
+            languageUnavailable?.let { event ->
+                StatusCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Warning, contentDescription = "Error 13", tint = CoralDanger)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("वॉइस मॉडल उपलब्ध नहीं (Error 13)", style = MaterialTheme.typography.titleSmall, color = CoralDanger)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(event.messageHindi, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text(event.messageEnglish, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        GradientButton(
+                            text = "Switch to Online Mode",
+                            onClick = { viewModel.switchRecognizerToOnlineAndRetry() },
+                            modifier = Modifier.weight(1f)
+                        )
+                        JavoOutlinedButton(
+                            text = "Download Model",
+                            onClick = {
+                                viewModel.triggerLanguageModelDownload()
+                                try {
+                                    context.startActivity(viewModel.createOpenVoiceSettingsIntent())
+                                } catch (_: Exception) {}
+                            },
+                            borderColor = ElectricCyan
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                viewModel.setVoiceLanguage(VoiceLanguage.English)
+                                viewModel.startVoiceCapture(hasAudioPermission)
+                            }
+                        ) {
+                            Text("Try English Instead")
+                        }
+                        TextButton(onClick = { viewModel.dismissLanguageUnavailable() }) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            // Actionable Disconnect / General Voice Error Banner
+            actionableVoiceError?.let { errText ->
+                StatusCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Warning, contentDescription = "Voice Error", tint = CoralDanger)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(errText, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GradientButton(
+                            text = "Retry",
+                            onClick = {
+                                viewModel.clearActionableVoiceError()
+                                viewModel.startVoiceCapture(hasAudioPermission)
+                            }
+                        )
+                        JavoOutlinedButton(
+                            text = "Dismiss",
+                            onClick = { viewModel.clearActionableVoiceError() }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
 
             // Central Cyan-Violet Waveform Card
             StatusCard(highlightGradient = true) {
@@ -127,12 +317,18 @@ fun VoiceModeScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = when {
+                        waveformState == WaveformState.Connecting -> "Connecting to ${recognizerMode.displayName} speech service..."
                         isListening && liveTranscript.isNotBlank() -> "\"$liveTranscript\""
                         isListening -> "Listening in ${selectedLanguage.displayName}... Speak now"
                         waveformState == WaveformState.Thinking -> "Processing ${selectedLanguage.displayName} intent with AI..."
                         waveformState == WaveformState.Executing -> "Coordinating agent response..."
                         waveformState == WaveformState.Finished -> "Done! Ready for next command."
                         else -> "Tap mic for Push-to-Talk (${selectedLanguage.displayName}) or type below"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isListening && liveTranscript.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
+                    color = if (isListening && liveTranscript.isNotBlank()) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                )
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isListening && liveTranscript.isNotBlank()) FontWeight.Medium else FontWeight.Normal,

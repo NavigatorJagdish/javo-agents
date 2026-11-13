@@ -57,16 +57,16 @@ jobs:
       - name: Package Android Alpha Build Artifacts & Compute SHA-256
         run: |
           mkdir -p build-artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/javo-agents-android-v0.1.1-alpha-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/javo-agents-android-v0.1.2-alpha-debug.apk
           if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk build-artifacts/javo-agents-android-v0.1.1-alpha-release-unsigned.apk
+            cp app/build/outputs/apk/release/app-release-unsigned.apk build-artifacts/javo-agents-android-v0.1.2-alpha-release-unsigned.apk
           fi
           if [ -f app/build/outputs/bundle/release/app-release.aab ]; then
-            cp app/build/outputs/bundle/release/app-release.aab build-artifacts/javo-agents-android-v0.1.1-alpha-release-unsigned.aab
+            cp app/build/outputs/bundle/release/app-release.aab build-artifacts/javo-agents-android-v0.1.2-alpha-release-unsigned.aab
           fi
           cd build-artifacts
           sha256sum * > SHA256SUMS.txt
-          echo "{\"commit\": \"$GITHUB_SHA\", \"branch\": \"$GITHUB_REF_NAME\", \"version\": \"v0.1.1-alpha\", \"built_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > build-metadata.json
+          echo "{\"commit\": \"$GITHUB_SHA\", \"branch\": \"$GITHUB_REF_NAME\", \"version\": \"v0.1.2-alpha\", \"built_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > build-metadata.json
           cat SHA256SUMS.txt
           cd ..
 
@@ -76,16 +76,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd build-artifacts
-          gh release upload v0.1.1-alpha \
-            javo-agents-android-v0.1.1-alpha-debug.apk \
+          gh release upload v0.1.2-alpha \
+            javo-agents-android-v0.1.2-alpha-debug.apk \
             SHA256SUMS.txt \
             build-metadata.json \
             --clobber || true
-          if [ -f javo-agents-android-v0.1.1-alpha-release-unsigned.apk ]; then
-            gh release upload v0.1.1-alpha javo-agents-android-v0.1.1-alpha-release-unsigned.apk --clobber || true
+          if [ -f javo-agents-android-v0.1.2-alpha-release-unsigned.apk ]; then
+            gh release upload v0.1.2-alpha javo-agents-android-v0.1.2-alpha-release-unsigned.apk --clobber || true
           fi
-          if [ -f javo-agents-android-v0.1.1-alpha-release-unsigned.aab ]; then
-            gh release upload v0.1.1-alpha javo-agents-android-v0.1.1-alpha-release-unsigned.aab --clobber || true
+          if [ -f javo-agents-android-v0.1.2-alpha-release-unsigned.aab ]; then
+            gh release upload v0.1.2-alpha javo-agents-android-v0.1.2-alpha-release-unsigned.aab --clobber || true
           fi
           cd ..
 
@@ -93,6 +93,6 @@ jobs:
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: javo-agents-android-v0.1.1-alpha
+          name: javo-agents-android-v0.1.2-alpha
           path: apps/android/build-artifacts/
           if-no-files-found: warn

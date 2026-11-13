@@ -6,6 +6,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.javo.agents.data.model.RecognizerMode
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -258,6 +259,19 @@ class KeystoreManager(
 
     fun isVoiceModeEnabled(): Boolean = secretStore.getSecret(KEY_VOICE_MODE)?.toBooleanStrictOrNull() ?: true
 
+    fun saveRecognizerMode(mode: RecognizerMode) {
+        secretStore.putSecret(KEY_RECOGNIZER_MODE, mode.name)
+    }
+
+    fun getRecognizerMode(): RecognizerMode {
+        val stored = secretStore.getSecret(KEY_RECOGNIZER_MODE) ?: return RecognizerMode.AUTOMATIC
+        return try {
+            RecognizerMode.valueOf(stored)
+        } catch (_: Exception) {
+            RecognizerMode.AUTOMATIC
+        }
+    }
+
     fun isSampleDataMigrated(): Boolean = secretStore.getSecret(KEY_SAMPLE_DATA_MIGRATED)?.toBooleanStrictOrNull() ?: false
 
     fun markSampleDataMigrated() {
@@ -302,6 +316,7 @@ class KeystoreManager(
         private const val KEY_ONBOARDING_COMPLETE = "pref_onboarding_complete"
         private const val KEY_AUTO_RUN = "pref_auto_run"
         private const val KEY_VOICE_MODE = "pref_voice_mode"
+        private const val KEY_RECOGNIZER_MODE = "pref_recognizer_mode"
         private const val KEY_SAMPLE_DATA_MIGRATED = "sample_migration_v1_done"
         private const val KEY_DEMO_MODE = "pref_demo_mode_enabled"
     }
