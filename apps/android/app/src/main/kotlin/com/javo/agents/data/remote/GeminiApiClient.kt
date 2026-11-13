@@ -53,31 +53,34 @@ class GeminiApiClient(
                 .post(body)
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                val errBody = response.body?.string().orEmpty()
-                return@withContext Result.failure(
-                    IllegalStateException("Gemini API error HTTP ${response.code()}: $errBody")
-                )
+            val call = okHttpClient.newCall(request)
+            val response = call.execute()
+            response.use { res ->
+                if (!res.isSuccessful) {
+                    val errBody = res.body?.string().orEmpty()
+                    return@withContext Result.failure(
+                        IllegalStateException("Gemini API error HTTP ${res.code}: $errBody")
+                    )
+                }
+
+                val responseBody = res.body?.string() ?: ""
+                val json = JSONObject(responseBody)
+                val candidates = json.optJSONArray("candidates")
+                if (candidates == null || candidates.length() == 0) {
+                    return@withContext Result.failure(IllegalStateException("No candidates returned from Gemini."))
+                }
+
+                val firstCandidate = candidates.getJSONObject(0)
+                val content = firstCandidate.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                val text = parts?.optJSONObject(0)?.optString("text")
+
+                if (text.isNullOrBlank()) {
+                    return@withContext Result.failure(IllegalStateException("Empty text returned from Gemini."))
+                }
+
+                Result.success(text.trim())
             }
-
-            val responseBody = response.body?.string() ?: ""
-            val json = JSONObject(responseBody)
-            val candidates = json.optJSONArray("candidates")
-            if (candidates == null || candidates.length() == 0) {
-                return@withContext Result.failure(IllegalStateException("No candidates returned from Gemini."))
-            }
-
-            val firstCandidate = candidates.getJSONObject(0)
-            val content = firstCandidate.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
-            val text = parts?.optJSONObject(0)?.optString("text")
-
-            if (text.isNullOrBlank()) {
-                return@withContext Result.failure(IllegalStateException("Empty text returned from Gemini."))
-            }
-
-            Result.success(text.trim())
         } catch (e: Exception) {
             Result.failure(e)
         }

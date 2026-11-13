@@ -79,7 +79,7 @@ class VoiceRecognitionManager(
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, langCode)
                     if (language == VoiceLanguage.Hinglish) {
                         putExtra(
-                            RecognizerIntent.EXTRA_ADDITIONAL_LANGUAGES,
+                            "android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES",
                             arrayOf("en-IN", "hi-IN", "en-US")
                         )
                     }
