@@ -21,6 +21,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URI
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -216,6 +217,18 @@ class MobileAgentOrchestrator(
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val url = config.endpointUrl.trim()
+            val destination = URI(url)
+            val scheme = destination.scheme?.lowercase()
+            if (scheme !in setOf("http", "https") || destination.host.isNullOrBlank()) {
+                return@withContext Result.failure(IllegalArgumentException(
+                    "Custom AI endpoint must be a valid HTTP(S) URL with a host."
+                ))
+            }
+            if (scheme != "https" && config.apiKey.isNotBlank()) {
+                return@withContext Result.failure(IllegalStateException(
+                    "Refusing to transmit your API key over an unencrypted HTTP endpoint. Configure HTTPS or remove the key for a trusted local-only server."
+                ))
+            }
             val jsonPayload = JSONObject().apply {
                 if (config.modelName.isNotBlank()) {
                     put("model", config.modelName.trim())
