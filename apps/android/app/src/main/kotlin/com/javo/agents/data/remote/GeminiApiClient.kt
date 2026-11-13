@@ -51,9 +51,8 @@ class GeminiApiClient(
 
         fun sanitizeError(raw: String?, apiKey: String): String {
             if (raw.isNullOrBlank()) return "Unknown Gemini API error."
-            val stripped = if (apiKey.isNotBlank()) raw.replace(apiKey.trim(), "[REDACTED_API_KEY]") else raw
-            // Strip any sensitive query param patterns
-            return stripped.replace(Regex("key=[A-Za-z0-9_-]+"), "key=[REDACTED]")
+            val strippedQuery = raw.replace(Regex("key=[A-Za-z0-9_\\-]+"), "key=[REDACTED]")
+            return if (apiKey.isNotBlank()) strippedQuery.replace(apiKey.trim(), "[REDACTED_API_KEY]") else strippedQuery
         }
     }
 
