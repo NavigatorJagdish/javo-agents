@@ -2,6 +2,8 @@ package com.javo.agents
 
 import com.javo.agents.data.local.AesGcmCipher
 import com.javo.agents.data.local.KeystoreManager
+import com.javo.agents.data.model.ProviderType
+import com.javo.agents.data.model.OperatingMode
 import com.javo.agents.data.local.SecretKeyProvider
 import com.javo.agents.data.local.SecureSecretStore
 import org.junit.Assert.assertEquals
@@ -86,5 +88,44 @@ class KeystoreManagerTest {
         assertTrue(manager.isDemoModeEnabled())
         manager.setDemoModeEnabled(false)
         assertFalse(manager.isDemoModeEnabled())
+    }
+
+    @Test
+    fun keystoreManager_selectedProviderDefaultsToPhoneSafeAndPersistsAcrossInstances() {
+        val store = InMemorySecretStore()
+        val keys = InMemoryKeyProvider()
+        val manager = KeystoreManager(store, keys)
+
+        // Clean Android installation must not silently prefer a paired Windows backend.
+        assertEquals(OperatingMode.ANDROID_STANDALONE, manager.getOperatingMode())
+        assertEquals(ProviderType.GEMINI_DIRECT, manager.getSelectedAiProvider())
+
+        manager.saveCustomAiEndpoint(
+            url = "https://example.org/v1/chat/completions",
+            apiKey = "test-key-local-only",
+            model = "test-model",
+            enabled = true
+        )
+        manager.saveSelectedAiProvider(ProviderType.CUSTOM_ENDPOINT)
+
+        // Simulates ViewModel/App recreation without dropping the selected preference.
+        val reopened = KeystoreManager(store, keys)
+        assertEquals(ProviderType.CUSTOM_ENDPOINT, reopened.getSelectedAiProvider())
+
+        // Availability of an unrelated provider must NOT change the explicit selection.
+        reopened.saveGeminiApiKey("AIzaSyTEST_LOCAL_ONLY")
+        assertEquals(ProviderType.CUSTOM_ENDPOINT, reopened.getSelectedAiProvider())
+    }
+
+    @Test
+    fun keystoreManager_selectedProviderSurvivesOperatingModeSwitch() {
+        val manager = KeystoreManager(InMemorySecretStore(), InMemoryKeyProvider())
+        manager.saveGeminiApiKey("AIzaSyTEST_LOCAL_ONLY")
+        manager.saveSelectedAiProvider(ProviderType.GEMINI_DIRECT)
+        manager.saveOperatingMode(OperatingMode.WINDOWS_ENHANCED)
+
+        assertEquals(ProviderType.GEMINI_DIRECT, manager.getSelectedAiProvider())
+        manager.saveOperatingMode(OperatingMode.ANDROID_STANDALONE)
+        assertEquals(ProviderType.GEMINI_DIRECT, manager.getSelectedAiProvider())
     }
 }
