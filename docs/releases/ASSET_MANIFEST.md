@@ -20,6 +20,18 @@ The following artifacts have been built, verified, and attached directly to GitH
 | `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,127,677 bytes (~18.2 MB) | `a8f58a573e0a3fe868f917a42790d74573194947999a4cc93dd64719900fe1a8` | Asset ID: `742257996` (Verified in Storage) |
 | `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,741,367 bytes (~1.66 MB) | CI Verification Package | Asset ID: `742258062` (Verified in Storage) |
 
+### Latest Android Release Artifacts (v0.1.2-alpha Speech Recognition Hotfix)
+
+Attached to GitHub Draft Release `443956759` (`v0.1.2-alpha`):
+
+| Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Release Asset ID / Status |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| `javo-agents-android-v0.1.2-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,226,061 bytes (~18.3 MB) | `446b72072431f47c9f48c210e367eb4d63fc1a664e7e19fcab34349b9b2b080b` | Asset ID: `742884082` (Verified in Storage) |
+| `javo-agents-android-v0.1.2-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,757,819 bytes (~1.68 MB) | `35cfd1b21ede2d89999466a742c89cb692ed9a5939982a125a5de54dddfe2a45` | Asset ID: `742884184` (Verified in Storage) |
+| `javo-agents-android-v0.1.2-alpha-release-unsigned.aab` | Android 10+ (API 29+) | Release AAB (Unsigned) | 4,444,153 bytes (~4.24 MB) | `920ac96614b97a711e4f235b1a6195dc9b12a5f706449d1c63f7aa6a1eec4ac6` | Asset ID: `742884276` (Verified in Storage) |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 349 bytes | Cryptographic hashes for v0.1.2-alpha | Asset ID: `742884087` (Verified in Storage) |
+| `build-metadata.json` | JSON | Build Metadata | 139 bytes | CI run metadata for v0.1.2-alpha | Asset ID: `742884088` (Verified in Storage) |
+
 ---
 
 ## 2. Release Provenance & Checksum Reconciliation

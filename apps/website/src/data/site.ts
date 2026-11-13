@@ -24,10 +24,11 @@ export const SITE_CONFIG = {
   },
   androidArtifacts: {
     debugApkName: 'javo-agents-android-v0.1.2-alpha-debug.apk',
-    debugApkSha256: 'Pending CI build upload to draft release v0.1.2-alpha',
-    debugApkDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases',
+    debugApkSha256: '446b72072431f47c9f48c210e367eb4d63fc1a664e7e19fcab34349b9b2b080b',
+    debugApkDownloadUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-50f27bbc0643edc95403/javo-agents-android-v0.1.2-alpha-debug.apk',
     releaseApkName: 'javo-agents-android-v0.1.2-alpha-release-unsigned.apk',
     releaseAabName: 'javo-agents-android-v0.1.2-alpha-release-unsigned.aab',
+    checksumsUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases/download/untagged-50f27bbc0643edc95403/SHA256SUMS.txt',
     workflowUrl: 'https://github.com/NavigatorJagdish/javo-agents/actions/workflows/ci-android.yml',
     actionsRunsUrl: 'https://github.com/NavigatorJagdish/javo-agents/actions/workflows/ci-android.yml',
     releasesHubUrl: 'https://github.com/NavigatorJagdish/javo-agents/releases',
