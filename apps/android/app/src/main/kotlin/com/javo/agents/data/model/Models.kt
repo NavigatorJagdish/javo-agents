@@ -213,7 +213,7 @@ enum class ProviderType(val label: String) {
 data class AIProviderConfig(
     val activeProvider: ProviderType = ProviderType.LOCAL_PC_OLLAMA,
     val localModelName: String = "qwen2.5:3b-instruct-q4_K_M",
-    val geminiModelName: String = "gemini-2.5-flash",
+    val geminiModelName: String = "gemini-3.5-flash-lite",
     val hasGeminiKeyStored: Boolean = false,
     val zeroCostGuardEnabled: Boolean = true,
     val privacyFirewallStrict: Boolean = true
