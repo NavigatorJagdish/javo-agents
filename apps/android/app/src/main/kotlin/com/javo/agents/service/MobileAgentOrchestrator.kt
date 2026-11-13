@@ -120,7 +120,7 @@ class MobileAgentOrchestrator(
     suspend fun generateContentDraft(
         topic: String,
         platform: String,
-        language: VoiceLanguage = VoiceLanguage.ENGLISH
+        language: VoiceLanguage = VoiceLanguage.English
     ): Result<DraftEntity> = withContext(Dispatchers.IO) {
         val geminiKey = keystoreManager.getGeminiApiKey().orEmpty().trim()
         val customEndpoint = keystoreManager.getCustomAiEndpoint()
@@ -132,9 +132,9 @@ class MobileAgentOrchestrator(
         }
 
         val langPrompt = when (language) {
-            VoiceLanguage.HINDI -> "in natural Hindi (Devanagari script)"
-            VoiceLanguage.HINGLISH -> "in conversational Hinglish (Hindi written in Latin script with catchy English hooks)"
-            VoiceLanguage.ENGLISH -> "in punchy, engaging English"
+            VoiceLanguage.Hindi -> "in natural Hindi (Devanagari script)"
+            VoiceLanguage.Hinglish -> "in conversational Hinglish (Hindi written in Latin script with catchy English hooks)"
+            VoiceLanguage.English -> "in punchy, engaging English"
         }
 
         val systemPrompt = "You are Content Factory, an expert social media copywriter for $platform. Write high-converting hooks, informative captions, and relevant hashtags $langPrompt. Be authentic, engaging, and clear."

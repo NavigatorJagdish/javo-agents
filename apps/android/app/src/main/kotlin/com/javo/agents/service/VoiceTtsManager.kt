@@ -74,15 +74,15 @@ class VoiceTtsManager(
 
     private fun getLocaleForLanguage(language: VoiceLanguage): Locale {
         return when (language) {
-            VoiceLanguage.HINDI -> Locale("hi", "IN")
-            VoiceLanguage.HINGLISH -> Locale("hi", "IN")
-            VoiceLanguage.ENGLISH -> Locale("en", "IN")
+            VoiceLanguage.Hindi -> Locale("hi", "IN")
+            VoiceLanguage.Hinglish -> Locale("hi", "IN")
+            VoiceLanguage.English -> Locale("en", "IN")
         }
     }
 
     fun speak(
         text: String,
-        language: VoiceLanguage = VoiceLanguage.ENGLISH,
+        language: VoiceLanguage = VoiceLanguage.English,
         onComplete: (() -> Unit)? = null
     ) {
         if (text.isBlank()) {
