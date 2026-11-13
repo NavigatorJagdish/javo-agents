@@ -65,7 +65,7 @@ jobs:
           cd ..
 
       - name: Attach Android Test Package to Private Draft Release
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/fix/')
+        if: github.repository == 'NavigatorJagdish/javo-agents'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

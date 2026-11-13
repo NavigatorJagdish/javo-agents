@@ -73,7 +73,7 @@ jobs:
           $meta | Out-File -FilePath build-metadata.json -Encoding ascii
 
       - name: Attach Windows Desktop Packages to Private Draft Release
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/fix/')
+        if: github.repository == 'NavigatorJagdish/javo-agents'
         working-directory: apps/windows/release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
