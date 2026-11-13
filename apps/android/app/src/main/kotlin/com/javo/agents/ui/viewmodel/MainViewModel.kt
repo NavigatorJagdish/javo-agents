@@ -162,7 +162,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _voiceMessages.value.zipWithNext()
             .filter { (before, after) ->
                 before.isUser && !after.isUser &&
-                    after.actionHint?.startsWith(providerPrefix) == true
+                    after.isVerifiedAiReply && after.actionHint?.startsWith(providerPrefix) == true
             }
             .takeLast(6)
             .flatMap { (before, after) ->
@@ -669,7 +669,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 text = replyText,
                 language = lang,
                 timestampLabel = "Now",
-                actionHint = actionHint
+                actionHint = actionHint,
+                isVerifiedAiReply = verifiedProviderResponse
             )
             _voiceMessages.update { it + assistantMsg }
             persistVoiceHistoryIfEnabled()
@@ -1108,8 +1109,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val msg = _voiceMessages.value.firstOrNull { it.id == messageId && !it.isUser }
-        val verifiedResponse = msg?.actionHint?.startsWith("Google Gemini (") == true ||
-            msg?.actionHint?.startsWith("Custom AI (") == true
+        val verifiedResponse = msg?.isVerifiedAiReply == true &&
+            (msg.actionHint?.startsWith("Google Gemini (") == true ||
+             msg.actionHint?.startsWith("Custom AI (") == true)
         if (msg == null || !verifiedResponse || msg.text.isBlank()) {
             _statusToast.value = "Only real, successful AI-generated replies can be saved as a content draft."
             return
