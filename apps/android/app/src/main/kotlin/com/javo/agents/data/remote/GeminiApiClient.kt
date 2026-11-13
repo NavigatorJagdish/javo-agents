@@ -29,17 +29,23 @@ class GeminiApiClient(
         .build()
 ) {
     companion object {
+        const val MODEL_GEMINI_3_8_FLASH = "gemini-3.8-flash"
+        const val MODEL_GEMINI_3_5_FLASH_LITE = "gemini-3.5-flash-lite"
+        // Legacy models may be available only to previously active API projects.
         const val MODEL_GEMINI_2_5_FLASH = "gemini-2.5-flash"
         const val MODEL_GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
-        const val MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash"
+        const val DEFAULT_MODEL = MODEL_GEMINI_3_5_FLASH_LITE
 
         val SUPPORTED_MODELS = listOf(
+            MODEL_GEMINI_3_5_FLASH_LITE,
+            MODEL_GEMINI_3_8_FLASH,
             MODEL_GEMINI_2_5_FLASH,
-            MODEL_GEMINI_2_5_FLASH_LITE,
-            MODEL_GEMINI_2_0_FLASH
+            MODEL_GEMINI_2_5_FLASH_LITE
         )
 
         val RETIRED_MODELS = listOf(
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
             "gemini-1.5-flash",
             "gemini-1.5-pro",
             "gemini-1.0-pro"
@@ -48,12 +54,12 @@ class GeminiApiClient(
         fun resolveModel(requested: String?): String {
             val clean = requested?.trim().orEmpty()
             if (clean in RETIRED_MODELS) {
-                return MODEL_GEMINI_2_5_FLASH
+                return DEFAULT_MODEL
             }
             if (clean in SUPPORTED_MODELS) {
                 return clean
             }
-            return MODEL_GEMINI_2_5_FLASH
+            return DEFAULT_MODEL
         }
 
         /** Bounded, validated prior conversation turns to avoid unbounded token use. */
@@ -74,7 +80,7 @@ class GeminiApiClient(
 
     suspend fun testConnection(
         apiKey: String,
-        model: String = MODEL_GEMINI_2_5_FLASH
+        model: String = DEFAULT_MODEL
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanKey = apiKey.trim()
         if (cleanKey.isBlank()) {
@@ -90,7 +96,7 @@ class GeminiApiClient(
         val latencyMs = System.currentTimeMillis() - startTime
         if (res.isSuccess) {
             val targetModel = resolveModel(model)
-            Result.success("Connected to $targetModel (${latencyMs}ms). Verified ready for Hindi, Hinglish & English.")
+            Result.success("Connection to $targetModel succeeded in ${latencyMs}ms. Text generation tested; Hindi/Hinglish output quality is not verified by this probe.")
         } else {
             Result.failure(res.exceptionOrNull() ?: GeminiApiException("Connection test failed."))
         }
@@ -99,7 +105,7 @@ class GeminiApiClient(
     suspend fun generateResponse(
         prompt: String,
         apiKey: String,
-        model: String = MODEL_GEMINI_2_5_FLASH,
+        model: String = DEFAULT_MODEL,
         systemInstruction: String = "You are Javo, a local-first AI assistant for creators and entrepreneurs. You are concise, friendly, and fluent in Hindi, Hinglish, and English. Respond naturally in the user's preferred language.",
         history: List<GeminiTurn> = emptyList()
     ): Result<String> = withContext(Dispatchers.IO) {
@@ -161,7 +167,7 @@ class GeminiApiClient(
 
                     val exception: Exception = when (res.code) {
                         429 -> GeminiQuotaExceededException(
-                            "Google Gemini rate limit / quota exceeded (HTTP 429). The free tier allows up to 15 RPM. Please wait a moment before trying again."
+                            "Google Gemini rate limit / quota exceeded (HTTP 429). Limits depend on your model, account, region and project. Please check actual quota before retrying."
                         )
                         401, 403 -> GeminiAuthException(
                             "Invalid or unauthorized Gemini API key (HTTP ${res.code}). Please verify your key in Settings → AI Providers."
