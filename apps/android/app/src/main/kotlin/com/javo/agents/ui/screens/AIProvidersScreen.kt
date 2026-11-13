@@ -71,19 +71,19 @@ fun AIProvidersScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatusCard(highlightGradient = true) {
-                Text("Zero-Cost AI Router", style = MaterialTheme.typography.titleMedium)
+                Text("AI Usage & Cost Disclosure", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Enforce strict $0.00 spend guardrails (Local Ollama preferred)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = config.zeroCostGuardEnabled,
-                        onCheckedChange = viewModel::toggleZeroCostGuard
-                    )
-                }
+                Text(
+                    "Javo cannot currently enforce a $0 cloud billing cap. Your own AI provider account controls pricing, quotas and payment. Check your provider dashboard before using cloud models.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "The planned Budget Guardian is NOT ACTIVE until real metering and hard-block tests pass.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = CoralDanger
+                )
             }
 
             ProviderType.entries.forEach { provider ->
@@ -102,7 +102,7 @@ fun AIProvidersScreen(
                                     else "Requires paired Windows PC running Ollama (currently offline/unpaired)"
                                 }
                                 ProviderType.GEMINI_DIRECT -> {
-                                    "Model: ${config.geminiModelName} • Free Google Gemini Developer API on device"
+                                    "Model: ${config.geminiModelName} • Google Gemini cloud API directly from phone (internet required)"
                                 }
                                 ProviderType.CUSTOM_ENDPOINT -> {
                                     if (customAiConfig?.isEnabled == true) "Active: ${customAiConfig?.endpointUrl?.take(32)} (${customAiConfig?.modelName})"
@@ -207,7 +207,7 @@ fun AIProvidersScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Custom AI Endpoint Adapter", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     StatusPill(
-                        text = if (customAiConfig?.isEnabled == true) "Active" else "Disabled",
+                        text = if (customAiConfig?.isEnabled == true) "Configured (unverified)" else "Disabled",
                         color = if (customAiConfig?.isEnabled == true) EmeraldSuccess else ElectricCyan
                     )
                 }
