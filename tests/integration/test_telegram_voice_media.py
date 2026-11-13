@@ -25,54 +25,79 @@ def client(tmp_path, monkeypatch):
 
     import app.config as cfg
     import app.api.routes.telegram as tg_route
+    from app.core.security import get_token_manager
 
     cfg._settings = None
     tg_route._TELEGRAM_OVERRIDES.clear()
+    tg_route._PROCESSED_UPDATE_IDS.clear()
 
+    token = get_token_manager().generate_token("owner", device_id="desktop-1", role="owner")
     app = create_app()
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as test_client:
         yield test_client
 
     tg_route._TELEGRAM_OVERRIDES.clear()
+    tg_route._PROCESSED_UPDATE_IDS.clear()
     cfg._settings = None
 
 
 def test_telegram_fail_closed_and_all_commands(client: TestClient):
-    # Unpaired user cannot run /status even when allowed_users is empty
+    # Unconfigured secret must fail closed with 403
     unauth = client.post(
         "/telegram/webhook",
         json={"message": {"from": {"id": 99999}, "text": "/status"}},
     )
     assert unauth.status_code == 403
+    assert "fail-closed" in unauth.json()["detail"].lower()
 
-    # /start returns numeric user ID for pairing
+    # Configure webhook mode with secure secret and pair user 12345
+    secret_token = "secure-test-webhook-secret-token"
+    cfg_res = client.put(
+        "/telegram/config",
+        json={
+            "bot_token": "123456:synthetic-bot-token",
+            "mode": "webhook",
+            "webhook_secret": secret_token,
+            "allowed_users": ["12345"],
+        },
+    )
+    assert cfg_res.status_code == 200
+    assert cfg_res.json()["configured"] is True
+    assert cfg_res.json()["mode"] == "webhook"
+    assert "bot_token" not in cfg_res.json()
+
+    tg_headers = {"X-Telegram-Bot-Api-Secret-Token": secret_token}
+
+    # /start with valid webhook secret allows an unpaired user to inspect their numeric ID for pairing
     start_unpaired = client.post(
         "/telegram/webhook",
+        headers=tg_headers,
         json={"message": {"from": {"id": 99999}, "text": "/start"}},
     )
     assert start_unpaired.status_code == 200
     assert "99999" in start_unpaired.json()["reply_text"]
 
-    # Pair user 12345 and configure synthetic bot token (must remain redacted on GET)
-    cfg_res = client.put(
-        "/telegram/config",
-        json={"bot_token": "123456:synthetic-bot-token", "allowed_users": ["12345"]},
-    )
-    assert cfg_res.status_code == 200
-    assert cfg_res.json()["configured"] is True
-    assert "bot_token" not in cfg_res.json()
-
-    # Different user still blocked
+    # Different user sending non-start command is blocked with 403
     wrong_user = client.post(
         "/telegram/webhook",
+        headers=tg_headers,
         json={"message": {"from": {"id": 99999}, "text": "/status"}},
     )
     assert wrong_user.status_code == 403
 
-    # Paired user can execute all supported bot commands
+    # Forged secret token is rejected with 401
+    forged = client.post(
+        "/telegram/webhook",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "forged-secret-token"},
+        json={"message": {"from": {"id": 12345}, "text": "/status"}},
+    )
+    assert forged.status_code == 401
+
+    # Paired user with valid secret can execute all supported bot commands
     for cmd in ["/help", "/status", "/goals", "/schedule", "/analytics", "/agents", "/accounts", "/security", "/pause", "/resume"]:
         r = client.post(
             "/telegram/webhook",
+            headers=tg_headers,
             json={"message": {"from": {"id": 12345}, "text": cmd}},
         )
         assert r.status_code == 200
@@ -80,6 +105,16 @@ def test_telegram_fail_closed_and_all_commands(client: TestClient):
         assert body["handled"] is True
         assert body["reply_text"]
         assert "synthetic-bot-token" not in body["reply_text"]
+
+    # When Telegram polling mode is active, webhook endpoint is disabled (503)
+    client.put("/telegram/config", json={"mode": "polling"})
+    polling_resp = client.post(
+        "/telegram/webhook",
+        headers=tg_headers,
+        json={"message": {"from": {"id": 12345}, "text": "/status"}},
+    )
+    assert polling_resp.status_code == 503
+    assert "polling" in polling_resp.json()["detail"].lower()
 
 
 def test_voice_hinglish_and_confirmation_gate(client: TestClient):

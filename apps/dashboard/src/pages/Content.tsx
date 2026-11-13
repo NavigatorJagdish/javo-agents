@@ -120,15 +120,21 @@ export const Content: React.FC = () => {
                       status={
                         item.status === 'published'
                           ? 'active'
-                          : item.status === 'scheduled'
-                            ? 'info'
-                            : item.status === 'ready'
-                              ? 'violet'
-                              : 'warning'
+                          : item.status === 'simulated'
+                            ? 'violet'
+                            : item.status === 'scheduled'
+                              ? 'info'
+                              : item.status === 'ready'
+                                ? 'violet'
+                                : 'warning'
                       }
                       size="sm"
                     >
-                      {item.status}
+                      {item.status === 'published'
+                        ? 'Live Published'
+                        : item.status === 'simulated'
+                          ? 'Simulated (Mock)'
+                          : item.status}
                     </Badge>
                   </div>
                   <div className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 text-[11px] text-[#00E5FF]">
@@ -187,8 +193,21 @@ export const Content: React.FC = () => {
                     {item.aiScore}/100
                   </td>
                   <td className="px-4 py-3">
-                    <Badge status={item.status === 'published' ? 'active' : 'info'} size="sm">
-                      {item.status}
+                    <Badge
+                      status={
+                        item.status === 'published'
+                          ? 'active'
+                          : item.status === 'simulated'
+                            ? 'violet'
+                            : 'info'
+                      }
+                      size="sm"
+                    >
+                      {item.status === 'published'
+                        ? 'Live Published'
+                        : item.status === 'simulated'
+                          ? 'Simulated (Mock)'
+                          : item.status}
                     </Badge>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-400">

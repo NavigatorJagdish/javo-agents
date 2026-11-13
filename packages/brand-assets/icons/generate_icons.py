@@ -12,6 +12,10 @@ import io
 import math
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
 OUT_DIR = Path(__file__).resolve().parent / "dist"

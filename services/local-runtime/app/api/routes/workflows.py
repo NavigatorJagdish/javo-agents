@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.user import User
 from app.models.workflow import (
@@ -24,7 +25,7 @@ from app.models.workflow import (
     WorkflowStatus,
 )
 
-router = APIRouter(prefix="/workflows", tags=["workflows"])
+router = APIRouter(prefix="/workflows", tags=["workflows"], dependencies=[Depends(require_auth)])
 
 
 # ---------------------------------------------------------------------------

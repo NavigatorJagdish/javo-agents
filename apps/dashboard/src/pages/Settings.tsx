@@ -7,7 +7,7 @@ export const Settings: React.FC = () => {
   const { theme, setTheme, addToast } = useAppStore();
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [defaultLocalModel, setDefaultLocalModel] = useState('qwen2.5:14b');
-  const [dailyBudget, setDailyBudget] = useState('10.00');
+  const [dailyBudget, setDailyBudget] = useState('0.00');
   const [geminiKey, setGeminiKey] = useState('••••••••••••••••••••');
 
   const handleSave = (e: React.FormEvent) => {
@@ -145,7 +145,7 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Dashboard v2.4.0 • Windows Desktop Edition
+            Dashboard v0.1.0-alpha • Windows Desktop Edition
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             29 Specialist Agents • FastAPI Runtime (localhost:8000)

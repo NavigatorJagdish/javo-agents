@@ -52,6 +52,7 @@ fun AgentTeamScreen(
     val agents by viewModel.agents.collectAsState()
     val templates by viewModel.templates.collectAsState()
     val approvals by viewModel.approvals.collectAsState()
+    val tasks by viewModel.tasks.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableStateOf<AgentCategory?>(null) }
@@ -86,7 +87,7 @@ fun AgentTeamScreen(
     }
 
     JavoSubScreenScaffold(
-        title = "AI Agent Team (${agents.size})",
+        title = "AI Specialist Catalog (${agents.size})",
         bottomBar = {
             BottomNavBar(
                 currentRoute = currentRoute,
@@ -114,6 +115,10 @@ fun AgentTeamScreen(
             }
 
             if (selectedTab == 0) {
+                StatusCard {
+                    Text("Configured agents are not executing jobs", style = MaterialTheme.typography.titleMedium)
+                    Text("Only a real running task shows RUNNING. To assign work, create or run a task in Workflows.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -142,6 +147,7 @@ fun AgentTeamScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(filteredAgents, key = { it.slug }) { agent ->
+                        val runningTasks = tasks.count { it.assignedAgent == agent.slug && it.state == "running" }
                         StatusCard(onClick = { inspectedAgent = agent }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
@@ -152,8 +158,11 @@ fun AgentTeamScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         StatusPill(
-                                            text = agent.category.label,
-                                            color = if (agent.isEnabled) EmeraldSuccess else VioletAccent
+                                            text = if (runningTasks > 0) "RUNNING ($runningTasks)"
+                                                   else if (!agent.isEnabled) "Disabled"
+                                                   else if (agent.capability.requiresWindows) "Windows-only"
+                                                   else "Configured",
+                                            color = if (runningTasks > 0) EmeraldSuccess else VioletAccent
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
@@ -162,12 +171,21 @@ fun AgentTeamScreen(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Text(
+                                        text = "Category: ${agent.category.label} • Available actions depend on provider and tool permissions.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Switch(
-                                    checked = agent.isEnabled,
-                                    onCheckedChange = { viewModel.toggleAgentEnabled(agent.slug) }
-                                )
+                                // This is a temporary session preference, not proof of a live worker.
+                                Column {
+                                    Text("Enabled", style = MaterialTheme.typography.labelSmall)
+                                    Switch(
+                                        checked = agent.isEnabled,
+                                        onCheckedChange = { viewModel.toggleAgentEnabled(agent.slug) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -197,7 +215,7 @@ fun AgentTeamScreen(
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             JavoOutlinedButton(
-                                text = if (tpl.isEnabled) "Applied to Pipeline" else "Apply Template",
+                                text = if (tpl.isEnabled) "Selected (not executed)" else "Select Template",
                                 onClick = { viewModel.activateTemplate(tpl.slug) }
                             )
                         }

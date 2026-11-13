@@ -6,6 +6,7 @@ import { Footer } from '@/components/Footer';
 import { SITE_CONFIG } from '@/data/site';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_CONFIG.websiteUrl),
   title: {
     default: `${SITE_CONFIG.name} — ${SITE_CONFIG.tagline}`,
     template: `%s | ${SITE_CONFIG.name}`,
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
   description:
     'Local-first AI automation team for Windows and Android. Run 29 specialist agents on your own hardware with Supervised Autopilot, 8GB RAM optimization, Privacy Firewall, and Hindi/Hinglish/English Voice Mode.',
   icons: {
-    icon: '/favicon.svg',
+    icon: process.env.GITHUB_PAGES === 'true' ? '/javo-agents/favicon.svg' : '/favicon.svg',
   },
   openGraph: {
     title: `${SITE_CONFIG.name} — ${SITE_CONFIG.tagline}`,

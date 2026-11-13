@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.task import Task, TaskPriority, TaskState
 
@@ -124,6 +125,7 @@ async def list_tasks(
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     body: TaskCreate,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> TaskResponse:
     """Create a new task with an initial audit trail entry."""
@@ -162,6 +164,7 @@ async def get_task(task_id: str, session: AsyncSession = Depends(get_session)) -
 async def update_task(
     task_id: str,
     body: TaskUpdate,
+    user: dict = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> TaskResponse:
     """Update fields of an existing task."""
@@ -186,7 +189,11 @@ async def update_task(
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(task_id: str, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_task(
+    task_id: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> None:
     """Delete a task."""
     task = await _get_task_or_404(task_id, session)
     await session.delete(task)
@@ -194,28 +201,111 @@ async def delete_task(task_id: str, session: AsyncSession = Depends(get_session)
 
 
 @router.post("/{task_id}/execute", response_model=ExecuteTaskResponse, status_code=status.HTTP_202_ACCEPTED)
-async def execute_task(task_id: str, session: AsyncSession = Depends(get_session)) -> ExecuteTaskResponse:
-    """Start or queue a task for execution."""
+async def execute_task(
+    task_id: str,
+    user: dict = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> ExecuteTaskResponse:
+    """Execute a task through the Master Orchestrator or assigned specialist agent."""
+    from app.agents import create_orchestrator, get_all_agents
+    from app.core.resource_manager import get_resource_manager
+
     task = await _get_task_or_404(task_id, session)
     if task.state == TaskState.RUNNING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task is already running")
 
-    task.state = TaskState.RUNNING
+    rm = get_resource_manager()
+    if rm._emergency_stopped:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Emergency stop is active; clear it before executing tasks")
+    if not rm.can_accept_work():
+        task.state = TaskState.PAUSED
+        await session.commit()
+        return ExecuteTaskResponse(
+            task_id=task_id,
+            state=TaskState.PAUSED.value,
+            message="Task paused due to system resource limits",
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
     trail = list(task.audit_trail or [])
     trail.append(
         {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "action": "execute_requested",
+            "timestamp": now_iso,
+            "action": "execute_started",
             "details": {"assigned_agent": task.assigned_agent},
+        }
+    )
+
+    payload: dict = dict(task.inputs or {})
+    payload.setdefault("title", task.title)
+    payload.setdefault("description", task.description or "")
+    payload.setdefault("task_id", task.task_id)
+    if task.cost_budget is not None:
+        payload.setdefault("cost_budget", task.cost_budget)
+
+    granted_perms: list[str] = []
+    if isinstance(task.permissions, dict):
+        if isinstance(task.permissions.get("granted"), list):
+            granted_perms = [str(p) for p in task.permissions["granted"]]
+        else:
+            granted_perms = [k for k, v in task.permissions.items() if v is True]
+
+    agents_map = get_all_agents()
+    assigned = (task.assigned_agent or "").strip()
+
+    try:
+        if assigned and assigned in agents_map and assigned != "master_orchestrator":
+            result = await agents_map[assigned].run(payload)
+        else:
+            orchestrator = create_orchestrator()
+            orch_payload = dict(payload)
+            orch_payload.setdefault("goal", task.title)
+            orch_payload.setdefault("task_type", str(payload.get("task_type", "general")))
+            orch_payload["granted_permissions"] = granted_perms
+            result = await orchestrator.run(orch_payload)
+
+        task.outputs = result
+        res_status = str(result.get("status", "completed")).lower()
+        if res_status == "pending_approval":
+            task.state = TaskState.PAUSED
+            msg = "Task paused awaiting human approval for gated steps"
+        elif res_status in ("error", "failed"):
+            failures = list(task.failure_history or [])
+            failures.append({"timestamp": now_iso, "error": result.get("error", "Execution failed")})
+            task.failure_history = failures
+            if task.retry_budget > 0:
+                task.retry_budget -= 1
+            task.state = TaskState.FAILED
+            msg = str(result.get("error", "Task execution failed"))
+        else:
+            task.state = TaskState.COMPLETED
+            task.completed_at = datetime.now(timezone.utc)
+            msg = "Task executed successfully"
+    except Exception as exc:
+        failures = list(task.failure_history or [])
+        failures.append({"timestamp": now_iso, "error": str(exc)})
+        task.failure_history = failures
+        if task.retry_budget > 0:
+            task.retry_budget -= 1
+        task.state = TaskState.FAILED
+        task.outputs = {"status": "error", "error": str(exc)}
+        msg = f"Task execution failed: {exc}"
+
+    trail.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": "execute_finished",
+            "details": {"state": task.state.value if isinstance(task.state, TaskState) else str(task.state)},
         }
     )
     task.audit_trail = trail
 
     await session.commit()
+    state_val = task.state.value if isinstance(task.state, TaskState) else str(task.state)
     return ExecuteTaskResponse(
         task_id=task_id,
-        state=TaskState.RUNNING.value,
-        message="Task dispatched for execution",
+        state=state_val,
+        message=msg,
     )
 
 

@@ -5,12 +5,56 @@ import java.net.URI
 
 enum class WaveformState(val label: String) {
     Idle("Idle"),
+    Connecting("Connecting..."),
     Listening("Listening"),
+    Finalizing("Finalizing..."),
     Thinking("Thinking"),
+    Responding("Responding"),
+    Speaking("Speaking"),
     Executing("Executing"),
     Finished("Finished")
 }
 
+enum class VoiceConversationMode(val displayName: String, val badge: String, val description: String) {
+    TAP_TO_TALK("Tap to Talk", "💬 Tap-to-Talk", "Tap mic to speak, get response, then stop."),
+    HANDS_FREE("Hands-Free", "🔄 Hands-Free", "Continuous voice dialogue: resumes listening automatically after Javo speaks.")
+}
+
+enum class RecognizerMode(val displayName: String, val description: String) {
+    AUTOMATIC("Automatic", "Smart on-device with online fallback"),
+    ON_DEVICE_ONLY("On-Device Only", "Strictly offline / on-device"),
+    ONLINE_ONLY("Online Only", "Standard system speech recognizer")
+}
+
+data class LanguageUnavailableEvent(
+    val language: VoiceLanguage,
+    val messageHindi: String,
+    val messageEnglish: String,
+    val canSwitchToOnline: Boolean = true,
+    val canDownloadModel: Boolean = true
+)
+
+data class VoiceDiagnosticsData(
+    val androidVersion: String,
+    val apiLevel: Int,
+    val deviceModel: String,
+    val isSystemRecognitionAvailable: Boolean,
+    val isOnDeviceRecognitionAvailable: Boolean,
+    val selectedRecognizerMode: RecognizerMode,
+    val activeRecognizerType: String,
+    val selectedLanguage: VoiceLanguage,
+    val languageCode: String,
+    val isInstalledOnDevice: Boolean?,
+    val isSupportedOnDevice: Boolean?,
+    val isSupportedOnline: Boolean?,
+    val hasRecordAudioPermission: Boolean,
+    val waveformState: WaveformState,
+    val lastErrorCode: Int?,
+    val lastErrorMessage: String?,
+    val reconnectAttemptCount: Int
+)
+
+@Serializable
 enum class VoiceLanguage(val displayName: String, val code: String) {
     English("English", "en"),
     Hindi("Hindi", "hi"),
@@ -25,6 +69,51 @@ enum class AgentCategory(val label: String) {
     System("System")
 }
 
+enum class OperatingMode(val displayName: String, val badge: String, val description: String) {
+    ANDROID_STANDALONE("Android Standalone", "📱 Standalone", "Full local assistant, mobile agents, tasks, drafts & BYOK AI. No Windows PC needed."),
+    WINDOWS_ENHANCED("Windows Enhanced", "💻 Windows Synced", "Paired with Javo Windows runtime. Unlocks local Ollama models & desktop automation."),
+    CLOUD_MODE("Cloud Mode", "☁️ Cloud Mode", "Direct connection to secure remote AI and cloud integrations.")
+}
+
+data class CustomAiEndpointConfig(
+    val endpointUrl: String = "",
+    val apiKey: String = "",
+    val modelName: String = "",
+    val isEnabled: Boolean = false
+)
+
+enum class SocialPlatform(
+    val id: String,
+    val displayName: String,
+    val oauthSupported: Boolean,
+    val requiredScopes: List<String>
+) {
+    YOUTUBE("youtube", "YouTube Channels", true, listOf("https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/youtube.upload")),
+    INSTAGRAM("instagram", "Instagram Professional", true, listOf("instagram_basic", "instagram_content_publish")),
+    FACEBOOK("facebook", "Facebook Pages", true, listOf("pages_show_list", "pages_read_engagement", "pages_manage_posts")),
+    TELEGRAM("telegram", "Telegram Bot", false, listOf("bot_token"))
+}
+
+data class SocialConnectionInfo(
+    val platform: SocialPlatform,
+    val isConnected: Boolean,
+    val accountName: String? = null,
+    val accountHandle: String? = null,
+    val statusLabel: String = "Not Connected",
+    val statusDescription: String = "Connect with official OAuth to enable publishing.",
+    val requiresSetup: Boolean = false,
+    val lastSyncEpochMs: Long? = null
+)
+
+data class AgentCapability(
+    val isAndroidCompatible: Boolean,
+    val requiresWindows: Boolean,
+    val isCloudOptional: Boolean = false,
+    val requiresExternalAccount: Boolean = false,
+    val requiresApproval: Boolean = false,
+    val executionPlatform: String = if (isAndroidCompatible) "Android Local" else "Windows Only"
+)
+
 data class AgentInfo(
     val number: Int,
     val slug: String,
@@ -35,40 +124,41 @@ data class AgentInfo(
     val requiredPermissions: List<String>,
     val isEnabled: Boolean = true,
     val status: String = "Standby",
-    val isTemplate: Boolean = false
+    val isTemplate: Boolean = false,
+    val capability: AgentCapability = AgentCapability(isAndroidCompatible = true, requiresWindows = false)
 )
 
 object AgentRoster {
     val allAgents: List<AgentInfo> = listOf(
-        AgentInfo(1, "growth_scientist", "Growth Scientist", AgentCategory.Growth, "Analyzes growth metrics, suggests content strategies, and designs A/B experiments.", listOf("Metric analysis", "A/B design", "Growth forecasts"), listOf("analytics:read", "goals:read"), true, "Active"),
-        AgentInfo(2, "content_factory", "Content Factory", AgentCategory.Content, "Generates multi-platform drafts, hooks, and captions using your brand voice.", listOf("Caption drafting", "Hook writing", "Asset prep"), listOf("content:write", "ai:invoke"), true, "Active"),
-        AgentInfo(3, "smart_memory", "Smart Memory", AgentCategory.System, "Stores and retrieves contextual preferences and past campaign learnings locally.", listOf("Context recall", "Preference memory"), listOf("memory:read", "memory:write"), true, "Active"),
-        AgentInfo(4, "self_upgrading_engineer", "Self-Upgrading Engineer", AgentCategory.System, "Monitors runtime health and suggests local configuration optimizations.", listOf("Health checks", "Config tuning"), listOf("system:read"), false, "Standby"),
-        AgentInfo(5, "telegram_agent", "Telegram Agent", AgentCategory.Operations, "Handles Telegram bot commands, approval alerts, and status digests.", listOf("Bot commands", "Approval alerts"), listOf("telegram:send"), true, "Active"),
-        AgentInfo(6, "brand_manager", "Brand Manager", AgentCategory.Content, "Enforces brand tone, vocabulary guardrails, and visual identity rules.", listOf("Tone audit", "Brand compliance"), listOf("brand:read", "content:read"), true, "Standby"),
-        AgentInfo(7, "voice_agent", "Voice Agent", AgentCategory.Operations, "Processes English, Hindi, and Hinglish voice commands into structured actions.", listOf("Speech intent", "Multilingual reply"), listOf("voice:process", "tasks:create"), true, "Active"),
-        AgentInfo(8, "api_integration", "API Integration", AgentCategory.System, "Manages external social API sync, rate limits, and token refresh hooks.", listOf("API sync", "Rate limiting"), listOf("accounts:read"), true, "Standby"),
-        AgentInfo(9, "content_publisher", "Content Publisher", AgentCategory.Content, "Publishes approved posts to connected Facebook, Instagram, and YouTube channels.", listOf("Scheduled publish", "Post verification"), listOf("content:publish", "approval:required"), true, "Standby"),
-        AgentInfo(10, "community_manager", "Community Manager", AgentCategory.Growth, "Monitors audience comments, summarizes sentiment, and drafts replies.", listOf("Sentiment scan", "Reply drafting"), listOf("comments:read", "approval:required"), true, "Standby"),
-        AgentInfo(11, "account_guardian", "Account Guardian", AgentCategory.Security, "Monitors connected social accounts for unusual auth changes or policy flags.", listOf("Anomaly detection", "Token expiry alert"), listOf("accounts:read", "security:alert"), true, "Active"),
-        AgentInfo(12, "resource_optimizer", "Resource Optimizer", AgentCategory.System, "Balances CPU/RAM limits on 8GB+ Windows hosts when running local AI models.", listOf("RAM guard", "Queue scheduling"), listOf("system:read"), true, "Active"),
-        AgentInfo(13, "quality_inspector", "Quality Inspector", AgentCategory.Content, "Checks drafts for formatting issues, broken links, and compliance rules.", listOf("Pre-publish QA", "Link checks"), listOf("content:read"), true, "Standby"),
-        AgentInfo(14, "niche_radar", "Niche Radar", AgentCategory.Growth, "Tracks niche topics and seasonal publishing opportunities.", listOf("Topic radar", "Trend digest"), listOf("analytics:read"), false, "Standby"),
-        AgentInfo(15, "approval_manager", "Approval Manager", AgentCategory.Operations, "Routes sensitive actions into Supervised Autopilot approval queues.", listOf("Risk scoring", "Approval routing"), listOf("approvals:manage"), true, "Active"),
-        AgentInfo(16, "budget_guardian", "Budget Guardian", AgentCategory.Operations, "Enforces strict zero-cost guardrails and API token ceilings.", listOf("Zero-cost cap", "Usage alerts"), listOf("billing:guard"), true, "Active"),
-        AgentInfo(17, "content_recycler", "Content Recycler", AgentCategory.Content, "Identifies evergreen posts and adapts them into fresh formats.", listOf("Evergreen remix", "Format adapt"), listOf("content:read", "content:write"), false, "Standby"),
-        AgentInfo(18, "brand_studio", "Brand Studio", AgentCategory.Content, "Prepares consistent thumbnail overlays, color palettes, and layout templates.", listOf("Template specs", "Palette checks"), listOf("brand:read"), false, "Standby"),
-        AgentInfo(19, "weekly_analyst", "Weekly Analyst", AgentCategory.Growth, "Compiles weekly performance summaries distinguishing real vs unavailable data.", listOf("Weekly digest", "KPI delta"), listOf("analytics:read"), true, "Standby"),
-        AgentInfo(20, "recovery_agent", "Recovery Agent", AgentCategory.System, "Reconciles missed jobs and recovers interrupted tasks after device sleep.", listOf("Job recovery", "Retry backoff"), listOf("tasks:write"), true, "Active"),
-        AgentInfo(21, "plugin_trust", "Plugin Trust", AgentCategory.Security, "Audits local skill manifests and enforces sandbox permission boundaries.", listOf("Manifest audit", "Trust scoring"), listOf("security:read"), true, "Standby"),
-        AgentInfo(22, "security_guardian", "Security Guardian", AgentCategory.Security, "Watches audit logs, device pairing sessions, and triggers emergency stops.", listOf("Audit watch", "Emergency stop"), listOf("security:write"), true, "Active"),
-        AgentInfo(23, "goal_persistence", "Goal Persistence", AgentCategory.Growth, "Tracks long-term milestones and updates goal completion percentages.", listOf("Milestone sync", "Goal reminders"), listOf("goals:write"), true, "Standby"),
-        AgentInfo(24, "workflow_automation", "Workflow Automation", AgentCategory.Operations, "Executes deterministic node graphs with condition and approval gates.", listOf("DAG runner", "Condition eval"), listOf("workflows:run"), true, "Active"),
-        AgentInfo(25, "reporting_agent", "Reporting Agent", AgentCategory.Growth, "Generates structured CSV/Markdown reports for local export.", listOf("Export reports", "Audit summary"), listOf("reports:export"), true, "Standby"),
-        AgentInfo(26, "release_agent", "Release Agent", AgentCategory.System, "Tracks local runtime versions and verifies SHA-256 release checksums.", listOf("Version check", "Checksum verify"), listOf("system:read"), false, "Standby"),
-        AgentInfo(27, "device_sync_agent", "Device Sync Agent", AgentCategory.Operations, "Coordinates encrypted LAN/HTTPS state synchronization with Android clients.", listOf("Delta sync", "Offline queue"), listOf("devices:sync"), true, "Active"),
-        AgentInfo(28, "ux_assistant", "UX Assistant", AgentCategory.System, "Provides accessibility checks and onboarding guidance across surfaces.", listOf("Onboarding help", "Accessibility check"), listOf("ui:assist"), false, "Standby"),
-        AgentInfo(29, "compliance_agent", "Compliance Agent", AgentCategory.Security, "Validates platform disclosure, privacy, and supervised autopilot boundaries.", listOf("Policy check", "Disclosure audit"), listOf("compliance:read"), true, "Active")
+        AgentInfo(1, "growth_scientist", "Growth Scientist", AgentCategory.Growth, "Analyzes growth metrics, suggests content strategies, and designs A/B experiments.", listOf("Metric analysis", "A/B design", "Growth forecasts"), listOf("analytics:read", "goals:read"), true, "Configured", capability = AgentCapability(true, false, isCloudOptional = true)),
+        AgentInfo(2, "content_factory", "Content Factory", AgentCategory.Content, "Generates multi-platform drafts, hooks, and captions using your brand voice.", listOf("Caption drafting", "Hook writing", "Asset prep"), listOf("content:write", "ai:invoke"), true, "Configured", capability = AgentCapability(true, false, isCloudOptional = true)),
+        AgentInfo(3, "smart_memory", "Smart Memory", AgentCategory.System, "Stores and retrieves contextual preferences and past campaign learnings locally.", listOf("Context recall", "Preference memory"), listOf("memory:read", "memory:write"), true, "Configured", capability = AgentCapability(true, false)),
+        AgentInfo(4, "self_upgrading_engineer", "Self-Upgrading Engineer", AgentCategory.System, "Monitors runtime health and suggests local configuration optimizations.", listOf("Health checks", "Config tuning"), listOf("system:read"), false, "Standby", capability = AgentCapability(false, true, executionPlatform = "Windows Only")),
+        AgentInfo(5, "telegram_agent", "Telegram Agent", AgentCategory.Operations, "Handles Telegram bot commands, approval alerts, and status digests.", listOf("Bot commands", "Approval alerts"), listOf("telegram:send"), true, "Configured", capability = AgentCapability(true, false, isCloudOptional = true, requiresExternalAccount = true)),
+        AgentInfo(6, "brand_manager", "Brand Manager", AgentCategory.Content, "Enforces brand tone, vocabulary guardrails, and visual identity rules.", listOf("Tone audit", "Brand compliance"), listOf("brand:read", "content:read"), true, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(7, "voice_agent", "Voice Agent", AgentCategory.Operations, "Processes English, Hindi, and Hinglish voice commands into structured actions.", listOf("Speech intent", "Multilingual reply"), listOf("voice:process", "tasks:create"), true, "Configured", capability = AgentCapability(true, false)),
+        AgentInfo(8, "api_integration", "API Integration", AgentCategory.System, "Manages external social API sync, rate limits, and token refresh hooks.", listOf("API sync", "Rate limiting"), listOf("accounts:read"), true, "Standby", capability = AgentCapability(true, false, requiresExternalAccount = true)),
+        AgentInfo(9, "content_publisher", "Content Publisher", AgentCategory.Content, "Publishes approved posts to connected Facebook, Instagram, and YouTube channels.", listOf("Scheduled publish", "Post verification"), listOf("content:publish", "approval:required"), true, "Standby", capability = AgentCapability(true, false, requiresExternalAccount = true, requiresApproval = true)),
+        AgentInfo(10, "community_manager", "Community Manager", AgentCategory.Growth, "Monitors audience comments, summarizes sentiment, and drafts replies.", listOf("Sentiment scan", "Reply drafting"), listOf("comments:read", "approval:required"), true, "Standby", capability = AgentCapability(true, false, requiresExternalAccount = true, requiresApproval = true)),
+        AgentInfo(11, "account_guardian", "Account Guardian", AgentCategory.Security, "Monitors connected social accounts for unusual auth changes or policy flags.", listOf("Anomaly detection", "Token expiry alert"), listOf("accounts:read", "security:alert"), true, "Configured", capability = AgentCapability(true, false, requiresExternalAccount = true)),
+        AgentInfo(12, "resource_optimizer", "Resource Optimizer", AgentCategory.System, "Balances CPU/RAM limits on 8GB+ Windows hosts when running local AI models.", listOf("RAM guard", "Queue scheduling"), listOf("system:read"), true, "Configured", capability = AgentCapability(false, true, executionPlatform = "Windows Only")),
+        AgentInfo(13, "quality_inspector", "Quality Inspector", AgentCategory.Content, "Checks drafts for formatting issues, broken links, and compliance rules.", listOf("Pre-publish QA", "Link checks"), listOf("content:read"), true, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(14, "niche_radar", "Niche Radar", AgentCategory.Growth, "Tracks niche topics and seasonal publishing opportunities.", listOf("Topic radar", "Trend digest"), listOf("analytics:read"), false, "Standby", capability = AgentCapability(true, false, isCloudOptional = true)),
+        AgentInfo(15, "approval_manager", "Approval Manager", AgentCategory.Operations, "Routes sensitive actions into Supervised Autopilot approval queues.", listOf("Risk scoring", "Approval routing"), listOf("approvals:manage"), true, "Configured", capability = AgentCapability(true, false, requiresApproval = true)),
+        AgentInfo(16, "budget_guardian", "Budget Guardian", AgentCategory.Operations, "Enforces strict zero-cost guardrails and API token ceilings.", listOf("Zero-cost cap", "Usage alerts"), listOf("billing:guard"), true, "Configured", capability = AgentCapability(true, false)),
+        AgentInfo(17, "content_recycler", "Content Recycler", AgentCategory.Content, "Identifies evergreen posts and adapts them into fresh formats.", listOf("Evergreen remix", "Format adapt"), listOf("content:read", "content:write"), false, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(18, "brand_studio", "Brand Studio", AgentCategory.Content, "Prepares consistent thumbnail overlays, color palettes, and layout templates.", listOf("Template specs", "Palette checks"), listOf("brand:read"), false, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(19, "weekly_analyst", "Weekly Analyst", AgentCategory.Growth, "Compiles weekly performance summaries distinguishing real vs unavailable data.", listOf("Weekly digest", "KPI delta"), listOf("analytics:read"), true, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(20, "recovery_agent", "Recovery Agent", AgentCategory.System, "Reconciles missed jobs and recovers interrupted tasks after device sleep.", listOf("Job recovery", "Retry backoff"), listOf("tasks:write"), true, "Configured", capability = AgentCapability(true, false)),
+        AgentInfo(21, "plugin_trust", "Plugin Trust", AgentCategory.Security, "Audits local skill manifests and enforces sandbox permission boundaries.", listOf("Manifest audit", "Trust scoring"), listOf("security:read"), true, "Standby", capability = AgentCapability(false, true, executionPlatform = "Windows Only")),
+        AgentInfo(22, "security_guardian", "Security Guardian", AgentCategory.Security, "Watches audit logs, device pairing sessions, and triggers emergency stops.", listOf("Audit watch", "Emergency stop"), listOf("security:write"), true, "Configured", capability = AgentCapability(true, false)),
+        AgentInfo(23, "goal_persistence", "Goal Persistence", AgentCategory.Growth, "Tracks long-term milestones and updates goal completion percentages.", listOf("Milestone sync", "Goal reminders"), listOf("goals:write"), true, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(24, "workflow_automation", "Workflow Automation", AgentCategory.Operations, "Executes deterministic node graphs with condition and approval gates.", listOf("DAG runner", "Condition eval"), listOf("workflows:run"), true, "Configured", capability = AgentCapability(true, false)),
+        AgentInfo(25, "reporting_agent", "Reporting Agent", AgentCategory.Growth, "Generates structured CSV/Markdown reports for local export.", listOf("Export reports", "Audit summary"), listOf("reports:export"), true, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(26, "release_agent", "Release Agent", AgentCategory.System, "Tracks local runtime versions and verifies SHA-256 release checksums.", listOf("Version check", "Checksum verify"), listOf("system:read"), false, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(27, "device_sync_agent", "Device Sync Agent", AgentCategory.Operations, "Coordinates encrypted LAN/HTTPS state synchronization with Android clients.", listOf("Delta sync", "Offline queue"), listOf("devices:sync"), true, "Configured", capability = AgentCapability(true, true, executionPlatform = "Windows Synced")),
+        AgentInfo(28, "ux_assistant", "UX Assistant", AgentCategory.System, "Provides accessibility checks and onboarding guidance across surfaces.", listOf("Onboarding help", "Accessibility check"), listOf("ui:assist"), false, "Standby", capability = AgentCapability(true, false)),
+        AgentInfo(29, "compliance_agent", "Compliance Agent", AgentCategory.Security, "Validates platform disclosure, privacy, and supervised autopilot boundaries.", listOf("Policy check", "Disclosure audit"), listOf("compliance:read"), true, "Configured", capability = AgentCapability(true, false))
     )
 
     val templates: List<AgentInfo> = listOf(
@@ -78,13 +168,16 @@ object AgentRoster {
     )
 }
 
+@Serializable
 data class VoiceMessage(
     val id: String,
     val isUser: Boolean,
     val text: String,
     val language: VoiceLanguage,
     val timestampLabel: String,
-    val actionHint: String? = null
+    val actionHint: String? = null,
+    // This is set only after a successful response from the selected AI provider.
+    val isVerifiedAiReply: Boolean = false
 )
 
 data class WorkflowInfo(
@@ -115,13 +208,14 @@ data class AnalyticsMetric(
 
 enum class ProviderType(val label: String) {
     LOCAL_PC_OLLAMA("Local AI via Paired Windows PC (Ollama)"),
-    GEMINI_DIRECT("Google Gemini Developer API (Keystore)")
+    GEMINI_DIRECT("Google Gemini Developer API (Keystore)"),
+    CUSTOM_ENDPOINT("Custom AI Endpoint (OpenAI-compatible / HTTP)")
 }
 
 data class AIProviderConfig(
     val activeProvider: ProviderType = ProviderType.LOCAL_PC_OLLAMA,
     val localModelName: String = "qwen2.5:3b-instruct-q4_K_M",
-    val geminiModelName: String = "gemini-2.5-flash",
+    val geminiModelName: String = "gemini-3.5-flash-lite",
     val hasGeminiKeyStored: Boolean = false,
     val zeroCostGuardEnabled: Boolean = true,
     val privacyFirewallStrict: Boolean = true

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hmac
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.resource_manager import get_resource_manager
 from app.core.scheduler import scheduler
+from app.core.security import require_auth, require_owner
 from app.database import get_session
 from app.models.account import SocialAccount
 from app.models.agent import AgentDefinition
@@ -24,6 +26,7 @@ from app.models.task import Goal, Task, TaskState
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 _TELEGRAM_OVERRIDES: dict[str, Any] = {}
+_PROCESSED_UPDATE_IDS: set[int] = set()
 
 SUPPORTED_BOT_COMMANDS = [
     "/start",
@@ -47,13 +50,17 @@ SUPPORTED_BOT_COMMANDS = [
 # ---------------------------------------------------------------------------
 class TelegramConfigResponse(BaseModel):
     configured: bool
+    mode: str = "disabled"
     webhook_url: Optional[str] = None
     allowed_users: list[str] = Field(default_factory=list)
+    has_webhook_secret: bool = False
 
 
 class TelegramConfigUpdate(BaseModel):
     bot_token: Optional[str] = None
+    mode: Optional[str] = None
     webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
     allowed_users: Optional[list[str]] = None
 
 
@@ -81,9 +88,16 @@ class TelegramSendResponse(BaseModel):
 # ---------------------------------------------------------------------------
 def _effective_telegram_config() -> dict[str, Any]:
     s = get_settings()
+    configured_mode = _TELEGRAM_OVERRIDES.get("mode", getattr(s, "telegram_mode", "disabled"))
+    webhook_url = _TELEGRAM_OVERRIDES.get("webhook_url", s.telegram_webhook_url)
+    # If mode is not explicitly polling and a webhook URL is configured, treat as webhook
+    if configured_mode == "disabled" and webhook_url:
+        configured_mode = "webhook"
     return {
         "bot_token": _TELEGRAM_OVERRIDES.get("bot_token", s.telegram_bot_token),
-        "webhook_url": _TELEGRAM_OVERRIDES.get("webhook_url", s.telegram_webhook_url),
+        "mode": configured_mode,
+        "webhook_url": webhook_url,
+        "webhook_secret": _TELEGRAM_OVERRIDES.get("webhook_secret", s.telegram_webhook_secret),
         "allowed_users": _TELEGRAM_OVERRIDES.get("allowed_users", list(s.telegram_allowed_users)),
     }
 
@@ -92,30 +106,80 @@ def _effective_telegram_config() -> dict[str, Any]:
 # Endpoints
 # ---------------------------------------------------------------------------
 @router.get("/config", response_model=TelegramConfigResponse)
-async def get_telegram_config() -> TelegramConfigResponse:
-    """Get current Telegram bot configuration (bot token is always redacted)."""
+async def get_telegram_config(
+    user: dict = Depends(require_owner),
+) -> TelegramConfigResponse:
+    """Get current Telegram bot configuration (bot token and secret are always redacted)."""
+    del user
     cfg = _effective_telegram_config()
     return TelegramConfigResponse(
         configured=bool(cfg["bot_token"]),
+        mode=str(cfg.get("mode") or "disabled"),
         webhook_url=cfg["webhook_url"],
         allowed_users=cfg["allowed_users"],
+        has_webhook_secret=bool(cfg.get("webhook_secret")),
     )
 
 
 @router.put("/config", response_model=TelegramConfigResponse)
-async def update_telegram_config(body: TelegramConfigUpdate) -> TelegramConfigResponse:
+async def update_telegram_config(
+    body: TelegramConfigUpdate,
+    user: dict = Depends(require_owner),
+) -> TelegramConfigResponse:
     """Update Telegram bot configuration."""
     updates = body.model_dump(exclude_unset=True)
     _TELEGRAM_OVERRIDES.update(updates)
-    return await get_telegram_config()
+    return await get_telegram_config(user=user)
 
 
 @router.post("/webhook", response_model=TelegramWebhookResponse)
 async def telegram_webhook(
     update: dict[str, Any],
+    x_telegram_bot_api_secret_token: Optional[str] = Header(
+        default=None, alias="X-Telegram-Bot-Api-Secret-Token"
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> TelegramWebhookResponse:
-    """Receive incoming Telegram Bot API webhook updates with fail-closed pairing."""
+    """Receive incoming Telegram Bot API webhook updates with secret verification, replay defense, and fail-closed pairing."""
+    cfg = _effective_telegram_config()
+    mode = str(cfg.get("mode", "disabled")).lower()
+
+    # Fail closed if polling mode is active
+    if mode == "polling":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram webhook endpoint is disabled: polling mode is active",
+        )
+
+    # Fail closed: webhook secret is strictly required when receiving webhooks
+    expected_secret = cfg.get("webhook_secret")
+    if not expected_secret or not isinstance(expected_secret, str) or len(expected_secret.strip()) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram webhook requires a securely configured secret token; endpoint operates fail-closed",
+        )
+
+    # Secret header must match via constant-time verification
+    clean_secret = expected_secret.strip()
+    if not x_telegram_bot_api_secret_token or not hmac.compare_digest(
+        x_telegram_bot_api_secret_token, clean_secret
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing Telegram webhook secret token",
+        )
+
+    update_id = update.get("update_id")
+    if isinstance(update_id, int):
+        if update_id in _PROCESSED_UPDATE_IDS:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Duplicate Telegram update_id rejected (replay detected)",
+            )
+        _PROCESSED_UPDATE_IDS.add(update_id)
+        if len(_PROCESSED_UPDATE_IDS) > 10000:
+            _PROCESSED_UPDATE_IDS.clear()
+
     message = update.get("message") or update.get("edited_message")
     if not isinstance(message, dict):
         return TelegramWebhookResponse(ok=True, handled=False)
@@ -124,6 +188,28 @@ async def telegram_webhook(
     text = (message.get("text") or "").strip()
     cmd = text.split()[0].lower() if text.startswith("/") else ""
     arg = text[len(cmd):].strip() if cmd else ""
+
+    # Natural-language command mapping for authorized paired users
+    if not cmd and text:
+        low = text.lower()
+        if any(k in low for k in ("emergency stop", "kill switch", "turant band")):
+            cmd = "/stop"
+        elif any(k in low for k in ("pause", "ruko", "band karo")):
+            cmd = "/pause"
+        elif any(k in low for k in ("resume", "chalu", "wapas start")):
+            cmd = "/resume"
+        elif any(k in low for k in ("goal", "target", "views", "lakshya")):
+            cmd = "/goals"
+        elif any(k in low for k in ("schedule", "queue", "post")):
+            cmd = "/schedule"
+        elif any(k in low for k in ("status", "haal", "kaisa", "report")):
+            cmd = "/status"
+        elif any(k in low for k in ("agent", "team")):
+            cmd = "/agents"
+        elif any(k in low for k in ("security", "privacy")):
+            cmd = "/security"
+        elif any(k in low for k in ("help", "madad", "commands")):
+            cmd = "/help"
 
     cfg = _effective_telegram_config()
     allowed = [str(u).strip() for u in cfg["allowed_users"] if str(u).strip()]
@@ -235,6 +321,21 @@ async def telegram_webhook(
                 task.updated_at = datetime.now(timezone.utc)
                 await session.commit()
                 reply = f"Approved task `{arg}` (moved to pending)."
+    elif cmd == "/stop":
+        get_resource_manager().trigger_emergency_stop(f"Telegram emergency stop by {sender}")
+        if scheduler.is_running and scheduler._scheduler is not None:
+            scheduler._scheduler.pause()
+        session.add(
+            AuditLog(
+                id=str(uuid4()),
+                action=AuditAction.EMERGENCY_STOP,
+                severity=AuditSeverity.CRITICAL,
+                resource_type="telegram",
+                description=f"Emergency stop triggered by Telegram user {sender}",
+            )
+        )
+        await session.commit()
+        reply = "EMERGENCY STOP activated via Telegram. All automation halted."
     elif cmd == "/reject":
         if not arg:
             reply = "Usage: /reject <task_id>"
@@ -260,13 +361,27 @@ async def telegram_webhook(
 
 
 @router.post("/send", response_model=TelegramSendResponse)
-async def send_telegram_message(body: TelegramSendRequest) -> TelegramSendResponse:
-    """Queue or send an outbound message via the configured Telegram bot."""
+async def send_telegram_message(
+    body: TelegramSendRequest,
+    user: dict = Depends(require_auth),
+) -> TelegramSendResponse:
+    """Scrub secrets via PrivacyFirewall and queue or send an outbound message via Telegram bot."""
+    del user
+    from app.core.privacy_firewall import get_privacy_firewall
+
     cfg = _effective_telegram_config()
     if not cfg["bot_token"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Telegram bot token is not configured",
+        )
+
+    scrubbed = get_privacy_firewall().redact_pii(body.text)
+    if scrubbed != body.text:
+        return TelegramSendResponse(
+            ok=True,
+            chat_id=body.chat_id,
+            status="queued_redacted",
         )
 
     return TelegramSendResponse(

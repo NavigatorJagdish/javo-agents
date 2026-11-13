@@ -51,6 +51,9 @@ interface ApprovalDao {
     @Query("UPDATE approvals SET pendingSync = 0 WHERE id = :id")
     suspend fun markSynced(id: String)
 
+    @Query("DELETE FROM approvals WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM approvals")
     suspend fun clearAll()
 }

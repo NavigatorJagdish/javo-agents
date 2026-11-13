@@ -2,7 +2,7 @@ name: CI — Frontend & Shared Packages
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "fix/**"]
     paths:
       - "packages/**"
       - "apps/dashboard/**"

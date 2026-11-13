@@ -10,6 +10,35 @@ function resolveApiBaseUrl(): string {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
+let inMemoryAuthToken: string | null = null;
+
+export function setApiAuthToken(token: string | null): void {
+  inMemoryAuthToken = token;
+}
+
+export function getApiAuthToken(): string | null {
+  return inMemoryAuthToken;
+}
+
+// In Electron shell, bootstrap auth token over IPC in-memory without query strings or localStorage
+if (typeof window !== 'undefined') {
+  const desktop = (window as unknown as {
+    javoDesktop?: { getApiConfig?: () => Promise<{ baseUrl: string; authToken: string | null }> };
+  }).javoDesktop;
+  if (desktop?.getApiConfig) {
+    desktop
+      .getApiConfig()
+      .then((cfg) => {
+        if (cfg?.authToken) {
+          setApiAuthToken(cfg.authToken);
+        }
+      })
+      .catch(() => {
+        // Desktop IPC bridge absent (running in browser mode)
+      });
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   detail: unknown;
@@ -47,12 +76,17 @@ export async function apiRequest<T>(
   const { body, params, headers, ...rest } = options;
   const url = buildUrl(path, params);
 
+  const headersObj: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(headers as Record<string, string> ?? {}),
+  };
+  if (inMemoryAuthToken && !headersObj['Authorization']) {
+    headersObj['Authorization'] = `Bearer ${inMemoryAuthToken}`;
+  }
+
   const response = await fetch(url, {
     ...rest,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(headers ?? {}),
-    },
+    headers: headersObj,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 

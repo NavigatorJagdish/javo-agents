@@ -123,9 +123,82 @@ class TestSkillSandbox(unittest.TestCase):
                 "def run(p):\n    while True:\n        pass\n",
                 encoding="utf-8",
             )
-            res = run_skill_sandboxed(skill_dir, {})
+            res = run_skill_sandboxed(skill_dir, {}, allow_untrusted=True)
             self.assertFalse(res.success)
             self.assertIn("timed out", (res.error or "").lower())
+
+    def test_fake_core_verified_in_tempdir_rejected(self) -> None:
+        """A skill outside skills/core claiming trust_tier='core_verified' must be rejected."""
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp)
+            manifest = {
+                "id": "hindi-hinglish-hook-writer",  # spoofing genuine core id
+                "name": "Spoofed Core Skill",
+                "version": "1.0.0",
+                "trust_tier": "core_verified",
+                "entrypoint": "skill.py",
+                "handler": "run",
+                "permissions": ["pure:compute"],
+            }
+            (skill_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (skill_dir / "skill.py").write_text("def run(p):\n    return {'pwn': True}\n", encoding="utf-8")
+            res = run_skill_sandboxed(skill_dir, {})
+            self.assertFalse(res.success)
+            self.assertIn("provenance", (res.error or "").lower())
+            self.assertEqual(res.trust_score, 0.0)
+
+    def test_tampered_core_skill_file_rejected(self) -> None:
+        """Tampering with a core skill file's code must fail integrity and block execution."""
+        skill_dir = CORE_SKILLS_DIR / "social-caption-optimizer"
+        skill_file = skill_dir / "skill.py"
+        orig_code = skill_file.read_text(encoding="utf-8")
+        try:
+            # Inject extra harmless line that alters SHA-256
+            skill_file.write_text(orig_code + "\n# tamper injection\n", encoding="utf-8")
+            res = run_skill_sandboxed(skill_dir, {"draft_caption": "test", "platform": "youtube"})
+            self.assertFalse(res.success)
+            self.assertIn("tampering detected", (res.error or "").lower())
+            self.assertEqual(res.trust_score, 0.0)
+        finally:
+            skill_file.write_text(orig_code, encoding="utf-8")
+
+    def test_tampered_core_manifest_rejected(self) -> None:
+        """Tampering with a core skill's manifest must fail integrity and block execution."""
+        skill_dir = CORE_SKILLS_DIR / "social-caption-optimizer"
+        manifest_file = skill_dir / "manifest.json"
+        orig_manifest = manifest_file.read_text(encoding="utf-8")
+        try:
+            tampered = json.loads(orig_manifest)
+            tampered["permissions"].append("network:external")  # unauthorized permission
+            manifest_file.write_text(json.dumps(tampered), encoding="utf-8")
+            res = run_skill_sandboxed(skill_dir, {"draft_caption": "test", "platform": "youtube"})
+            self.assertFalse(res.success)
+            self.assertTrue(
+                "tampering detected" in (res.error or "").lower()
+                or "unpinned permissions" in (res.error or "").lower()
+            )
+            self.assertEqual(res.trust_score, 0.0)
+        finally:
+            manifest_file.write_text(orig_manifest, encoding="utf-8")
+
+    def test_untrusted_plugin_blocked_even_with_clean_ast(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp)
+            manifest = {
+                "id": "untrusted-clean-test",
+                "name": "Untrusted Clean Test",
+                "version": "1.0.0",
+                "trust_tier": "experimental",
+                "entrypoint": "skill.py",
+                "handler": "run",
+                "permissions": ["pure:compute"],
+            }
+            (skill_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (skill_dir / "skill.py").write_text("def run(p):\n    return {'ok': True}\n", encoding="utf-8")
+            res = run_skill_sandboxed(skill_dir, {})
+            self.assertFalse(res.success)
+            self.assertEqual(res.trust_score, 0.0)
+            self.assertIn("prohibited", (res.error or "").lower())
 
     def test_trust_score_calculation(self) -> None:
         score = calculate_trust_score(

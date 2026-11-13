@@ -12,7 +12,7 @@ import retrofit2.http.Path
 @Serializable
 data class HealthDto(
     val status: String = "ok",
-    val version: String = "0.1.0-alpha",
+    val version: String = "0.1.1-alpha",
     @SerialName("uptime_seconds") val uptimeSeconds: Double = 0.0
 )
 
@@ -21,13 +21,14 @@ data class PairConfirmRequest(
     @SerialName("device_id") val deviceId: String,
     @SerialName("device_name") val deviceName: String,
     val platform: String = "android",
-    @SerialName("device_token") val deviceToken: String
+    @SerialName("device_token") val deviceToken: String = ""
 )
 
 @Serializable
 data class PairConfirmResponse(
     val paired: Boolean = true,
     @SerialName("device_id") val deviceId: String = "",
+    @SerialName("device_token") val deviceToken: String = "",
     val message: String = "Paired"
 )
 
@@ -68,8 +69,12 @@ data class EmergencyStopResponse(
 
 @Serializable
 data class SyncPayloadDto(
+    @SerialName("device_id") val deviceId: String = "",
+    val status: String = "synced",
     @SerialName("active_agents") val activeAgents: Int = 0,
     @SerialName("pending_approvals") val pendingApprovals: Int = 0,
+    @SerialName("acknowledged_ids") val acknowledgedIds: List<String> = emptyList(),
+    @SerialName("synced_drafts_count") val syncedDraftsCount: Int = 0,
     val message: String = "Synced"
 )
 

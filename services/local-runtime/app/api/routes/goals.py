@@ -11,11 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import require_auth
 from app.database import get_session
 from app.models.task import Goal, GoalStatus, Milestone
 from app.models.user import User
 
-router = APIRouter(prefix="/goals", tags=["goals"])
+router = APIRouter(prefix="/goals", tags=["goals"], dependencies=[Depends(require_auth)])
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +219,26 @@ async def create_milestone(
     await session.commit()
     await session.refresh(milestone)
     return MilestoneResponse.model_validate(milestone)
+
+
+@router.post("/{goal_id}/plan")
+async def plan_goal(
+    goal_id: str,
+    body: Optional[dict] = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Decompose a goal into milestones and zero-cost permitted tasks."""
+    from app.services.goal_planner import plan_goal_for_id
+
+    return await plan_goal_for_id(goal_id=goal_id, session=session, extra=body)
+
+
+@router.post("/{goal_id}/evaluate")
+async def evaluate_goal(
+    goal_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Evaluate goal progress from persisted analytics metrics and revise strategy."""
+    from app.services.goal_planner import evaluate_goal_for_id
+
+    return await evaluate_goal_for_id(goal_id=goal_id, session=session)

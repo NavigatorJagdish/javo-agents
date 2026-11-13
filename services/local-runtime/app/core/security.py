@@ -6,6 +6,8 @@ import base64
 import hashlib
 import hmac
 import logging
+import os
+from pathlib import Path
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -76,7 +78,12 @@ class TokenManager:
         self._expiry_hours = expiry_hours
         self._active_tokens: dict[str, dict] = {}
 
-    def generate_token(self, user_id: str, device_id: Optional[str] = None) -> str:
+    def generate_token(
+        self,
+        user_id: str,
+        device_id: Optional[str] = None,
+        role: str = "owner",
+    ) -> str:
         """Generate a new access token."""
         token_id = str(uuid.uuid4())
         expires_at = datetime.now(timezone.utc) + timedelta(hours=self._expiry_hours)
@@ -85,6 +92,7 @@ class TokenManager:
             "token_id": token_id,
             "user_id": user_id,
             "device_id": device_id,
+            "role": role,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expires_at.isoformat(),
         }
@@ -171,20 +179,231 @@ def get_token_manager() -> TokenManager:
     return _token_manager
 
 
+# ---------------------------------------------------------------------------
+# OS-Backed Credential Storage & Windows DPAPI
+# ---------------------------------------------------------------------------
+def _get_credential_dir() -> Path:
+    """Return platform-appropriate secure credential directory."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or str(Path.home())
+        cred_dir = Path(base) / "JavoAgents" / "credentials"
+    else:
+        cred_dir = Path.home() / ".javo" / "credentials"
+    cred_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(cred_dir, 0o700)
+    except Exception:
+        pass
+    return cred_dir
+
+
+def _dpapi_protect(plaintext: bytes) -> bytes:
+    """Encrypt data using Windows DPAPI (CryptProtectData via ctypes)."""
+    if os.name != "nt":
+        return plaintext
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+
+        in_blob = DATA_BLOB(
+            len(plaintext),
+            ctypes.cast(ctypes.c_char_p(plaintext), ctypes.POINTER(ctypes.c_char)),
+        )
+        out_blob = DATA_BLOB()
+        if not crypt32.CryptProtectData(
+            ctypes.byref(in_blob),
+            "javo_credential",
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(out_blob),
+        ):
+            return plaintext
+        protected = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        kernel32.LocalFree(out_blob.pbData)
+        return protected
+    except Exception as exc:
+        logger.debug(f"DPAPI protect fallback: {exc}")
+        return plaintext
+
+
+def _dpapi_unprotect(ciphertext: bytes) -> bytes:
+    """Decrypt data using Windows DPAPI (CryptUnprotectData via ctypes)."""
+    if os.name != "nt":
+        return ciphertext
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+
+        in_blob = DATA_BLOB(
+            len(ciphertext),
+            ctypes.cast(ctypes.c_char_p(ciphertext), ctypes.POINTER(ctypes.c_char)),
+        )
+        out_blob = DATA_BLOB()
+        if not crypt32.CryptUnprotectData(
+            ctypes.byref(in_blob),
+            None,
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(out_blob),
+        ):
+            return ciphertext
+        unprotected = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        kernel32.LocalFree(out_blob.pbData)
+        return unprotected
+    except Exception as exc:
+        logger.debug(f"DPAPI unprotect fallback: {exc}")
+        return ciphertext
+
+
+def _load_durable_secret(name: str) -> Optional[str]:
+    """Load a persistent secret from DPAPI-encrypted or permission-restricted storage."""
+    cred_dir = _get_credential_dir()
+    dpapi_file = cred_dir / f"{name}.dpapi"
+    raw_file = cred_dir / f"{name}.key"
+
+    if dpapi_file.exists():
+        try:
+            raw_bytes = dpapi_file.read_bytes()
+            decrypted = _dpapi_unprotect(raw_bytes).decode("utf-8").strip()
+            if decrypted:
+                return decrypted
+        except Exception as exc:
+            logger.warning(f"Failed to read DPAPI secret {name}: {exc}")
+
+    if raw_file.exists():
+        try:
+            val = raw_file.read_text(encoding="utf-8").strip()
+            if val:
+                return val
+        except Exception as exc:
+            logger.warning(f"Failed to read raw secret {name}: {exc}")
+
+    return None
+
+
+def _save_durable_secret(name: str, secret: str) -> None:
+    """Save a persistent secret using Windows DPAPI or 0o600 restricted file storage."""
+    cred_dir = _get_credential_dir()
+    val_bytes = secret.strip().encode("utf-8")
+
+    if os.name == "nt":
+        dpapi_file = cred_dir / f"{name}.dpapi"
+        protected = _dpapi_protect(val_bytes)
+        dpapi_file.write_bytes(protected)
+    else:
+        raw_file = cred_dir / f"{name}.key"
+        raw_file.write_text(secret.strip(), encoding="utf-8")
+        try:
+            os.chmod(raw_file, 0o600)
+        except Exception:
+            pass
+
+
+_cached_owner_token: Optional[str] = None
+_cached_app_secret: Optional[str] = None
+
+
+def get_durable_app_secret() -> str:
+    """Return or provision a durable 256-bit per-installation application secret key."""
+    global _cached_app_secret
+    if _cached_app_secret is not None:
+        return _cached_app_secret
+
+    persisted = _load_durable_secret("app_secret")
+    if persisted:
+        _cached_app_secret = persisted
+        return _cached_app_secret
+
+    new_secret = secrets.token_urlsafe(32)
+    try:
+        _save_durable_secret("app_secret", new_secret)
+    except Exception as exc:
+        logger.warning(f"Could not persist application secret: {exc}")
+
+    _cached_app_secret = new_secret
+    return _cached_app_secret
+
+
+def get_owner_token() -> str:
+    """Return configured owner token or load/provision a persistent OS-backed owner secret."""
+    global _cached_owner_token
+    settings = get_settings()
+    if settings.owner_token:
+        return settings.owner_token
+
+    if _cached_owner_token is not None:
+        return _cached_owner_token
+
+    persisted = _load_durable_secret("owner_token")
+    if persisted:
+        _cached_owner_token = persisted
+        return _cached_owner_token
+
+    new_token = secrets.token_urlsafe(32)
+    try:
+        _save_durable_secret("owner_token", new_token)
+    except Exception as exc:
+        logger.warning(f"Could not persist owner token: {exc}")
+
+    _cached_owner_token = new_token
+    return _cached_owner_token
+
+
+def validate_auth_token(token: str) -> Optional[dict]:
+    """Validate either a TokenManager HMAC token or the local owner secret token."""
+    if not token:
+        return None
+    owner_tok = get_owner_token()
+    if hmac.compare_digest(token, owner_tok):
+        return {"user_id": "owner", "role": "owner", "is_owner": True}
+    token_mgr = get_token_manager()
+    return token_mgr.validate_token(token)
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
 ) -> Optional[dict]:
     """Auth middleware dependency - extracts and validates the current user.
 
+    Supports Bearer token, X-API-Key, or X-Owner-Token headers.
     Returns None if no auth provided (for endpoints that allow anonymous access).
-    Raises 401 if token is invalid.
+    Raises 401 if supplied credentials are invalid.
     """
-    if credentials is None:
+    raw_token: Optional[str] = None
+    if credentials is not None:
+        raw_token = credentials.credentials
+    elif request.headers.get("X-API-Key"):
+        raw_token = request.headers.get("X-API-Key")
+    elif request.headers.get("X-Owner-Token"):
+        raw_token = request.headers.get("X-Owner-Token")
+
+    if raw_token is None:
         return None
 
-    token_mgr = get_token_manager()
-    payload = token_mgr.validate_token(credentials.credentials)
+    payload = validate_auth_token(raw_token)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -195,12 +414,23 @@ async def get_current_user(
 
 
 def require_auth(user: Optional[dict] = Depends(get_current_user)) -> dict:
-    """Dependency that requires authentication."""
+    """Dependency that requires an authenticated user."""
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def require_owner(user: dict = Depends(require_auth)) -> dict:
+    """Dependency that requires authenticated owner/admin privileges."""
+    role = str(user.get("role", "")).lower()
+    if not user.get("is_owner") and role not in {"owner", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner privileges required",
         )
     return user
 

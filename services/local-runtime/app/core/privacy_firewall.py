@@ -98,10 +98,21 @@ class PrivacyFirewall:
         return DataClassification.INTERNAL, findings
 
     def redact_pii(self, text: str) -> str:
-        """Redact common PII patterns before cloud egress."""
+        """Redact common PII and credential/secret patterns before export or egress."""
+        import re as _re
+
         redacted = text
         for _, pattern, replacement in PII_PATTERNS:
             redacted = pattern.sub(replacement, redacted)
+        secret_regexes = [
+            _re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{12,}\b"),
+            _re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
+            _re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"),
+            _re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{20,}\b"),
+            _re.compile(r"\b(?:EAAG|EAA)[A-Za-z0-9]{16,}\b"),
+        ]
+        for pat in secret_regexes:
+            redacted = pat.sub("[REDACTED_SECRET]", redacted)
         return redacted
 
     def evaluate_egress(

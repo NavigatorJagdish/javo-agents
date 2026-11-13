@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+
+def _default_secret_key() -> str:
+    """Provision a durable per-installation 256-bit secret key if JAVO_SECRET_KEY is not set."""
+    env_val = os.environ.get("JAVO_SECRET_KEY")
+    if env_val and env_val != "change-me-in-production-use-a-real-secret-key":
+        return env_val
+    from app.core.security import get_durable_app_secret
+
+    return get_durable_app_secret()
 
 
 class Settings(BaseSettings):
@@ -18,7 +29,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     host: str = "127.0.0.1"
     port: int = 8000
-    secret_key: str = Field(default="change-me-in-production-use-a-real-secret-key")
+    secret_key: str = Field(default_factory=_default_secret_key)
     allowed_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"])
 
     # Database
@@ -55,11 +66,14 @@ class Settings(BaseSettings):
 
     # Telegram
     telegram_bot_token: Optional[str] = None
+    telegram_mode: str = Field(default="disabled")  # "webhook" | "polling" | "disabled"
     telegram_webhook_url: Optional[str] = None
+    telegram_webhook_secret: Optional[str] = None
     telegram_allowed_users: list[str] = Field(default=[])
 
     # Security
     encryption_key: Optional[str] = None
+    owner_token: Optional[str] = None
     token_expiry_hours: int = 24
     max_sessions_per_user: int = 5
     require_device_approval: bool = True

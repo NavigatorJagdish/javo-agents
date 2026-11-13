@@ -137,3 +137,72 @@ async def diagnostics(session: AsyncSession = Depends(get_session)) -> Diagnosti
         overall = "degraded"
 
     return DiagnosticsResponse(overall=overall, checks=checks)
+
+
+class BenchmarkResponse(BaseModel):
+    ram_total_gb: float
+    ram_available_gb: float
+    cpu_cores: int
+    disk_free_gb: float
+    recommended_mode: str
+    recommended_ollama_model: str
+    recommended_max_concurrent_agents: int
+    zero_cost_default: bool
+    ollama_reachable: bool
+    ollama_models: list[str]
+    ffmpeg_available: bool
+    notes: list[str]
+
+
+@router.get("/benchmark", response_model=BenchmarkResponse)
+async def device_benchmark() -> BenchmarkResponse:
+    """Measure local device capabilities and recommend a safe 8GB+ operating mode."""
+    import shutil
+
+    from app.core.ai_router import get_ai_router
+
+    vm = psutil.virtual_memory()
+    disk = psutil.disk_usage(".")
+    ram_total_gb = round(vm.total / (1024**3), 2)
+    ram_avail_gb = round(vm.available / (1024**3), 2)
+    disk_free_gb = round(disk.free / (1024**3), 2)
+    cpu_cores = psutil.cpu_count() or 1
+
+    ai_router = get_ai_router()
+    ollama = await ai_router.check_ollama_health()
+    ffmpeg_ok = shutil.which("ffmpeg") is not None
+
+    notes: list[str] = []
+    if ram_total_gb >= 24:
+        mode = "32gb_workstation"
+        model = "qwen2.5:14b-instruct-q4_K_M"
+        max_agents = 5
+    elif ram_total_gb >= 14:
+        mode = "16gb_hybrid"
+        model = "qwen2.5:7b-instruct-q4_K_M"
+        max_agents = 3
+    else:
+        mode = "8gb_cpu_optimized"
+        model = "qwen2.5:3b-instruct-q4_K_M"
+        max_agents = 2
+        notes.append("8GB-class host detected: use serialized single-model loading and 4-bit quantized models.")
+
+    if not ollama.get("reachable"):
+        notes.append("Ollama daemon not detected; offline job queue and deterministic fallbacks are active at $0 cost.")
+    if not ffmpeg_ok:
+        notes.append("FFmpeg not found on PATH; media probing will use basic file-size fallback.")
+
+    return BenchmarkResponse(
+        ram_total_gb=ram_total_gb,
+        ram_available_gb=ram_avail_gb,
+        cpu_cores=cpu_cores,
+        disk_free_gb=disk_free_gb,
+        recommended_mode=mode,
+        recommended_ollama_model=model,
+        recommended_max_concurrent_agents=max_agents,
+        zero_cost_default=True,
+        ollama_reachable=bool(ollama.get("reachable")),
+        ollama_models=list(ollama.get("models", [])),
+        ffmpeg_available=ffmpeg_ok,
+        notes=notes,
+    )

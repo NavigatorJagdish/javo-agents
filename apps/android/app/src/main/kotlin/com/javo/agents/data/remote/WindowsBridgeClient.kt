@@ -83,12 +83,13 @@ class WindowsBridgeClient(
 
     suspend fun pingPairedHost(): Boolean {
         val host = keystoreManager.getPairedHostUrl()
-        if (host.isNullOrBlank()) {
+        if (host.isNullOrBlank() || !keystoreManager.isPaired()) {
             _connectionState.value = BridgeConnectionState.Unpaired
             return false
         }
         return try {
-            val response = apiFor(host).getHealth()
+            val deviceId = keystoreManager.getOrCreateDeviceId()
+            val response = apiFor(host).syncDevice(deviceId, emptyList())
             val ok = response.isSuccessful
             _connectionState.value = if (ok) BridgeConnectionState.Connected else BridgeConnectionState.OfflineQueue
             ok
@@ -114,46 +115,60 @@ class WindowsBridgeClient(
                 )
             )
             if (response.isSuccessful) {
+                val body = response.body()
+                val serverToken = body?.deviceToken?.ifBlank { deviceToken } ?: deviceToken
+                keystoreManager.savePairingSession(hostUrl, serverToken)
                 _connectionState.value = BridgeConnectionState.Connected
-                Result.success(response.body()?.message ?: "Paired with Windows Runtime")
+                Result.success(body?.message ?: "Paired with Windows Runtime")
             } else {
-                // Allow local offline-first pairing record when runtime is temporarily unreachable
-                _connectionState.value = BridgeConnectionState.OfflineQueue
-                Result.failure(IllegalStateException("Runtime returned HTTP ${response.code()}"))
+                _connectionState.value = BridgeConnectionState.Unpaired
+                Result.failure(IllegalStateException("Windows Runtime rejected pairing (HTTP ${response.code()})"))
             }
         } catch (e: Exception) {
-            _connectionState.value = BridgeConnectionState.OfflineQueue
+            _connectionState.value = BridgeConnectionState.Unpaired
             Result.failure(e)
         }
     }
 
-    suspend fun syncDrafts(drafts: List<DraftSyncRequest>): Boolean {
-        val host = keystoreManager.getPairedHostUrl() ?: return false
+    suspend fun syncDrafts(drafts: List<DraftSyncRequest>): List<String> {
+        val host = keystoreManager.getPairedHostUrl() ?: return emptyList()
+        val deviceId = keystoreManager.getOrCreateDeviceId()
         return try {
-            val response = apiFor(host).syncDevice(keystoreManager.getOrCreateDeviceId(), drafts)
-            val ok = response.isSuccessful
-            _connectionState.value = if (ok) BridgeConnectionState.Connected else BridgeConnectionState.OfflineQueue
-            ok
-        } catch (_: Exception) {
-            _connectionState.value = BridgeConnectionState.OfflineQueue
-            false
-        }
-    }
-
-    suspend fun sendVoiceCommand(text: String, languageCode: String): VoiceCommandResponse? {
-        val host = keystoreManager.getPairedHostUrl() ?: return null
-        return try {
-            val response = apiFor(host).sendVoiceCommand(VoiceCommandRequest(text, languageCode))
+            val response = apiFor(host).syncDevice(deviceId, drafts)
             if (response.isSuccessful) {
+                val body = response.body()
                 _connectionState.value = BridgeConnectionState.Connected
-                response.body()
+                body?.acknowledgedIds ?: emptyList()
             } else {
                 _connectionState.value = BridgeConnectionState.OfflineQueue
-                null
+                emptyList()
             }
         } catch (_: Exception) {
             _connectionState.value = BridgeConnectionState.OfflineQueue
-            null
+            emptyList()
+        }
+    }
+
+    suspend fun sendVoiceCommand(text: String, languageCode: String): Result<VoiceCommandResponse> {
+        val host = keystoreManager.getPairedHostUrl()
+            ?: return Result.failure(IllegalStateException("Windows Runtime is not paired."))
+        return try {
+            val response = apiFor(host).sendVoiceCommand(VoiceCommandRequest(text, languageCode))
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    _connectionState.value = BridgeConnectionState.Connected
+                    Result.success(body)
+                } else {
+                    Result.failure(IllegalStateException("Empty response from Windows voice agent."))
+                }
+            } else {
+                _connectionState.value = BridgeConnectionState.OfflineQueue
+                Result.failure(IllegalStateException("Windows Runtime returned HTTP ${response.code()}."))
+            }
+        } catch (e: Exception) {
+            _connectionState.value = BridgeConnectionState.OfflineQueue
+            Result.failure(e)
         }
     }
 

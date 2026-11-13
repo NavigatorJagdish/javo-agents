@@ -46,8 +46,10 @@ class OfflineDraftRepositoryTest {
     fun createOfflineDraft_staysQueuedWhenDesktopOffline_thenSyncsWhenOnline() = runTest {
         val store = FakeDraftStore()
         var desktopOnline = false
-        val uploader = RemoteDraftUploader { drafts ->
-            desktopOnline && drafts.isNotEmpty()
+        val uploader = object : RemoteDraftUploader {
+            override suspend fun uploadPending(drafts: List<DraftEntity>): List<String> {
+                return if (desktopOnline && drafts.isNotEmpty()) drafts.map { it.id } else emptyList()
+            }
         }
         val repo = OfflineDraftRepository(store, uploader)
 
@@ -71,5 +73,46 @@ class OfflineDraftRepositoryTest {
         assertEquals(1, all.size)
         assertFalse(all.first().pendingSync)
         assertEquals("synced", all.first().status)
+
+        // Test update
+        repo.updateDraft(created.copy(title = "Updated Hook Title"))
+        val updated = repo.observeDrafts().first().first()
+        assertEquals("Updated Hook Title", updated.title)
+
+        // Test delete
+        repo.deleteDraft(created.id)
+        assertTrue(repo.observeDrafts().first().isEmpty())
+    }
+
+    @Test
+    fun queueAndTrySync_marksOnlyAcknowledgedIdsSynced() = runTest {
+        val store = FakeDraftStore()
+        val repo = OfflineDraftRepository(
+            draftStore = store,
+            remoteUploader = object : RemoteDraftUploader {
+                override suspend fun uploadPending(drafts: List<DraftEntity>): List<String> {
+                    // Simulate server only acknowledging the first draft
+                    return drafts.take(1).map { it.id }
+                }
+            }
+        )
+
+        val draft1 = repo.createOfflineDraft("Draft 1", "Body 1", "Instagram")
+        val draft2 = repo.createOfflineDraft("Draft 2", "Body 2", "Facebook")
+
+        assertEquals(2, store.getPendingSync().size)
+
+        val syncedCount = repo.queueAndTrySync()
+        assertEquals(1, syncedCount)
+
+        val pendingAfter = store.getPendingSync()
+        assertEquals(1, pendingAfter.size)
+        assertEquals(draft2.id, pendingAfter.first().id)
+        assertTrue(pendingAfter.first().pendingSync)
+
+        val allDrafts = repo.observeDrafts().first()
+        val syncedItem = allDrafts.first { it.id == draft1.id }
+        assertFalse(syncedItem.pendingSync)
+        assertEquals("synced", syncedItem.status)
     }
 }

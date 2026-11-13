@@ -19,6 +19,7 @@ from app.api import api_router
 from app.config import get_settings
 from app.core.resource_manager import get_resource_manager
 from app.core.scheduler import scheduler
+from app.core.security import validate_auth_token
 from app import database as db
 from app.database import close_db, create_tables, init_engine
 from app.models.agent import AgentDefinition, AgentStatus
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     )
 
     application.include_router(api_router)
+    application.include_router(api_router, prefix="/api")
 
     @application.get("/", tags=["root"])
     async def root() -> dict[str, Any]:
@@ -176,9 +178,27 @@ def create_app() -> FastAPI:
     @application.websocket("/ws")
     @application.websocket("/ws/events")
     async def websocket_endpoint(websocket: WebSocket) -> None:
+        raw_token = websocket.query_params.get("token")
+        if not raw_token:
+            auth_hdr = websocket.headers.get("authorization", "")
+            if auth_hdr.lower().startswith("bearer "):
+                raw_token = auth_hdr[7:].strip()
+        if not raw_token:
+            raw_token = websocket.headers.get("x-api-key") or websocket.headers.get("x-owner-token")
+
+        user = validate_auth_token(raw_token or "")
+        if user is None:
+            await websocket.close(code=4401, reason="Authentication required")
+            return
+
         await ws_manager.connect(websocket)
         try:
-            await websocket.send_json({"event": "connected", "data": {"version": settings.app_version}})
+            await websocket.send_json(
+                {
+                    "event": "connected",
+                    "data": {"version": settings.app_version, "user_id": user.get("user_id")},
+                }
+            )
             while True:
                 raw = await websocket.receive_text()
                 try:

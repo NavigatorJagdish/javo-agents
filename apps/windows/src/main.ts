@@ -101,7 +101,7 @@ function updateTrayMenu(): void {
   const status = runtimeManager.getStatus();
   const menu = Menu.buildFromTemplate([
     {
-      label: `Javo Agents (${status.running ? `Port ${status.port}` : "Starting..."})`,
+      label: `Javo Agents (${status.running ? `Port ${status.port}` : "Offline"})`,
       enabled: false,
     },
     { type: "separator" },
@@ -120,13 +120,23 @@ function updateTrayMenu(): void {
       label: isPaused ? "Resume Autopilot" : "Pause Autopilot",
       click: async () => {
         if (isPaused) {
-          await runtimeManager.callControlEndpoint("/security/resume");
-          isPaused = false;
-          showDesktopNotification("Javo Agents", "Supervised Autopilot resumed.");
+          const ok = await runtimeManager.callControlEndpoint("/security/resume");
+          if (ok) {
+            isPaused = false;
+            showDesktopNotification("Javo Agents", "Supervised Autopilot resumed.");
+          } else {
+            const err = runtimeManager.getStatus().lastError || "Unknown error";
+            showDesktopNotification("Autopilot Resume Failed", `Could not resume: ${err}`);
+          }
         } else {
-          await runtimeManager.callControlEndpoint("/security/pause");
-          isPaused = true;
-          showDesktopNotification("Javo Agents", "Autopilot paused. Pending jobs held.");
+          const ok = await runtimeManager.callControlEndpoint("/security/pause");
+          if (ok) {
+            isPaused = true;
+            showDesktopNotification("Javo Agents", "Autopilot paused. Pending jobs held.");
+          } else {
+            const err = runtimeManager.getStatus().lastError || "Unknown error";
+            showDesktopNotification("Autopilot Pause Failed", `Could not pause: ${err}`);
+          }
         }
         updateTrayMenu();
       },
@@ -134,11 +144,16 @@ function updateTrayMenu(): void {
     {
       label: "Emergency Stop (Kill Switch)",
       click: async () => {
-        await runtimeManager.callControlEndpoint("/security/emergency-stop", {
+        const ok = await runtimeManager.callControlEndpoint("/security/emergency-stop", {
           reason: "Triggered from Windows System Tray",
         });
-        isPaused = true;
-        showDesktopNotification("EMERGENCY STOP ACTIVATED", "All agent actions and publishes halted.");
+        if (ok) {
+          isPaused = true;
+          showDesktopNotification("EMERGENCY STOP ACTIVATED", "All agent actions and publishes halted.");
+        } else {
+          const err = runtimeManager.getStatus().lastError || "Unknown error";
+          showDesktopNotification("Emergency Stop Failed", `Could not trigger emergency stop: ${err}`);
+        }
         updateTrayMenu();
       },
     },
@@ -175,19 +190,28 @@ function registerIpcHandlers(): void {
     paused: isPaused,
   }));
 
+  ipcMain.handle("javo:get-api-config", () => ({
+    baseUrl: runtimeManager.getStatus().baseUrl,
+    authToken: runtimeManager.getAuthToken(),
+  }));
+
   ipcMain.handle("javo:hardware-profile", () => detectHardwareProfile());
 
   ipcMain.handle("javo:pause-agents", async () => {
     const ok = await runtimeManager.callControlEndpoint("/security/pause");
-    if (ok) isPaused = true;
-    updateTrayMenu();
+    if (ok) {
+      isPaused = true;
+      updateTrayMenu();
+    }
     return ok;
   });
 
   ipcMain.handle("javo:resume-agents", async () => {
     const ok = await runtimeManager.callControlEndpoint("/security/resume");
-    if (ok) isPaused = false;
-    updateTrayMenu();
+    if (ok) {
+      isPaused = false;
+      updateTrayMenu();
+    }
     return ok;
   });
 
@@ -195,9 +219,11 @@ function registerIpcHandlers(): void {
     const ok = await runtimeManager.callControlEndpoint("/security/emergency-stop", {
       reason: "Triggered from Desktop UI",
     });
-    isPaused = true;
-    updateTrayMenu();
-    showDesktopNotification("EMERGENCY STOP", "All Javo Agents stopped immediately.");
+    if (ok) {
+      isPaused = true;
+      updateTrayMenu();
+      showDesktopNotification("EMERGENCY STOP", "All Javo Agents stopped immediately.");
+    }
     return ok;
   });
 
@@ -231,6 +257,10 @@ if (!gotLock) {
     mainWindow = createMainWindow(status.baseUrl);
     createTray();
     updateTrayMenu();
+
+    if (!status.running && status.lastError) {
+      showDesktopNotification("Javo Agents Local Runtime", status.lastError);
+    }
   });
 
   app.on("before-quit", async () => {

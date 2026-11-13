@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,12 +10,18 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_session
+from app.core.ai_router import get_ai_router
+from app.core.security import require_owner
+from app.database import close_db, create_tables, get_session, init_engine
+from app.models.task import Task, TaskState
+from app.services.backup_service import BackupService
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_owner)])
+_RESTORE_LOCK = asyncio.Lock()
 
 # Runtime mutable overrides layered on top of Settings
 _RUNTIME_OVERRIDES: dict[str, Any] = {}
@@ -69,11 +76,25 @@ class AIProviderUpdate(BaseModel):
     api_key: Optional[str] = None
 
 
+class CustomProviderCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=64)
+    base_url: str = Field(..., min_length=8)
+    model: str = Field(..., min_length=1)
+    api_key: Optional[str] = None
+    enabled: bool = True
+
+
+class OllamaPullRequest(BaseModel):
+    model: str = Field(..., min_length=2, max_length=128)
+
+
 class BackupInfo(BaseModel):
     filename: str
     path: str
     size_bytes: int
     created_at: str
+    encrypted: bool = True
+    checksum: Optional[str] = None
 
 
 class RestoreRequest(BaseModel):
@@ -158,73 +179,211 @@ async def get_all_settings() -> SettingsResponse:
 
 @router.put("/", response_model=SettingsResponse)
 async def update_settings(body: SettingsUpdate) -> SettingsResponse:
-    """Update runtime application settings."""
+    """Update runtime application settings and sync active Settings singleton."""
     updates = body.model_dump(exclude_unset=True)
     _RUNTIME_OVERRIDES.update(updates)
+    s = get_settings()
+    for key, value in updates.items():
+        if hasattr(s, key):
+            setattr(s, key, value)
     return _effective_settings()
 
 
 @router.get("/ai-providers", response_model=list[AIProviderInfo])
 async def list_ai_providers() -> list[AIProviderInfo]:
-    """List configured AI providers and their active models."""
+    """List configured AI providers and their active models synced with AIRouter."""
     providers = _init_providers()
-    return [AIProviderInfo(**cfg) for cfg in providers.values()]
+    router_status = get_ai_router().get_provider_status().get("providers", {})
+    result: list[AIProviderInfo] = []
+    for name, info in router_status.items():
+        merged = {
+            **providers.get(name, {}),
+            "name": name,
+            "enabled": bool(info.get("enabled", False)),
+            "model": str(info.get("model", "")),
+            "base_url": info.get("base_url"),
+            "has_api_key": bool(info.get("has_api_key", False)),
+        }
+        providers[name] = merged
+        result.append(AIProviderInfo(**merged))
+    return result
+
+
+@router.post("/ai-providers", response_model=AIProviderInfo, status_code=status.HTTP_201_CREATED)
+async def create_custom_ai_provider(body: CustomProviderCreate) -> AIProviderInfo:
+    """Register or update a custom OpenAI-compatible AI provider."""
+    key = body.name.strip().lower()
+    if key in {"ollama", "gemini", "openai"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Use PUT /settings/ai-providers/{key} to update built-in providers",
+        )
+    ai_router = get_ai_router()
+    ai_router.configure_provider(
+        key,
+        {
+            "base_url": body.base_url.strip(),
+            "model": body.model.strip(),
+            "api_key": body.api_key,
+            "enabled": body.enabled,
+        },
+    )
+    providers = _init_providers()
+    providers[key] = {
+        "name": key,
+        "enabled": body.enabled,
+        "model": body.model.strip(),
+        "base_url": body.base_url.strip(),
+        "has_api_key": bool(body.api_key),
+    }
+    return AIProviderInfo(**providers[key])
+
+
+@router.get("/ai-providers/quota")
+async def get_ai_provider_quota() -> dict[str, Any]:
+    """Return usage, spend caps, queued offline jobs, and provider status."""
+    return get_ai_router().get_provider_status()
 
 
 @router.put("/ai-providers/{name}", response_model=AIProviderInfo)
 async def update_ai_provider(name: str, body: AIProviderUpdate) -> AIProviderInfo:
-    """Update configuration for an AI provider (ollama, gemini, openai)."""
+    """Update configuration for an AI provider and sync immediately with AIRouter."""
     providers = _init_providers()
     key = name.lower()
-    if key not in providers:
+    ai_router = get_ai_router()
+    router_providers = ai_router.get_provider_status().get("providers", {})
+    if key not in providers and key not in router_providers:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"AI provider '{name}' not found")
 
-    cfg = providers[key]
+    cfg = providers.setdefault(
+        key,
+        {
+            "name": key,
+            "enabled": bool(router_providers.get(key, {}).get("enabled", False)),
+            "model": str(router_providers.get(key, {}).get("model", "")),
+            "base_url": router_providers.get(key, {}).get("base_url"),
+            "has_api_key": bool(router_providers.get(key, {}).get("has_api_key", False)),
+        },
+    )
     data = body.model_dump(exclude_unset=True)
+    router_update = dict(data)
     if "api_key" in data:
         api_key = data.pop("api_key")
         cfg["has_api_key"] = bool(api_key)
         if api_key and "enabled" not in data:
             cfg["enabled"] = True
+            router_update["enabled"] = True
+    ai_router.configure_provider(key, router_update)
     cfg.update(data)
     return AIProviderInfo(**cfg)
 
 
+@router.delete("/ai-providers/{name}/key", response_model=AIProviderInfo)
+async def remove_ai_provider_key(name: str) -> AIProviderInfo:
+    """Remove stored runtime API key for a provider and keep zero-cost local fallback intact."""
+    providers = _init_providers()
+    key = name.lower()
+    ai_router = get_ai_router()
+    if key not in providers and key not in ai_router.get_provider_status().get("providers", {}):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"AI provider '{name}' not found")
+    ai_router.remove_provider_key(key)
+    cfg = providers.get(key, {"name": key, "model": "default", "base_url": None})
+    cfg["has_api_key"] = False
+    if key in {"gemini", "openai"}:
+        cfg["enabled"] = False
+    providers[key] = cfg
+    return AIProviderInfo(**cfg)
+
+
+@router.delete("/ai-providers/{name}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_custom_provider(name: str) -> None:
+    """Delete a custom AI provider (built-in providers cannot be deleted)."""
+    key = name.lower()
+    if key in {"ollama", "gemini", "openai"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in providers cannot be deleted; remove their API key or disable instead.",
+        )
+    existed = get_ai_router().delete_custom_provider(key)
+    _AI_PROVIDER_CONFIGS.pop(key, None)
+    if not existed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Custom provider '{name}' not found")
+
+
+@router.post("/ai-providers/{name}/test")
+async def test_ai_provider(name: str) -> dict[str, Any]:
+    """Run an active connection check against an AI provider."""
+    return await get_ai_router().test_provider(name)
+
+
+@router.get("/ollama/models")
+async def list_ollama_models() -> dict[str, Any]:
+    """List local Ollama models and daemon reachability."""
+    return await get_ai_router().check_ollama_health()
+
+
+@router.post("/ollama/pull")
+async def pull_ollama_model(body: OllamaPullRequest) -> dict[str, Any]:
+    """Pull a local Ollama model cleanly without raising on daemon unavailability."""
+    return await get_ai_router().pull_ollama_model(body.model)
+
+
+@router.get("/ai-queue")
+async def list_ai_offline_queue() -> list[dict[str, Any]]:
+    """Inspect jobs queued while all AI providers were unavailable."""
+    return get_ai_router().get_queued_jobs()
+
+
+@router.post("/ai-queue/drain")
+async def drain_ai_offline_queue() -> dict[str, Any]:
+    """Attempt to process offline queued AI jobs."""
+    return await get_ai_router().drain_queued_jobs()
+
+
 @router.post("/backup", response_model=BackupInfo, status_code=status.HTTP_201_CREATED)
 async def create_backup(session: AsyncSession = Depends(get_session)) -> BackupInfo:
-    """Create a database backup file in the configured backup directory."""
+    """Create an encrypted .jbackup archive in the configured backup directory."""
     del session  # ensures DB initialization before backup
     settings = get_settings()
-    backup_dir = Path(settings.backup_dir).resolve()
-    backup_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"javo_backup_{timestamp}.db"
-    dest = backup_dir / filename
-
     db_path = _resolve_sqlite_path()
+    sched_prefix = "sqlite:///"
+    sched_path = (
+        Path(settings.scheduler_db_url[len(sched_prefix):]).resolve()
+        if settings.scheduler_db_url.startswith(sched_prefix)
+        else None
+    )
+    targets: list[str | Path] = []
     if db_path and db_path.exists():
-        shutil.copy2(db_path, dest)
-    else:
-        dest.write_bytes(b"")
+        targets.append(db_path)
+    if sched_path and sched_path.exists():
+        targets.append(sched_path)
 
+    svc = BackupService(backup_dir=settings.backup_dir)
+    info = svc.create_backup(include_paths=targets, label="manual")
     return BackupInfo(
-        filename=filename,
-        path=str(dest),
-        size_bytes=dest.stat().st_size,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        filename=info["backup_file"],
+        path=info["path"],
+        size_bytes=info["size_bytes"],
+        created_at=info["created_at"],
+        encrypted=True,
+        checksum=info["checksum"],
     )
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_backup(body: RestoreRequest) -> RestoreResponse:
-    """Restore the SQLite database from a previously created backup file."""
+async def restore_backup(
+    body: RestoreRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RestoreResponse:
+    """Verify & safely restore the SQLite database from an encrypted .jbackup or legacy .db backup."""
     settings = get_settings()
     backup_dir = Path(settings.backup_dir).resolve()
     safe_name = Path(body.filename).name
+    if safe_name != body.filename or ".." in body.filename or "/" in body.filename or "\\" in body.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid backup filename")
     src = (backup_dir / safe_name).resolve()
 
-    if not src.exists() or src.parent != backup_dir:
+    if not src.exists() or not src.is_relative_to(backup_dir):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backup file not found")
 
     db_path = _resolve_sqlite_path()
@@ -234,30 +393,95 @@ async def restore_backup(body: RestoreRequest) -> RestoreResponse:
             detail="Restore is only supported for local SQLite databases",
         )
 
-    shutil.copy2(src, db_path)
-    return RestoreResponse(
-        restored_from=safe_name,
-        status="restored",
-        message="Database restored from backup. Restart or reconnect active sessions if needed.",
-    )
+    if _RESTORE_LOCK.locked():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Another backup restore operation is already in progress",
+        )
+
+    async with _RESTORE_LOCK:
+        active_tasks = (
+            await session.execute(select(func.count()).select_from(Task).where(Task.state == TaskState.RUNNING))
+        ).scalar_one()
+        if active_tasks > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot perform destructive restore while tasks are actively running",
+            )
+
+        if safe_name.endswith(".jbackup"):
+            svc = BackupService(backup_dir=settings.backup_dir)
+            verification = svc.verify_backup(safe_name)
+            if not verification.get("valid"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Encrypted backup verification failed: {verification.get('error', 'corrupt archive')}",
+                )
+
+            await session.close()
+            await close_db()
+            try:
+                restore_res = svc.restore_backup(safe_name, restore_dir=db_path.parent)
+                if not restore_res.get("restored"):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(restore_res.get("error", "Restore failed")),
+                    )
+            finally:
+                init_engine()
+                await create_tables()
+
+            return RestoreResponse(
+                restored_from=safe_name,
+                status="restored",
+                message="Encrypted backup verified and restored safely.",
+            )
+
+        # Verify legacy .db magic header before restoring
+        with src.open("rb") as f:
+            header = f.read(16)
+        if header != b"SQLite format 3\x00":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Corrupted or invalid SQLite backup file",
+            )
+
+        await session.close()
+        await close_db()
+        try:
+            shutil.copy2(src, db_path)
+        finally:
+            init_engine()
+            await create_tables()
+
+        return RestoreResponse(
+            restored_from=safe_name,
+            status="restored",
+            message="Database restored safely from verified SQLite backup.",
+        )
 
 
 @router.get("/backups", response_model=list[BackupInfo])
 async def list_backups() -> list[BackupInfo]:
-    """List available backup files."""
+    """List available encrypted (.jbackup) and legacy (.db) backup files."""
     backup_dir = Path(get_settings().backup_dir).resolve()
     if not backup_dir.exists():
         return []
 
+    entries = list(backup_dir.glob("*.jbackup")) + list(backup_dir.glob("*.db"))
     backups: list[BackupInfo] = []
-    for entry in sorted(backup_dir.glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for entry in sorted(entries, key=lambda p: p.stat().st_mtime, reverse=True):
         stat = entry.stat()
+        sha_path = entry.with_suffix(".jbackup.sha256")
+        checksum = sha_path.read_text(encoding="utf-8").strip() if sha_path.exists() else None
         backups.append(
             BackupInfo(
                 filename=entry.name,
                 path=str(entry),
                 size_bytes=stat.st_size,
                 created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                encrypted=entry.suffix == ".jbackup",
+                checksum=checksum,
             )
         )
     return backups

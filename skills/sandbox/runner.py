@@ -85,6 +85,72 @@ SENSITIVE_ENV_FRAGMENTS = (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CORE_SKILLS_DIR = REPO_ROOT / "skills" / "core"
+
+# Official Cryptographic Integrity Ledger for Built-in Core Skills
+CORE_SKILL_PROVENANCE_LEDGER: dict[str, dict[str, Any]] = {
+    "hindi-hinglish-hook-writer": {
+        "id": "hindi-hinglish-hook-writer",
+        "relative_dir": "hindi-hinglish-hook-writer",
+        "allowed_permissions": {"pure:compute", "text:transform"},
+        "entrypoint": "skill.py",
+        "entrypoint_sha256": "e77d68f5a7f6e75f120f74d5b87a60f27db0bc1a987f566884d1702793c81b7a",
+        "manifest_sha256": "86f26fcaaad4de1e3ee5c6b136cacecff4ea57ede34e618f4a6b80334f8d4aaf",
+    },
+    "social-caption-optimizer": {
+        "id": "social-caption-optimizer",
+        "relative_dir": "social-caption-optimizer",
+        "allowed_permissions": {"pure:compute", "text:transform"},
+        "entrypoint": "skill.py",
+        "entrypoint_sha256": "e1db25209b827b4925201f786d48fcea968ea5697e7896574ac717513b5c13c8",
+        "manifest_sha256": "e8b7e904108d0d88e3d248928420292971c3601787164b4e2ee212b74bb2c3ac",
+    },
+}
+
+
+def verify_skill_provenance(skill_dir: Path, manifest: dict[str, Any]) -> tuple[bool, str]:
+    """Verify that a skill claiming core_verified has genuine installation provenance and untampered cryptographic integrity."""
+    skill_id = str(manifest.get("id") or "").strip()
+    if skill_id not in CORE_SKILL_PROVENANCE_LEDGER:
+        return False, f"Skill '{skill_id}' is not registered in the core provenance ledger; cannot claim core_verified"
+
+    ledger = CORE_SKILL_PROVENANCE_LEDGER[skill_id]
+
+    # 1. Provenance check: must reside inside canonical CORE_SKILLS_DIR
+    try:
+        rel_path = skill_dir.resolve().relative_to(CORE_SKILLS_DIR.resolve())
+        if rel_path.parts[0] != ledger["relative_dir"]:
+            return False, f"Skill directory '{skill_dir.name}' does not match expected core path '{ledger['relative_dir']}'"
+    except (ValueError, IndexError):
+        return False, f"Skill claiming 'core_verified' is located outside official core directory ({skill_dir})"
+
+    # 2. Permission check: cannot exceed pinned core permissions
+    requested_perms = set(manifest.get("permissions", []))
+    if not requested_perms.issubset(ledger["allowed_permissions"]):
+        excess = requested_perms - ledger["allowed_permissions"]
+        return False, f"Manifest requests unpinned permissions for core skill: {excess}"
+
+    # 3. Integrity check: manifest hash must match
+    manifest_file = skill_dir / "manifest.json"
+    if not manifest_file.exists():
+        return False, "Missing manifest.json"
+    actual_manifest_sha = compute_sha256(manifest_file)
+    if not actual_manifest_sha.lower() == str(ledger["manifest_sha256"]).lower():
+        return False, f"Core manifest SHA-256 integrity mismatch ({actual_manifest_sha} != {ledger['manifest_sha256']}): tampering detected"
+
+    # 4. Integrity check: entrypoint file hash must match
+    entrypoint = manifest.get("entrypoint", ledger["entrypoint"])
+    skill_file = skill_dir / entrypoint
+    if not skill_file.exists():
+        return False, f"Missing entrypoint file {entrypoint}"
+    actual_code_sha = compute_sha256(skill_file)
+    if not actual_code_sha.lower() == str(ledger["entrypoint_sha256"]).lower():
+        return False, f"Core skill code SHA-256 integrity mismatch ({actual_code_sha} != {ledger['entrypoint_sha256']}): tampering detected"
+
+    return True, "verified"
+
+
 @dataclass
 class SandboxResult:
     success: bool
@@ -96,7 +162,11 @@ class SandboxResult:
 
 
 def compute_sha256(file_path: Path) -> str:
-    return hashlib.sha256(file_path.read_bytes()).hexdigest()
+    """Compute SHA-256 with cross-platform CRLF/LF line-ending normalization for text files."""
+    data = file_path.read_bytes()
+    if file_path.suffix.lower() in {".py", ".json", ".yaml", ".yml", ".txt", ".md"}:
+        data = data.replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def inspect_skill_ast(source_code: str, permissions: list[str]) -> list[str]:
@@ -206,8 +276,9 @@ def run_skill_sandboxed(
     skill_dir: Path,
     payload: dict[str, Any],
     verify_checksum: bool = True,
+    allow_untrusted: bool = False,
 ) -> SandboxResult:
-    """Validate manifest, inspect AST, and execute skill in an isolated subprocess."""
+    """Validate manifest, inspect AST, enforce trust tier, and execute skill in an isolated subprocess."""
     import time
 
     t0 = time.monotonic()
@@ -219,6 +290,32 @@ def run_skill_sandboxed(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return SandboxResult(success=False, error=f"Invalid manifest.json: {exc}")
+
+    trust_tier = str(manifest.get("trust_tier", "untrusted")).lower()
+
+    # Enforce genuine provenance and cryptographic integrity for any core_verified claim
+    if trust_tier == "core_verified":
+        is_valid_core, reason = verify_skill_provenance(skill_dir, manifest)
+        if not is_valid_core:
+            return SandboxResult(
+                success=False,
+                error=f"Provenance/integrity verification failed: {reason}",
+                violations=[f"Core provenance violation: {reason}"],
+                trust_score=0.0,
+                duration_ms=0,
+            )
+
+    if not allow_untrusted and trust_tier != "core_verified":
+        return SandboxResult(
+            success=False,
+            error=(
+                f"Execution of untrusted plugin (trust_tier='{trust_tier}') is prohibited: "
+                "OS-level container isolation is unavailable; only verified core skills with valid provenance may execute."
+            ),
+            violations=[f"Untrusted plugin blocked: trust_tier='{trust_tier}'"],
+            trust_score=0.0,
+            duration_ms=0,
+        )
 
     entrypoint = manifest.get("entrypoint", "skill.py")
     handler = manifest.get("handler", "run")
@@ -250,8 +347,21 @@ def run_skill_sandboxed(
             trust_score=0.0,
         )
 
+    allow_net = "network:external" in permissions or "network:local_ollama" in permissions
+    allow_fs_write = "filesystem:write" in permissions
     bootstrap = (
-        "import importlib.util, json, sys\n"
+        "import builtins, importlib.util, json, os, socket, sys\n"
+        f"if not {allow_net!r}:\n"
+        "    def _no_net(*a, **kw): raise PermissionError('Network capability blocked by sandbox')\n"
+        "    socket.socket = _no_net\n"
+        f"if not {allow_fs_write!r}:\n"
+        "    _orig_open = builtins.open\n"
+        "    def _ro_open(file, mode='r', *a, **kw):\n"
+        "        if any(m in str(mode) for m in ('w', 'a', 'x', '+')):\n"
+        "            raise PermissionError('Filesystem write blocked by sandbox')\n"
+        "        return _orig_open(file, mode, *a, **kw)\n"
+        "    builtins.open = _ro_open\n"
+        "os.system = lambda *a, **kw: (_ for _ in ()).throw(PermissionError('Process spawn blocked'))\n"
         "spec = importlib.util.spec_from_file_location('javo_skill', sys.argv[1])\n"
         "mod = importlib.util.module_from_spec(spec)\n"
         "spec.loader.exec_module(mod)\n"
@@ -260,6 +370,10 @@ def run_skill_sandboxed(
         "result = fn(payload)\n"
         "sys.stdout.write(json.dumps(result, ensure_ascii=True))\n"
     )
+
+    run_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     try:
         proc = subprocess.run(
@@ -271,6 +385,7 @@ def run_skill_sandboxed(
             timeout=timeout_sec,
             env=build_sanitized_env(),
             cwd=str(skill_dir),
+            **run_kwargs,
         )
     except subprocess.TimeoutExpired:
         elapsed = int((time.monotonic() - t0) * 1000)

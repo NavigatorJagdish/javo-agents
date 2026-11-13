@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,39 +62,45 @@ fun WelcomeScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Your 29-agent Supervised Autopilot team on Windows & Android — local-first, zero-cost friendly, and under your approval.",
+                    text = "Your autonomous AI creator team. Operates completely independently on your Android phone, or enhanced by connecting Windows.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(24.dp))
 
                 WelcomeFeatureRow(
-                    icon = Icons.Rounded.Lock,
-                    title = "Hardware-Backed Security",
-                    body = "Pairing tokens and optional Gemini keys stay encrypted via Android Keystore AES-256-GCM."
+                    icon = Icons.Rounded.Smartphone,
+                    title = "Android Standalone First",
+                    body = "Execute 23+ mobile AI agents, manage tasks, and draft content directly on your device with your free Gemini key."
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 WelcomeFeatureRow(
                     icon = Icons.Rounded.Mic,
-                    title = "English, Hindi & Hinglish Voice",
-                    body = "Push-to-talk command hub with live waveform states and supervised approvals."
+                    title = "Hindi, Hinglish & English Voice",
+                    body = "Push-to-talk multilingual assistant with automatic language recognition and audio voice responses."
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 WelcomeFeatureRow(
                     icon = Icons.Rounded.Sync,
-                    title = "Offline Drafts + Desktop Sync",
-                    body = "Draft reels and posts anywhere on Android; WorkManager syncs securely with your Windows PC."
+                    title = "Optional Windows Enhancement",
+                    body = "Pair with your Windows PC anytime to unlock local Ollama models and heavier desktop workflow automation."
                 )
             }
 
             Column(modifier = Modifier.padding(top = 24.dp)) {
-                GradientButton(text = "Start Local Setup", onClick = onGetStarted)
+                GradientButton(
+                    text = "Continue with Android Standalone",
+                    onClick = onSkipToHome
+                )
                 Spacer(modifier = Modifier.height(10.dp))
-                JavoOutlinedButton(text = "Pair with Windows Now", onClick = onPairWindows)
+                JavoOutlinedButton(
+                    text = "Connect Windows Desktop",
+                    onClick = onPairWindows
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 JavoOutlinedButton(
-                    text = "Explore Offline Mode",
-                    onClick = onSkipToHome,
+                    text = "Configure Preferences & AI",
+                    onClick = onGetStarted,
                     borderColor = VioletAccent
                 )
             }

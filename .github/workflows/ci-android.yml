@@ -2,13 +2,23 @@ name: CI — Android Companion
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "fix/**"]
     paths:
       - "apps/android/**"
       - ".github/workflows/ci-android.yml"
   pull_request:
     paths:
       - "apps/android/**"
+      - ".github/workflows/ci-android.yml"
+  workflow_dispatch:
+    inputs:
+      attach_release:
+        description: "Attach build packages to draft release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   android-lint-and-test:
@@ -37,3 +47,52 @@ jobs:
 
       - name: Run Unit Tests
         run: gradle testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK & AAB (Unsigned Verification)
+        run: gradle assembleRelease bundleRelease --no-daemon --stacktrace
+
+      - name: Package Android Alpha Build Artifacts & Compute SHA-256
+        run: |
+          mkdir -p build-artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/javo-agents-android-v0.1.4-alpha-debug.apk
+          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk build-artifacts/javo-agents-android-v0.1.4-alpha-release-unsigned.apk
+          fi
+          if [ -f app/build/outputs/bundle/release/app-release.aab ]; then
+            cp app/build/outputs/bundle/release/app-release.aab build-artifacts/javo-agents-android-v0.1.4-alpha-release-unsigned.aab
+          fi
+          cd build-artifacts
+          sha256sum * > SHA256SUMS.txt
+          echo "{\"commit\": \"$GITHUB_SHA\", \"branch\": \"$GITHUB_REF_NAME\", \"version\": \"v0.1.4-alpha\", \"built_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > build-metadata.json
+          cat SHA256SUMS.txt
+          cd ..
+
+      - name: Attach Android Test Package to Private Draft Release (Explicit Manual Opt-in Only)
+        if: github.repository == 'NavigatorJagdish/javo-agents' && github.event_name == 'workflow_dispatch' && inputs.attach_release == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd build-artifacts
+          # Versioned release assets are immutable: upload fails if this name exists.
+          gh release upload v0.1.4-alpha \
+            javo-agents-android-v0.1.4-alpha-debug.apk \
+            SHA256SUMS.txt \
+            build-metadata.json
+          if [ -f javo-agents-android-v0.1.4-alpha-release-unsigned.apk ]; then
+            gh release upload v0.1.4-alpha javo-agents-android-v0.1.4-alpha-release-unsigned.apk
+          fi
+          if [ -f javo-agents-android-v0.1.4-alpha-release-unsigned.aab ]; then
+            gh release upload v0.1.4-alpha javo-agents-android-v0.1.4-alpha-release-unsigned.aab
+          fi
+          cd ..
+
+      - name: Upload Build Artifacts (Actions Storage)
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: javo-agents-android-v0.1.4-alpha
+          path: apps/android/build-artifacts/
+          if-no-files-found: warn

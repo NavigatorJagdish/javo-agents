@@ -2,7 +2,7 @@ name: CI — Backend & Skill Sandbox
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "fix/**"]
     paths:
       - "services/local-runtime/**"
       - "skills/**"
@@ -17,7 +17,7 @@ on:
 
 jobs:
   test-and-lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -31,7 +31,10 @@ jobs:
           cache-dependency-path: services/local-runtime/requirements.txt
 
       - name: Install FFmpeg for media worker tests
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y ffmpeg && break || sleep 3
+          done
 
       - name: Install backend and QA dependencies
         run: |

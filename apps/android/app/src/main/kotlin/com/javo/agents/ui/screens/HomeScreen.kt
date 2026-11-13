@@ -14,24 +14,35 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.rounded.Assignment
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.PostAdd
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -44,6 +55,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.javo.agents.data.model.OperatingMode
+import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.ui.components.BottomNavBar
 import com.javo.agents.ui.components.EmergencyStopDialog
@@ -66,18 +79,65 @@ fun HomeScreen(
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
-    val agents by viewModel.agents.collectAsState()
     val approvals by viewModel.approvals.collectAsState()
     val drafts by viewModel.drafts.collectAsState()
     val tasks by viewModel.tasks.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val waveformState by viewModel.waveformState.collectAsState()
+    val operatingMode by viewModel.operatingMode.collectAsState()
+    val aiConfig by viewModel.aiConfig.collectAsState()
+    val customAiConfig by viewModel.customAiConfig.collectAsState()
+    val socialConnections by viewModel.socialConnections.collectAsState()
 
     var showEmergencyDialog by remember { mutableStateOf(false) }
+    var showModeDialog by remember { mutableStateOf(false) }
 
-    val activeAgentsCount = agents.count { it.isEnabled }
+    // Configured agents are not counted as actively executing jobs.
     val pendingApprovals = approvals.count { it.status == "pending" }
-    val queuedSyncCount = drafts.count { it.pendingSync }
+    val verifiedSocialAccounts = socialConnections.count { it.isConnected }
+    // A stored key for an unrelated provider is NOT evidence that the
+    // user-selected provider can process a request.
+    val mobileAiReady = when (aiConfig.activeProvider) {
+        ProviderType.GEMINI_DIRECT -> aiConfig.hasGeminiKeyStored
+        ProviderType.CUSTOM_ENDPOINT -> customAiConfig?.isEnabled == true &&
+            !customAiConfig?.endpointUrl.isNullOrBlank()
+        ProviderType.LOCAL_PC_OLLAMA -> operatingMode == OperatingMode.WINDOWS_ENHANCED &&
+            connectionState.name == "Connected"
+    }
+
+    if (showModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showModeDialog = false },
+            title = { Text("Select Operating Mode") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OperatingMode.entries.forEach { mode ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            RadioButton(
+                                selected = operatingMode == mode,
+                                onClick = {
+                                    viewModel.setOperatingMode(mode)
+                                    showModeDialog = false
+                                }
+                            )
+                            Column(modifier = Modifier.padding(start = 4.dp)) {
+                                Text(mode.badge + " " + mode.displayName, style = MaterialTheme.typography.titleSmall)
+                                Text(mode.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showModeDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 
     if (showEmergencyDialog) {
         EmergencyStopDialog(
@@ -131,73 +191,140 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Good morning / greeting card
-            StatusCard {
+            // Good morning / operating mode banner card
+            StatusCard(onClick = { showModeDialog = true }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Good morning, Creator",
-                            style = MaterialTheme.typography.headlineSmall
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Javo • Your AI companion",
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Supervised Autopilot is guarding your channels.",
+                            text = when (operatingMode) {
+                                OperatingMode.ANDROID_STANDALONE -> "Talk, create and organize directly on your phone. No PC required."
+                                OperatingMode.WINDOWS_ENHANCED -> "Desktop-enhanced features are optional. Your mobile workspace stays available."
+                                OperatingMode.CLOUD_MODE -> "Use configured cloud services for supported tasks."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    StatusPill(
-                        text = connectionState.label,
-                        color = if (connectionState.name == "Connected") EmeraldSuccess else ElectricCyan
-                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        StatusPill(
+                            text = operatingMode.badge,
+                            color = ElectricCyan
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val isConnected = connectionState.name == "Connected"
+                        StatusPill(
+                            text = when {
+                                mobileAiReady -> "Selected AI configured"
+                                operatingMode == OperatingMode.WINDOWS_ENHANCED && isConnected -> "Windows online"
+                                else -> "Set up selected AI"
+                            },
+                            color = if (mobileAiReady || (operatingMode == OperatingMode.WINDOWS_ENHANCED && isConnected)) EmeraldSuccess else VioletAccent
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // AI Agent Team Active Waveform Card
-            StatusCard(highlightGradient = true, onClick = { onNavigate(Routes.VOICE_MODE) }) {
+            // Voice-first entry point: the assistant is the product, not a fake agent activity monitor.
+            StatusCard(highlightGradient = true) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "AI Agent Team",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatusPill(text = "$activeAgentsCount / 29 Active", color = VioletAccent)
+                    JavoLogo(size = 72.dp, showOrbitalRing = true)
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Hello, I'm Javo", style = MaterialTheme.typography.headlineSmall)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Bolo, aaj kya karna hai? Ask naturally in Hindi, Hinglish or English.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 WaveformVisualizer(
-                    state = if (waveformState == WaveformState.Idle) WaveformState.Executing else waveformState,
+                    state = waveformState,
                     barCount = 26,
-                    height = 60.dp,
+                    height = 58.dp,
                     showStateLabel = true
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Tap to open Hinglish / Hindi / English Voice Mode",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ElectricCyan
+                    text = if (waveformState == WaveformState.Idle)
+                        "Ready for your next conversation"
+                    else waveformState.label,
+                    color = ElectricCyan,
+                    style = MaterialTheme.typography.labelMedium
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = { onNavigate(Routes.VOICE_MODE) },
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan)
+                ) {
+                    Icon(Icons.Rounded.Mic, contentDescription = null)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Talk to Javo", style = MaterialTheme.typography.titleMedium)
+                }
+                if (!mobileAiReady) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "To get real AI replies, first connect a provider. Voice recognition alone is not AI.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { onNavigate(Routes.AI_PROVIDERS) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Connect an AI provider") }
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-            Text("Quick Actions", style = MaterialTheme.typography.titleMedium)
+            Text("What would you like to do?", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 2x2 Quick Actions Grid
+            // 2x3 Quick Actions Grid
             Row(modifier = Modifier.fillMaxWidth()) {
                 QuickActionTile(
                     icon = Icons.Rounded.GraphicEq,
-                    title = "Voice Mode",
-                    subtitle = "Push-to-talk",
-                    onClick = { onNavigate(Routes.VOICE_MODE) },
+                    title = "AI Team",
+                    subtitle = "Explore specialists",
+                    onClick = { onNavigate(Routes.AGENT_TEAM) },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                QuickActionTile(
+                    icon = Icons.Rounded.PostAdd,
+                    title = "Create Content",
+                    subtitle = "${drafts.size} local drafts",
+                    onClick = { onNavigate(Routes.CONTENT_LIBRARY) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                QuickActionTile(
+                    icon = Icons.Rounded.Assignment,
+                    title = "Tasks (${tasks.size})",
+                    subtitle = "Create or run phone tasks",
+                    onClick = { onNavigate(Routes.WORKFLOWS) },
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 QuickActionTile(
                     icon = Icons.Rounded.Shield,
                     title = "Approvals ($pendingApprovals)",
-                    subtitle = "Review queue",
+                    subtitle = "Review real pending actions",
                     onClick = { onNavigate(Routes.APPROVAL_INBOX) },
                     modifier = Modifier.weight(1f)
                 )
@@ -205,18 +332,18 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
                 QuickActionTile(
-                    icon = Icons.Rounded.AccountTree,
-                    title = "Workflows",
-                    subtitle = "Node pipelines",
-                    onClick = { onNavigate(Routes.WORKFLOWS) },
+                    icon = Icons.Rounded.Share,
+                    title = "Social Channels",
+                    subtitle = verifiedSocialAccounts.toString() + " verified connections",
+                    onClick = { onNavigate(Routes.CONNECTED_ACCOUNTS) },
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 QuickActionTile(
-                    icon = Icons.Rounded.CalendarMonth,
-                    title = "Calendar",
-                    subtitle = "Schedule view",
-                    onClick = { onNavigate(Routes.CALENDAR) },
+                    icon = Icons.Rounded.SmartToy,
+                    title = "AI Providers",
+                    subtitle = if (mobileAiReady) "Provider configured" else "Connect to get AI replies",
+                    onClick = { onNavigate(Routes.AI_PROVIDERS) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -225,16 +352,16 @@ fun HomeScreen(
 
             // Automation Stats
             StatusCard {
-                Text("Automation Stats", style = MaterialTheme.typography.titleMedium)
+                Text("Your workspace · live records", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    StatColumn("Local Tasks", tasks.size.toString())
-                    StatColumn("Offline Drafts", drafts.size.toString())
-                    StatColumn("Queued Sync", queuedSyncCount.toString())
-                    StatColumn("Zero-Cost", "$0.00")
+                    StatColumn("Tasks", tasks.size.toString())
+                    StatColumn("Drafts", drafts.size.toString())
+                    StatColumn("Approvals", pendingApprovals.toString())
+                    StatColumn("Connected", verifiedSocialAccounts.toString())
                 }
             }
 
@@ -248,9 +375,9 @@ fun HomeScreen(
             }
             Spacer(modifier = Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
-                QuickActionTile(Icons.Rounded.SmartToy, "AI Providers", "Ollama / Gemini", { onNavigate(Routes.AI_PROVIDERS) }, Modifier.weight(1f))
+                QuickActionTile(Icons.Rounded.Settings, "Preferences", "Voice, AI & privacy", { onNavigate(Routes.SETTINGS) }, Modifier.weight(1f))
                 Spacer(modifier = Modifier.width(10.dp))
-                QuickActionTile(Icons.Rounded.Security, "Security", "Pairing & Keys", { onNavigate(Routes.SECURITY) }, Modifier.weight(1f))
+                QuickActionTile(Icons.Rounded.Security, "Privacy & Safety", "Permissions & controls", { onNavigate(Routes.SECURITY) }, Modifier.weight(1f))
             }
 
             Spacer(modifier = Modifier.height(16.dp))

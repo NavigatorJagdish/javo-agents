@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 
 export type ContentType = 'video' | 'image' | 'carousel' | 'post' | 'audio';
-export type ContentStatus = 'draft' | 'ready' | 'scheduled' | 'published';
+export type ContentStatus = 'draft' | 'ready' | 'scheduled' | 'simulated' | 'published';
 
 export interface ContentItem {
   id: string;
   title: string;
   type: ContentType;
   status: ContentStatus;
+  publishMode?: 'mock' | 'live';
   platform: 'YouTube' | 'Instagram' | 'Facebook' | 'TikTok' | 'X';
   folder: string;
   duration?: string;

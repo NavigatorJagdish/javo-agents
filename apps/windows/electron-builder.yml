@@ -45,5 +45,5 @@ portable:
   artifactName: "JavoAgents-Portable-${version}-${arch}.${ext}"
 publish:
   provider: github
-  owner: javo-agents
+  owner: NavigatorJagdish
   repo: javo-agents
