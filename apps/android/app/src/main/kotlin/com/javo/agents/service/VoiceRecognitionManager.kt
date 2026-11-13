@@ -1,5 +1,6 @@
 package com.javo.agents.service
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -31,6 +32,7 @@ interface VoiceRecognitionListener {
     fun onEndOfSpeech() {}
 }
 
+@SuppressLint("NewApi")
 class VoiceRecognitionManager(
     private val context: Context,
     private val listener: VoiceRecognitionListener
@@ -58,11 +60,24 @@ class VoiceRecognitionManager(
         }
     }
 
+    @SuppressLint("NewApi")
+    private fun createOnDeviceSpeechRecognizerSafely(): SpeechRecognizer? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            try {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
     fun checkAndCacheRecognitionSupport(langCode: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && isOnDeviceAvailable()) {
             mainHandler.post {
                 try {
-                    val recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                    val recognizer = createOnDeviceSpeechRecognizerSafely() ?: return@post
                     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE, langCode)
                     }
@@ -121,9 +136,10 @@ class VoiceRecognitionManager(
                         SpeechRecognizer.createSpeechRecognizer(context)
                     }
                     RecognizerMode.ON_DEVICE_ONLY -> {
-                        if (isOnDeviceAvailable()) {
+                        val onDeviceRecognizer = createOnDeviceSpeechRecognizerSafely()
+                        if (onDeviceRecognizer != null) {
                             activeRecognizerType = "On-Device Speech Recognizer (Offline)"
-                            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                            onDeviceRecognizer
                         } else {
                             lastErrorCode = -3
                             lastErrorMessage = "On-device speech recognition is not supported on this phone. Please switch to Online or Automatic mode."
@@ -134,13 +150,19 @@ class VoiceRecognitionManager(
                     RecognizerMode.AUTOMATIC -> {
                         // Check if on-device model is installed for this specific language
                         val isInstalled = cachedLanguageSupport[langCode] == true
-                        if (isOnDeviceAvailable() && isInstalled) {
+                        val onDeviceRecognizer = if (isInstalled || language == VoiceLanguage.English) {
+                            createOnDeviceSpeechRecognizerSafely()
+                        } else {
+                            null
+                        }
+
+                        if (onDeviceRecognizer != null && isInstalled) {
                             activeRecognizerType = "On-Device Speech Recognizer (Model Verified)"
-                            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                        } else if (language == VoiceLanguage.English && isOnDeviceAvailable()) {
+                            onDeviceRecognizer
+                        } else if (onDeviceRecognizer != null && language == VoiceLanguage.English) {
                             // English on-device models are standard on modern Android
                             activeRecognizerType = "On-Device Speech Recognizer (English)"
-                            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                            onDeviceRecognizer
                         } else {
                             // Hindi/Hinglish without verified on-device pack defaults to standard recognizer to prevent Error 13
                             activeRecognizerType = "System Speech Recognizer (Automatic Online)"
