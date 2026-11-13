@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.work.Configuration
 import com.javo.agents.data.local.JavoDatabase
 import com.javo.agents.data.local.KeystoreManager
+import com.javo.agents.data.remote.GeminiApiClient
 import com.javo.agents.data.remote.WindowsBridgeClient
 import com.javo.agents.data.repository.JavoAppRepository
 import com.javo.agents.workers.SyncWorker
@@ -15,6 +16,7 @@ class AppContainer(application: Application) {
     val database: JavoDatabase by lazy { JavoDatabase.getInstance(application) }
     val keystoreManager: KeystoreManager by lazy { KeystoreManager(application) }
     val bridgeClient: WindowsBridgeClient by lazy { WindowsBridgeClient(keystoreManager) }
+    val geminiClient: GeminiApiClient by lazy { GeminiApiClient() }
     val repository: JavoAppRepository by lazy {
         JavoAppRepository(
             database = database,

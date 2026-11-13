@@ -28,6 +28,8 @@ import com.javo.agents.data.model.WaveformState
 import com.javo.agents.data.model.WorkflowInfo
 import com.javo.agents.data.remote.BridgeConnectionState
 import com.javo.agents.service.VoiceCaptureService
+import com.javo.agents.service.VoiceRecognitionListener
+import com.javo.agents.service.VoiceRecognitionManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +45,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val container = app.container
     private val keystore = container.keystoreManager
     private val bridge = container.bridgeClient
+    private val gemini = container.geminiClient
     private val repo = container.repository
 
     val tasks: StateFlow<List<TaskEntity>> = repo.observeTasks()
@@ -83,26 +86,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _waveformState = MutableStateFlow(WaveformState.Idle)
     val waveformState: StateFlow<WaveformState> = _waveformState.asStateFlow()
 
+    private val _liveRmsAmplitude = MutableStateFlow(0f)
+    val liveRmsAmplitude: StateFlow<Float> = _liveRmsAmplitude.asStateFlow()
+
+    private val _liveSpeechTranscript = MutableStateFlow("")
+    val liveSpeechTranscript: StateFlow<String> = _liveSpeechTranscript.asStateFlow()
+
     private val _selectedVoiceLanguage = MutableStateFlow(VoiceLanguage.Hinglish)
     val selectedVoiceLanguage: StateFlow<VoiceLanguage> = _selectedVoiceLanguage.asStateFlow()
 
-    private val _voiceMessages = MutableStateFlow(
-        listOf(
-            VoiceMessage("v-1", false, "Namaste! Main Javo hoon. Aap English, Hindi ya Hinglish mein bol kar drafts, approvals aur agents manage kar sakte hain.", VoiceLanguage.Hinglish, "Ready"),
-            VoiceMessage("v-2", true, "Aaj ke pending Instagram approvals dikhao aur ek Hinglish hook draft banao.", VoiceLanguage.Hinglish, "Sample"),
-            VoiceMessage("v-3", false, "2 pending approvals queue mein hain. Content Factory ko Hinglish hook ke liye assign kar diya hai.", VoiceLanguage.Hinglish, "Sample", "Routed to: approval_manager, content_factory")
-        )
-    )
+    // Clean baseline: zero fabricated conversation history
+    private val _voiceMessages = MutableStateFlow<List<VoiceMessage>>(emptyList())
     val voiceMessages: StateFlow<List<VoiceMessage>> = _voiceMessages.asStateFlow()
 
-    private val _workflows = MutableStateFlow(
-        listOf(
-            WorkflowInfo("wf-1", "Folder-to-Reel Autopilot", "Folder Watcher", 6, true, true, "Ready • Waiting for new video in D:\\JavoContent", listOf("Folder Watcher", "Content Analyzer", "AI Prompt", "Quality Inspector", "Approval Gate", "Publish")),
-            WorkflowInfo("wf-2", "Morning Growth Digest", "Schedule (08:30 IST)", 4, false, true, "Last ran today • 0 errors", listOf("Schedule", "Analytics", "Weekly Analyst", "Notification")),
-            WorkflowInfo("wf-3", "Comment Sentiment Guard", "Account Event", 5, true, false, "Paused • Supervised mode", listOf("Account Event", "Condition", "AI Prompt", "Approval Gate", "Comment Reply"))
-        )
-    )
+    // Clean baseline: empty workflows unless configured or demo mode is on
+    private val _workflows = MutableStateFlow<List<WorkflowInfo>>(emptyList())
     val workflows: StateFlow<List<WorkflowInfo>> = _workflows.asStateFlow()
+
+    private val _demoModeActive = MutableStateFlow(keystore.isDemoModeEnabled())
+    val demoModeActive: StateFlow<Boolean> = _demoModeActive.asStateFlow()
 
     private val _aiConfig = MutableStateFlow(
         AIProviderConfig(
@@ -121,9 +123,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _exportedSnapshot = MutableStateFlow<String?>(null)
     val exportedSnapshot: StateFlow<String?> = _exportedSnapshot.asStateFlow()
 
+    private val voiceManager by lazy {
+        VoiceRecognitionManager(
+            context = app,
+            listener = object : VoiceRecognitionListener {
+                override fun onReadyForSpeech() {
+                    _waveformState.value = WaveformState.Listening
+                }
+
+                override fun onRmsChanged(amplitude: Float) {
+                    _liveRmsAmplitude.value = amplitude
+                }
+
+                override fun onPartialResults(partialText: String) {
+                    _liveSpeechTranscript.value = partialText
+                }
+
+                override fun onResults(finalText: String) {
+                    _liveSpeechTranscript.value = ""
+                    _liveRmsAmplitude.value = 0f
+                    if (finalText.isNotBlank()) {
+                        stopAndProcessVoiceCommand(finalText)
+                    } else {
+                        _waveformState.value = WaveformState.Idle
+                    }
+                }
+
+                override fun onError(errorCode: Int, errorMessage: String) {
+                    _liveSpeechTranscript.value = ""
+                    _liveRmsAmplitude.value = 0f
+                    _waveformState.value = WaveformState.Idle
+                    if (errorCode != android.speech.SpeechRecognizer.ERROR_NO_MATCH &&
+                        errorCode != android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    ) {
+                        _statusToast.value = errorMessage
+                    }
+                }
+
+                override fun onEndOfSpeech() {
+                    _waveformState.value = WaveformState.Thinking
+                }
+            }
+        )
+    }
+
     init {
         viewModelScope.launch {
-            repo.seedInitialLocalDataIfEmpty()
+            repo.migrateLegacySampleDataIfPresent()
             if (keystore.isPaired()) {
                 bridge.pingPairedHost()
             }
@@ -192,18 +238,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         _waveformState.value = WaveformState.Listening
+        _liveSpeechTranscript.value = ""
+        _liveRmsAmplitude.value = 0f
         try {
             VoiceCaptureService.start(app)
         } catch (_: Exception) {
             // Foreground service may be restricted if backgrounded; UI visualizer still operates cleanly
         }
+        voiceManager.startListening(_selectedVoiceLanguage.value)
+    }
+
+    fun stopVoiceListening() {
+        try {
+            voiceManager.stopListening()
+            VoiceCaptureService.stop(app)
+        } catch (_: Exception) {}
     }
 
     fun stopAndProcessVoiceCommand(spokenOrTypedText: String) {
-        try {
-            VoiceCaptureService.stop(app)
-        } catch (_: Exception) {
-        }
+        stopVoiceListening()
         val query = spokenOrTypedText.trim()
         if (query.isBlank()) {
             _waveformState.value = WaveformState.Idle
@@ -222,14 +275,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _waveformState.value = WaveformState.Thinking
-            delay(500)
+            delay(300)
             _waveformState.value = WaveformState.Executing
 
-            val remoteReply = bridge.sendVoiceCommand(query, lang.code)
-            val replyText = remoteReply?.reply ?: when (lang) {
-                VoiceLanguage.Hindi -> "Aapka command '${query}' offline queue mein save ho gaya hai. Windows runtime connect hote hi Voice Agent execute karega."
-                VoiceLanguage.Hinglish -> "Got it! '${query}' ko local queue mein add kar diya hai. Supervised Autopilot approval ke bina kuch publish nahi hoga."
-                VoiceLanguage.English -> "Queued '${query}' locally. Once connected to your paired Windows runtime, Voice Agent will execute it under Supervised Autopilot."
+            var replyText: String
+            var actionHint: String? = null
+
+            // Route 1: Paired & reachable Windows Local Runtime
+            val isBridgeConnected = connectionState.value == BridgeConnectionState.Connected
+            if (isBridgeConnected) {
+                val remoteReply = bridge.sendVoiceCommand(query, lang.code)
+                if (remoteReply != null) {
+                    replyText = remoteReply.reply
+                    actionHint = "Executed via ${remoteReply.routedAgent}"
+                } else {
+                    replyText = "Command sent to Windows bridge. Offline acknowledgment received."
+                    actionHint = "Queued to Windows Runtime"
+                }
+            } else if (keystore.hasGeminiApiKey()) {
+                // Route 2: Direct Gemini API via user-provided developer key in Keystore
+                val systemPrompt = "You are Javo, a local-first, privacy-respecting AI assistant for social media creators and entrepreneurs. You are helpful, concise, and communicate fluently in English, Hindi, and Hinglish. Answer general questions naturally. If the user asks you to draft content, provide creative, ready-to-use hooks and captions."
+                val geminiRes = gemini.generateResponse(
+                    prompt = query,
+                    apiKey = keystore.getGeminiApiKey().orEmpty(),
+                    systemInstruction = systemPrompt
+                )
+                if (geminiRes.isSuccess) {
+                    replyText = geminiRes.getOrThrow()
+                    actionHint = "Generated via Google Gemini 1.5 Flash (Direct API)"
+                } else {
+                    replyText = "Gemini API encountered an error: ${geminiRes.exceptionOrNull()?.message}"
+                    actionHint = "Direct API Error"
+                }
+            } else {
+                // Route 3: Neither provider configured - honest diagnostics + automatic local draft creation if requested
+                val lower = query.lowercase()
+                val isDraftRequest = lower.contains("draft") || lower.contains("hook") ||
+                    lower.contains("reel") || lower.contains("script") || lower.contains("post") ||
+                    lower.contains("write") || lower.contains("banao") || lower.contains("likho")
+
+                if (isDraftRequest) {
+                    val platform = when {
+                        lower.contains("youtube") -> "YouTube"
+                        lower.contains("facebook") -> "Facebook"
+                        else -> "Instagram"
+                    }
+                    val created = repo.draftRepository.createOfflineDraft(
+                        title = query.take(45),
+                        body = query,
+                        platform = platform
+                    )
+                    replyText = "Saved '${created.title}' as an offline draft in Content Studio.\n\nNote: Live AI responses require an active provider. Pair with Windows or configure your Gemini API key in Settings → AI Providers."
+                    actionHint = "Saved to local Room drafts"
+                } else {
+                    replyText = "AI Provider not configured.\n\n• For local AI (Ollama), pair with your Windows PC in Settings → Pairing.\n• For cloud AI on your phone, enter your Gemini API key in Settings → AI Providers."
+                    actionHint = "Unconfigured AI Provider"
+                }
             }
 
             val assistantMsg = VoiceMessage(
@@ -238,11 +339,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 text = replyText,
                 language = lang,
                 timestampLabel = "Now",
-                actionHint = if (remoteReply != null) "Executed via ${remoteReply.routedAgent}" else "Queued offline • Device Sync ready"
+                actionHint = actionHint
             )
             _voiceMessages.update { it + assistantMsg }
             _waveformState.value = WaveformState.Finished
-            delay(1200)
+            delay(1000)
             _waveformState.value = WaveformState.Idle
         }
     }
@@ -365,6 +466,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleZeroCostGuard(enabled: Boolean) {
         _aiConfig.update { it.copy(zeroCostGuardEnabled = enabled) }
+    }
+
+    fun updateDraft(draft: DraftEntity) {
+        viewModelScope.launch {
+            repo.updateDraft(draft)
+            _statusToast.value = "Draft updated."
+        }
+    }
+
+    fun deleteDraft(id: String) {
+        viewModelScope.launch {
+            repo.deleteDraft(id)
+            _statusToast.value = "Draft deleted."
+        }
+    }
+
+    fun deleteApproval(id: String) {
+        viewModelScope.launch {
+            repo.deleteApproval(id)
+            _statusToast.value = "Approval item deleted."
+        }
+    }
+
+    fun createLocalTask(
+        title: String,
+        assignedAgent: String = "general_assistant",
+        priority: String = "normal",
+        goalId: String? = null
+    ) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            repo.addTask(title, assignedAgent, priority, goalId)
+            _statusToast.value = "Task created in local queue."
+        }
+    }
+
+    fun updateTaskStatus(taskId: String, newState: String) {
+        viewModelScope.launch {
+            repo.updateTaskState(taskId, newState)
+            _statusToast.value = "Task updated to $newState."
+        }
+    }
+
+    fun deleteTask(taskId: String) {
+        viewModelScope.launch {
+            repo.deleteTask(taskId)
+            _statusToast.value = "Task removed."
+        }
+    }
+
+    fun toggleDemoMode(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled) {
+                repo.loadDemoData()
+                _demoModeActive.value = true
+                _statusToast.value = "Demo Mode loaded sample drafts & tasks."
+            } else {
+                repo.clearDemoData()
+                _demoModeActive.value = false
+                _statusToast.value = "Demo sample records cleared."
+            }
+        }
+    }
+
+    fun clearVoiceHistory() {
+        _voiceMessages.value = emptyList()
+        _statusToast.value = "Voice conversation cleared."
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        voiceManager.destroy()
     }
 
     fun triggerEmergencyStop() {

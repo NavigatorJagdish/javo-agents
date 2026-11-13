@@ -57,6 +57,28 @@ fun WorkflowsScreen(
                 }
             }
 
+            if (workflows.isEmpty()) {
+                item {
+                    StatusCard {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("No Workflows Configured", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "0 active automation graphs. Author deterministic pipelines on your Windows desktop builder or enable Demo Mode in Settings.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
             items(workflows, key = { it.id }) { wf ->
                 StatusCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {

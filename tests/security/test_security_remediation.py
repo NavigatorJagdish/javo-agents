@@ -79,7 +79,9 @@ def test_anonymous_privileged_api_access_rejected(sec_env: Path):
         assert unauth_client.post("/security/pause").status_code == 401
         assert unauth_client.post("/security/emergency-stop").status_code == 401
         assert unauth_client.post("/tasks/fake-id/execute").status_code == 401
-        assert unauth_client.post("/devices/pair/123456/confirm").status_code == 401
+        assert unauth_client.post("/devices/pair", json={"device_name": "attacker"}).status_code == 401
+        assert unauth_client.delete("/devices/fake-id").status_code == 401
+        assert unauth_client.get("/devices/").status_code == 401
         assert unauth_client.put("/telegram/config", json={"allowed_users": ["1"]}).status_code == 401
 
 

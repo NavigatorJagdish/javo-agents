@@ -1,7 +1,7 @@
 export const SITE_CONFIG = {
   name: 'Javo Agents',
   tagline: 'Your Fully Automated AI Team',
-  version: '0.1.0-alpha',
+  version: '0.1.1-alpha',
   releaseStatus: 'Private Alpha Test',
   license: 'MIT',
   githubUrl: 'https://github.com/NavigatorJagdish/javo-agents',

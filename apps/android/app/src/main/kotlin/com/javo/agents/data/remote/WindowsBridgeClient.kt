@@ -114,8 +114,11 @@ class WindowsBridgeClient(
                 )
             )
             if (response.isSuccessful) {
+                val body = response.body()
+                val serverToken = body?.deviceToken?.ifBlank { deviceToken } ?: deviceToken
+                keystoreManager.savePairingSession(hostUrl, serverToken)
                 _connectionState.value = BridgeConnectionState.Connected
-                Result.success(response.body()?.message ?: "Paired with Windows Runtime")
+                Result.success(body?.message ?: "Paired with Windows Runtime")
             } else {
                 // Allow local offline-first pairing record when runtime is temporarily unreachable
                 _connectionState.value = BridgeConnectionState.OfflineQueue

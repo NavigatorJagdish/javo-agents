@@ -47,7 +47,8 @@ fun WaveformVisualizer(
     modifier: Modifier = Modifier,
     barCount: Int = 24,
     height: Dp = 76.dp,
-    showStateLabel: Boolean = true
+    showStateLabel: Boolean = true,
+    liveAmplitude: Float? = null
 ) {
     val durationMs = when (state) {
         WaveformState.Idle -> 2400
@@ -109,7 +110,13 @@ fun WaveformVisualizer(
 
                 val amplitude = when (state) {
                     WaveformState.Idle -> 0.16f + 0.12f * ((sin(phase + i * 0.45f) + 1f) / 2f)
-                    WaveformState.Listening -> 0.25f + 0.68f * ((sin(phase * 1.8f + i * 0.65f) + 1f) / 2f) * envelope
+                    WaveformState.Listening -> {
+                        if (liveAmplitude != null && liveAmplitude > 0.04f) {
+                            (0.18f + 0.82f * liveAmplitude * ((sin(phase * 2.2f + i * 0.7f) + 1f) / 2f) * envelope).coerceIn(0.12f, 1.0f)
+                        } else {
+                            0.25f + 0.68f * ((sin(phase * 1.8f + i * 0.65f) + 1f) / 2f) * envelope
+                        }
+                    }
                     WaveformState.Thinking -> 0.22f + 0.45f * ((sin(phase + i * 0.9f) + 1f) / 2f) * envelope
                     WaveformState.Executing -> 0.35f + 0.60f * ((sin(phase * 2.2f + i * 0.8f) + 1f) / 2f)
                     WaveformState.Finished -> 0.22f + 0.22f * envelope

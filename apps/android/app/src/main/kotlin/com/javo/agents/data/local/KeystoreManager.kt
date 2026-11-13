@@ -247,6 +247,18 @@ class KeystoreManager(
 
     fun isVoiceModeEnabled(): Boolean = secretStore.getSecret(KEY_VOICE_MODE)?.toBooleanStrictOrNull() ?: true
 
+    fun isSampleDataMigrated(): Boolean = secretStore.getSecret(KEY_SAMPLE_DATA_MIGRATED)?.toBooleanStrictOrNull() ?: false
+
+    fun markSampleDataMigrated() {
+        secretStore.putSecret(KEY_SAMPLE_DATA_MIGRATED, "true")
+    }
+
+    fun isDemoModeEnabled(): Boolean = secretStore.getSecret(KEY_DEMO_MODE)?.toBooleanStrictOrNull() ?: false
+
+    fun setDemoModeEnabled(enabled: Boolean) {
+        secretStore.putSecret(KEY_DEMO_MODE, enabled.toString())
+    }
+
     fun getHealthStatus(): KeystoreHealthStatus {
         val active = try {
             keyProvider.getOrCreateAesKey()
@@ -278,5 +290,7 @@ class KeystoreManager(
         private const val KEY_ONBOARDING_COMPLETE = "pref_onboarding_complete"
         private const val KEY_AUTO_RUN = "pref_auto_run"
         private const val KEY_VOICE_MODE = "pref_voice_mode"
+        private const val KEY_SAMPLE_DATA_MIGRATED = "sample_migration_v1_done"
+        private const val KEY_DEMO_MODE = "pref_demo_mode_enabled"
     }
 }

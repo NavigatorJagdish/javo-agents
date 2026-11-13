@@ -163,11 +163,14 @@ fun HomeScreen(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f)
                     )
-                    StatusPill(text = "$activeAgentsCount / 29 Active", color = VioletAccent)
+                    val isConnected = connectionState.name == "Connected"
+                    val statusText = if (isConnected) "Connected • $activeAgentsCount Active" else "Phone-Only • Standby"
+                    val statusColor = if (isConnected) EmeraldSuccess else VioletAccent
+                    StatusPill(text = statusText, color = statusColor)
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 WaveformVisualizer(
-                    state = if (waveformState == WaveformState.Idle) WaveformState.Executing else waveformState,
+                    state = waveformState,
                     barCount = 26,
                     height = 60.dp,
                     showStateLabel = true
@@ -233,8 +236,8 @@ fun HomeScreen(
                 ) {
                     StatColumn("Local Tasks", tasks.size.toString())
                     StatColumn("Offline Drafts", drafts.size.toString())
-                    StatColumn("Queued Sync", queuedSyncCount.toString())
-                    StatColumn("Zero-Cost", "$0.00")
+                    StatColumn("Pending", pendingApprovals.toString())
+                    StatColumn("Zero-Cost Cap", "$0.00")
                 }
             }
 

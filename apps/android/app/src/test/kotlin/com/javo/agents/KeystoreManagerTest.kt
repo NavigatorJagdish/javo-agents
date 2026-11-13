@@ -71,4 +71,20 @@ class KeystoreManagerTest {
         manager.wipeAllSecrets()
         assertFalse(manager.hasGeminiApiKey())
     }
+
+    @Test
+    fun keystoreManager_sampleMigrationAndDemoModeFlags() {
+        val store = InMemorySecretStore()
+        val manager = KeystoreManager(store, InMemoryKeyProvider())
+
+        assertFalse(manager.isSampleDataMigrated())
+        manager.markSampleDataMigrated()
+        assertTrue(manager.isSampleDataMigrated())
+
+        assertFalse(manager.isDemoModeEnabled())
+        manager.setDemoModeEnabled(true)
+        assertTrue(manager.isDemoModeEnabled())
+        manager.setDemoModeEnabled(false)
+        assertFalse(manager.isDemoModeEnabled())
+    }
 }

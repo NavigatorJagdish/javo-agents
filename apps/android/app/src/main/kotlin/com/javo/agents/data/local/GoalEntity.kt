@@ -32,6 +32,9 @@ interface GoalDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(goals: List<GoalEntity>)
 
+    @Query("DELETE FROM goals WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM goals")
     suspend fun clearAll()
 }

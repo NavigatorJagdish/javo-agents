@@ -34,6 +34,12 @@ interface TaskDao {
     @Query("UPDATE tasks SET state = :newState, updatedAtEpochMs = :now WHERE state IN ('pending', 'running')")
     suspend fun pauseAllActive(newState: String = "paused", now: Long = System.currentTimeMillis())
 
+    @Query("UPDATE tasks SET state = :newState, updatedAtEpochMs = :now WHERE id = :id")
+    suspend fun updateState(id: String, newState: String, now: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM tasks WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM tasks")
     suspend fun clearAll()
 }

@@ -73,5 +73,14 @@ class OfflineDraftRepositoryTest {
         assertEquals(1, all.size)
         assertFalse(all.first().pendingSync)
         assertEquals("synced", all.first().status)
+
+        // Test update
+        repo.updateDraft(created.copy(title = "Updated Hook Title"))
+        val updated = repo.observeDrafts().first().first()
+        assertEquals("Updated Hook Title", updated.title)
+
+        // Test delete
+        repo.deleteDraft(created.id)
+        assertTrue(repo.observeDrafts().first().isEmpty())
     }
 }

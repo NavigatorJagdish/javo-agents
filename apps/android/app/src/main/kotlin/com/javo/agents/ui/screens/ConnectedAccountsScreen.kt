@@ -105,6 +105,28 @@ fun ConnectedAccountsScreen(
                 }
             }
 
+            if (accounts.isEmpty()) {
+                item {
+                    StatusCard {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("No Connected Accounts", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "0 social channels connected. Tap '+' to queue a channel or connect on your paired Windows desktop.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
             items(accounts, key = { it.id }) { account ->
                 val pillColor = when (account.status) {
                     "Connected" -> EmeraldSuccess

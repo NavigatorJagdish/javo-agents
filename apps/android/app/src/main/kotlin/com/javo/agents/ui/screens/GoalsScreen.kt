@@ -95,6 +95,28 @@ fun GoalsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (goals.isEmpty()) {
+                item {
+                    StatusCard {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("No Growth Goals", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "0 active milestones. Tap '+' to create a publishing or growth target.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
             items(goals, key = { it.id }) { goal ->
                 StatusCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {

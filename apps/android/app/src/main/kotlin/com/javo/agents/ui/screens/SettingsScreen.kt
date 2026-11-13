@@ -37,6 +37,7 @@ fun SettingsScreen(
     val darkTheme by viewModel.darkTheme.collectAsState()
     val voiceMode by viewModel.voiceModeEnabled.collectAsState()
     val autoRun by viewModel.autoRunEnabled.collectAsState()
+    val demoMode by viewModel.demoModeActive.collectAsState()
     val diagnostics = viewModel.runDiagnostics()
 
     JavoSubScreenScaffold(title = "Settings & Diagnostics", onBack = onBack) { padding ->
@@ -78,6 +79,16 @@ fun SettingsScreen(
                 }
             }
 
+            StatusCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Isolated Demo Mode", style = MaterialTheme.typography.titleMedium)
+                        Text("Load sample drafts, approvals, and tasks for testing. Isolated from genuine user data.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = demoMode, onCheckedChange = viewModel::toggleDemoMode)
+                }
+            }
+
             StatusCard(highlightGradient = true) {
                 Text("System Diagnostics", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -104,6 +115,18 @@ fun SettingsScreen(
             JavoOutlinedButton("Security & Pairing Management", { onNavigate(Routes.SECURITY) })
             JavoOutlinedButton("Privacy & Data Export", { onNavigate(Routes.PRIVACY_DATA) }, borderColor = VioletAccent)
             JavoOutlinedButton("Help, Troubleshooting & Reporting", { onNavigate(Routes.HELP_REPORTING) }, borderColor = VioletAccent)
+
+            Spacer(modifier = Modifier.height(4.dp))
+            StatusCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Javo Agents Companion", style = MaterialTheme.typography.bodyMedium)
+                    StatusPill("v0.1.1-alpha (Build 2)", color = ElectricCyan)
+                }
+            }
         }
     }
 }
