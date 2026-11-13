@@ -129,8 +129,12 @@ class VoiceRecognitionManager(
 
     fun startListening(
         language: VoiceLanguage,
-        mode: RecognizerMode = RecognizerMode.AUTOMATIC
+        mode: RecognizerMode = RecognizerMode.AUTOMATIC,
+        isRecoveryAttempt: Boolean = false
     ) {
+        // Reset the retry budget only when the user initiates a new turn, not
+        // when the OS reconnects a SpeechRecognizer within the same turn.
+        if (!isRecoveryAttempt) reconnectAttemptCount = 0
         val sessionToken = activeSessionToken.incrementAndGet()
         clearWatchdogs()
         isCurrentlyListening = false
@@ -338,7 +342,8 @@ class VoiceRecognitionManager(
 
                 isCurrentlyListening = true
                 isCurrentlyFinalizing = false
-                reconnectAttemptCount = 0
+                // A transient onReady callback must not erase the same-turn
+                // disconnect retry budget, or repeated Error 11 loops forever.
                 listener.onReadyForSpeech()
 
                 // Silence watchdog: if no speech within 12 seconds, trigger stop
@@ -437,7 +442,7 @@ class VoiceRecognitionManager(
                         listener.onConnecting()
                         mainHandler.postDelayed({
                             if (activeSessionToken.get() == sessionToken) {
-                                startListening(language, RecognizerMode.ONLINE_ONLY)
+                                startListening(language, RecognizerMode.ONLINE_ONLY, isRecoveryAttempt = true)
                             }
                         }, 350L)
                         return
