@@ -9,6 +9,7 @@ import com.javo.agents.data.local.TaskEntity
 import com.javo.agents.data.model.AgentInfo
 import com.javo.agents.data.model.AgentRoster
 import com.javo.agents.data.model.CustomAiEndpointConfig
+import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.remote.GeminiApiClient
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +41,7 @@ class MobileAgentOrchestrator(
             it.slug.lowercase() == clean ||
             it.displayName.lowercase() == clean ||
             it.slug.replace("_", " ").lowercase() == clean
-        } ?: AgentRoster.allAgents.find { it.slug == "growth_scientist" }
+        }
     }
 
     suspend fun executeTask(task: TaskEntity): Result<String> = withContext(Dispatchers.IO) {
@@ -63,8 +64,14 @@ class MobileAgentOrchestrator(
         val geminiKey = keystoreManager.getGeminiApiKey().orEmpty().trim()
         val customEndpoint = keystoreManager.getCustomAiEndpoint()
 
-        if (geminiKey.isBlank() && (customEndpoint == null || !customEndpoint.isEnabled || customEndpoint.endpointUrl.isBlank())) {
-            val err = "No AI Provider configured. Please add your free Google Gemini API key or a Custom AI Endpoint in Settings → AI Providers to execute mobile agents."
+        val selectedProvider = keystoreManager.getSelectedAiProvider()
+        val providerReady = when (selectedProvider) {
+            ProviderType.GEMINI_DIRECT -> geminiKey.isNotBlank()
+            ProviderType.CUSTOM_ENDPOINT -> customEndpoint.isEnabled && customEndpoint.endpointUrl.isNotBlank()
+            ProviderType.LOCAL_PC_OLLAMA -> false // Desktop tools belong to the Windows runtime.
+        }
+        if (!providerReady) {
+            val err = "Selected AI provider '${selectedProvider.label}' is unavailable for Android task execution. Select a configured phone provider in Settings → AI Providers."
             taskDao.updateExecutionResult(task.id, "failed", null, err)
             return@withContext Result.failure(IllegalStateException(err))
         }
@@ -76,18 +83,17 @@ class MobileAgentOrchestrator(
             "Task: ${task.title}"
         }
 
-        val executionResult: Result<String> = if (geminiKey.isNotBlank()) {
-            val model = keystoreManager.getGeminiModel().takeIf { !it.isNullOrBlank() } ?: GeminiApiClient.MODEL_GEMINI_2_5_FLASH
-            geminiApiClient.generateResponse(
+        val executionResult: Result<String> = when (selectedProvider) {
+            ProviderType.GEMINI_DIRECT -> geminiApiClient.generateResponse(
                 prompt = userPrompt,
                 apiKey = geminiKey,
-                model = model,
+                model = keystoreManager.getGeminiModel(),
                 systemInstruction = systemInstruction
             )
-        } else if (customEndpoint != null && customEndpoint.isEnabled) {
-            callCustomEndpoint(customEndpoint, userPrompt, systemInstruction)
-        } else {
-            Result.failure(IllegalStateException("No available AI engine"))
+            ProviderType.CUSTOM_ENDPOINT -> callCustomEndpoint(customEndpoint, userPrompt, systemInstruction)
+            ProviderType.LOCAL_PC_OLLAMA -> Result.failure(
+                IllegalStateException("Windows-only provider is unavailable on Android.")
+            )
         }
 
         if (executionResult.isSuccess) {
@@ -125,9 +131,15 @@ class MobileAgentOrchestrator(
         val geminiKey = keystoreManager.getGeminiApiKey().orEmpty().trim()
         val customEndpoint = keystoreManager.getCustomAiEndpoint()
 
-        if (geminiKey.isBlank() && (customEndpoint == null || !customEndpoint.isEnabled)) {
+        val selectedProvider = keystoreManager.getSelectedAiProvider()
+        val providerReady = when (selectedProvider) {
+            ProviderType.GEMINI_DIRECT -> geminiKey.isNotBlank()
+            ProviderType.CUSTOM_ENDPOINT -> customEndpoint.isEnabled && customEndpoint.endpointUrl.isNotBlank()
+            ProviderType.LOCAL_PC_OLLAMA -> false
+        }
+        if (!providerReady) {
             return@withContext Result.failure(
-                IllegalStateException("Please configure Google Gemini API key or Custom AI Endpoint in Settings → AI Providers.")
+                IllegalStateException("Selected provider '${selectedProvider.label}' is not configured for mobile draft creation. Choose an available phone provider in Settings → AI Providers.")
             )
         }
 
@@ -140,16 +152,17 @@ class MobileAgentOrchestrator(
         val systemPrompt = "You are Content Factory, an expert social media copywriter for $platform. Write high-converting hooks, informative captions, and relevant hashtags $langPrompt. Be authentic, engaging, and clear."
         val userPrompt = "Create a ready-to-publish $platform post about: $topic\nInclude: 1) Strong opening hook, 2) Core body, 3) Call to Action (CTA), 4) 5 relevant hashtags."
 
-        val resultText = if (geminiKey.isNotBlank()) {
-            val model = keystoreManager.getGeminiModel().takeIf { !it.isNullOrBlank() } ?: GeminiApiClient.MODEL_GEMINI_2_5_FLASH
-            geminiApiClient.generateResponse(
+        val resultText = when (selectedProvider) {
+            ProviderType.GEMINI_DIRECT -> geminiApiClient.generateResponse(
                 prompt = userPrompt,
                 apiKey = geminiKey,
-                model = model,
+                model = keystoreManager.getGeminiModel(),
                 systemInstruction = systemPrompt
             )
-        } else {
-            callCustomEndpoint(customEndpoint!!, userPrompt, systemPrompt)
+            ProviderType.CUSTOM_ENDPOINT -> callCustomEndpoint(customEndpoint, userPrompt, systemPrompt)
+            ProviderType.LOCAL_PC_OLLAMA -> Result.failure(
+                IllegalStateException("Windows-only provider is unavailable on Android.")
+            )
         }
 
         if (resultText.isSuccess) {
