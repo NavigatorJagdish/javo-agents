@@ -175,7 +175,9 @@ data class VoiceMessage(
     val text: String,
     val language: VoiceLanguage,
     val timestampLabel: String,
-    val actionHint: String? = null
+    val actionHint: String? = null,
+    // This is set only after a successful response from the selected AI provider.
+    val isVerifiedAiReply: Boolean = false
 )
 
 data class WorkflowInfo(
