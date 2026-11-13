@@ -63,6 +63,10 @@ android {
         abortOnError = true
         checkReleaseBuilds = false
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

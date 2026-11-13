@@ -5,7 +5,6 @@ import com.javo.agents.data.model.VoiceDiagnosticsData
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.service.VoiceRecognitionListener
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -169,32 +168,33 @@ class VoiceRecognitionManagerTest {
             reconnectAttemptCount = 0
         )
 
-        val json = JSONObject().apply {
-            put("android_version", diag.androidVersion)
-            put("api_level", diag.apiLevel)
-            put("device_model", diag.deviceModel)
-            put("system_recognition_available", diag.isSystemRecognitionAvailable)
-            put("on_device_recognition_available", diag.isOnDeviceRecognitionAvailable)
-            put("selected_recognizer_mode", diag.selectedRecognizerMode.name)
-            put("active_recognizer_type", diag.activeRecognizerType)
-            put("selected_language", diag.selectedLanguage.displayName)
-            put("language_code", diag.languageCode)
-            put("is_installed_on_device", diag.isInstalledOnDevice)
-            put("is_supported_on_device", diag.isSupportedOnDevice)
-            put("is_supported_online", diag.isSupportedOnline)
-            put("has_mic_permission", diag.hasRecordAudioPermission)
-            put("waveform_state", diag.waveformState.name)
-            put("last_error_code", diag.lastErrorCode ?: JSONObject.NULL)
-            put("last_error_message", diag.lastErrorMessage ?: JSONObject.NULL)
-            put("reconnect_attempts", diag.reconnectAttemptCount)
+        val jsonString = buildString {
+            appendLine("{")
+            appendLine("  \"android_version\": \"${diag.androidVersion}\",")
+            appendLine("  \"api_level\": ${diag.apiLevel},")
+            appendLine("  \"device_model\": \"${diag.deviceModel}\",")
+            appendLine("  \"system_recognition_available\": ${diag.isSystemRecognitionAvailable},")
+            appendLine("  \"on_device_recognition_available\": ${diag.isOnDeviceRecognitionAvailable},")
+            appendLine("  \"selected_recognizer_mode\": \"${diag.selectedRecognizerMode.name}\",")
+            appendLine("  \"active_recognizer_type\": \"${diag.activeRecognizerType}\",")
+            appendLine("  \"selected_language\": \"${diag.selectedLanguage.displayName}\",")
+            appendLine("  \"language_code\": \"${diag.languageCode}\",")
+            appendLine("  \"is_installed_on_device\": ${diag.isInstalledOnDevice},")
+            appendLine("  \"is_supported_on_device\": ${diag.isSupportedOnDevice},")
+            appendLine("  \"is_supported_online\": ${diag.isSupportedOnline},")
+            appendLine("  \"has_mic_permission\": ${diag.hasRecordAudioPermission},")
+            appendLine("  \"waveform_state\": \"${diag.waveformState.name}\",")
+            appendLine("  \"last_error_code\": ${diag.lastErrorCode},")
+            appendLine("  \"last_error_message\": \"${diag.lastErrorMessage}\",")
+            appendLine("  \"reconnect_attempts\": ${diag.reconnectAttemptCount}")
+            appendLine("}")
         }
 
-        val jsonString = json.toString()
         assertFalse("Diagnostics must never leak API keys", jsonString.contains("AIzaSy"))
         assertFalse("Diagnostics must never contain audio binary data", jsonString.contains("pcm_data"))
         assertFalse("Diagnostics must never contain private transcripts", jsonString.contains("personal_transcription"))
-        assertTrue(jsonString.contains("AUTOMATIC"))
-        assertTrue(jsonString.contains("hi-IN"))
-        assertEquals(13, json.getInt("last_error_code"))
+        assertTrue("Must include mode", jsonString.contains("AUTOMATIC"))
+        assertTrue("Must include language code", jsonString.contains("hi-IN"))
+        assertTrue("Must include error code", jsonString.contains("\"last_error_code\": 13"))
     }
 }
