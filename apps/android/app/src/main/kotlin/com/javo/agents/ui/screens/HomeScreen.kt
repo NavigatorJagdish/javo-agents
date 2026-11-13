@@ -78,7 +78,6 @@ fun HomeScreen(
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
-    val agents by viewModel.agents.collectAsState()
     val approvals by viewModel.approvals.collectAsState()
     val drafts by viewModel.drafts.collectAsState()
     val tasks by viewModel.tasks.collectAsState()
@@ -93,9 +92,7 @@ fun HomeScreen(
     var showModeDialog by remember { mutableStateOf(false) }
 
     // Configured agents are not counted as actively executing jobs.
-    val configuredAgentsCount = agents.count { it.isEnabled }
     val pendingApprovals = approvals.count { it.status == "pending" }
-    val queuedSyncCount = drafts.count { it.pendingSync }
     val verifiedSocialAccounts = socialConnections.count { it.isConnected }
     val mobileAiReady = aiConfig.hasGeminiKeyStored ||
         (customAiConfig?.isEnabled == true && !customAiConfig?.endpointUrl.isNullOrBlank())
@@ -319,7 +316,7 @@ fun HomeScreen(
                 QuickActionTile(
                     icon = Icons.Rounded.Shield,
                     title = "Approvals ($pendingApprovals)",
-                    subtitle = "Supervised autopilot",
+                    subtitle = "Review real pending actions",
                     onClick = { onNavigate(Routes.APPROVAL_INBOX) },
                     modifier = Modifier.weight(1f)
                 )
@@ -372,7 +369,7 @@ fun HomeScreen(
             Row(modifier = Modifier.fillMaxWidth()) {
                 QuickActionTile(Icons.Rounded.Settings, "Preferences", "Voice, AI & privacy", { onNavigate(Routes.SETTINGS) }, Modifier.weight(1f))
                 Spacer(modifier = Modifier.width(10.dp))
-                QuickActionTile(Icons.Rounded.Security, "Security", "Pairing & Keys", { onNavigate(Routes.SECURITY) }, Modifier.weight(1f))
+                QuickActionTile(Icons.Rounded.Security, "Privacy & Safety", "Permissions & controls", { onNavigate(Routes.SECURITY) }, Modifier.weight(1f))
             }
 
             Spacer(modifier = Modifier.height(16.dp))
