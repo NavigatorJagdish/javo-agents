@@ -21,7 +21,7 @@ A PASS in an old workflow never transfers automatically to a newer commit. No ro
 | CORE-03 | Optional Windows pairing | PairingScreen.kt; WindowsBridgeClient.kt | CODE | NOT VERIFIED |
 | CORE-04 | Optional Cloud broker/worker | Existing backend; no independent hosted setup verified | BLOCKED | NOT VERIFIED |
 | CORE-05 | No fake tasks/approvals on fresh install | JavoRepositories.kt sample migration | CODE | Owner must test |
-| CORE-06 | Persist selected AI provider | KeystoreManager.kt, MainViewModel.kt | CODE changed 13 Nov | New CI/device test pending |
+| CORE-06 | Persist selected AI provider | KeystoreManager.kt, MainViewModel.kt | CODE, regression tests added | New owner device test pending |
 | CORE-07 | Honest configured vs running agents | AgentTeamScreen.kt, MainViewModel.kt | CODE changed 13 Nov | New CI/device test pending |
 | CORE-08 | Multi-device authenticated bidirectional sync | WindowsBridgeClient, devices.py | PARTIAL | Live paired devices not verified |
 | CORE-09 | Encrypted secrets, scoped credentials | KeystoreManager.kt; backend security | CODE | Pen test required |
@@ -29,9 +29,9 @@ A PASS in an old workflow never transfers automatically to a newer commit. No ro
 | VOICE-01 | Exact Hindi/Hinglish/English STT | VoiceRecognitionManager.kt | CODE | Owner previously saw error 11/13 |
 | VOICE-02 | Bounded finalization; manual cancel | VoiceRecognitionManager.kt, VoiceModeScreen.kt | CODE | Owner has not confirmed fix |
 | VOICE-03 | TTS actual audio, interrupt and focus | VoiceTtsManager.kt | CODE | Owner has not confirmed working |
-| VOICE-04 | Real 10-turn context/history persisted | MainViewModel.kt session state | PARTIAL | NOT VERIFIED |
-| VOICE-05 | Real independent phone AI replies | GeminiApiClient; MainViewModel | CODE | Provider/device test pending |
-| VOICE-06 | User-selectable voice speed and languages | VoiceTtsManager/VoiceModeScreen | CODE | Owner device test pending |
+| VOICE-04 | Real 10-turn context/history persisted | KeystoreManager.kt encrypted opt-in store, MainViewModel.kt, GeminiApiClient.kt, custom adapter; 12-turn provider-isolated context | CODE IMPLEMENTED, UNIT TESTS WRITTEN | CI and real 10-turn device test pending |
+| VOICE-05 | Real independent phone AI replies | GeminiApiClient x-goog-api-key header, MainViewModel selected provider and verified-response status | CODE (new routing and key protection) | Live provider/device test pending |
+| VOICE-06 | User-selectable voice speed and languages | VoiceTtsManager/VoiceModeScreen; waits for TTS initialization and removes stale audio-on-cancel | CODE (new recovery patch) | Owner device test pending |
 | VOICE-07 | Wake word Hey Jarvis/Hey Javo | Feasibility required; OS policy | PLANNED | BLOCKED |
 | VOICE-08 | Background + lock-screen opt-in assistant | Android OS restrictions and policy | PLANNED | BLOCKED |
 | VOICE-09 | Supported app launcher/call/gallery Intents | Need scoped action tools | PLANNED/PARTIAL | BLOCKED |
@@ -72,6 +72,17 @@ A PASS in an old workflow never transfers automatically to a newer commit. No ro
 ## Release integrity incident (13 November 2026)
 
 The original v0.1.4-alpha debug APK was previously listed in private Release 444076571 with SHA-256 `3ed9722b74d11f67b0183ced15c5839c3aa10c69abf7dd7eece095755c790d16`. A later query returned a different asset ID 743353257 and SHA-256 `338f608932e30fff1accf2ff846a97e379be8c7efd024db8705256869591370e` under the same filename. This demonstrates loss of asset immutability due to the prior `gh release upload --clobber` on routine PR CI runs. The workflow has been changed to **manual opt-in only, no clobber**, but older in-flight runs may still run their original workflow definitions. Do not send an old v0.1.4 checksum or claim this draft is an immutable production release. Issue a **new versioned private alpha** after all older workflows stop, all checks pass, and a fresh digest/signing test is complete.
+
+## November 13 — Retry implementation ledger
+
+The owner requested continuation. The following source-level work was implemented on existing private PR #1, without merging or publishing public releases:
+
+- **Multi-turn AI chat:** `GeminiApiClient.generateResponse` now accepts up to 12 validated prior turns and sends actual Gemini `contents` with `user`/`model` roles plus `systemInstruction`; the provider key is passed in `x-goog-api-key` header, not in the request URL.
+- **Provider isolation:** `MainViewModel.verifiedProviderHistory` constructs bounded context only from successful responses by the selected provider, rather than leaking another provider's transcript by default. The custom OpenAI-compatible adapter accepts compatible bounded history.
+- **Opt-in local memory:** `VoiceMessage` and `VoiceLanguage` are serializable; `KeystoreManager` stores capped chat text encrypted only after consent and deletes it upon opt-out or explicit Clear. `VoiceModeScreen` exposes a clear opt-in switch.
+- **Voice honesty:** provider errors display as errors, not spoken successful answers. TTS waits for engine initialization and cancels stale queued speech instead of speaking an old reply after cancel.
+- **Tests:** `KeystoreManagerTest` includes two new consent/persistence/deletion cases; `GeminiApiClientTest` includes bounded context and invalid-role tests.
+- **CI blocker:** multiple GitHub Actions runs for the same latest PR head failed extremely early across Android, Windows, Backend, Frontend and Security. The job logs for at least one failed run returned `BlobNotFound`, and step summaries were empty. Without actual lint/unit/assemble steps, these runs **cannot verify or disprove** Kotlin compilation. Investigate GitHub Actions runner/billing/permissions and rerun CI on the exact final commit; do not declare APK/build PASS.
 
 ## Immediate implementation milestones
 ### M0 — current source stabilization (owner blocker)
