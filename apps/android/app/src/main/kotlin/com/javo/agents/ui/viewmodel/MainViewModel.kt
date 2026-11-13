@@ -37,6 +37,7 @@ import com.javo.agents.data.model.WorkflowInfo
 import com.javo.agents.data.remote.BridgeConnectionState
 import com.javo.agents.data.remote.GeminiAuthException
 import com.javo.agents.data.remote.GeminiQuotaExceededException
+import com.javo.agents.data.remote.GeminiTurn
 import com.javo.agents.data.remote.GeminiUnavailableException
 import com.javo.agents.service.VoiceRecognitionListener
 import com.javo.agents.service.VoiceRecognitionManager
@@ -131,9 +132,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedVoiceLanguage = MutableStateFlow(VoiceLanguage.Hinglish)
     val selectedVoiceLanguage: StateFlow<VoiceLanguage> = _selectedVoiceLanguage.asStateFlow()
 
-    // Clean baseline: zero fabricated conversation history
-    private val _voiceMessages = MutableStateFlow<List<VoiceMessage>>(emptyList())
+    // No seeded/demo conversation. History is restored only after user opt-in.
+    private val _voiceMessages = MutableStateFlow(keystore.getVoiceConversation())
     val voiceMessages: StateFlow<List<VoiceMessage>> = _voiceMessages.asStateFlow()
+
+    private val _voiceHistoryEnabled = MutableStateFlow(keystore.isVoiceHistoryEnabled())
+    val voiceHistoryEnabled: StateFlow<Boolean> = _voiceHistoryEnabled.asStateFlow()
+
+    fun setVoiceHistoryEnabled(enabled: Boolean) {
+        keystore.setVoiceHistoryEnabled(enabled)
+        _voiceHistoryEnabled.value = enabled
+        if (enabled) keystore.saveVoiceConversation(_voiceMessages.value)
+        _statusToast.value = if (enabled) {
+            "Encrypted chat history enabled on this device. Use Clear to delete it."
+        } else {
+            "Saved chat history deleted. Current on-screen messages remain until you clear them."
+        }
+    }
+
+    private fun persistVoiceHistoryIfEnabled() {
+        if (_voiceHistoryEnabled.value) keystore.saveVoiceConversation(_voiceMessages.value)
+    }
+
+    /** Only verified Gemini replies and their immediate user turns may enter Gemini context. */
+    private fun verifiedGeminiHistory(): List<GeminiTurn> =
+        _voiceMessages.value.zipWithNext()
+            .filter { (before, after) ->
+                before.isUser && !after.isUser &&
+                    after.actionHint?.startsWith("Google Gemini (") == true
+            }
+            .takeLast(6)
+            .flatMap { (before, after) ->
+                listOf(GeminiTurn("user", before.text), GeminiTurn("model", after.text))
+            }
 
     // Clean baseline: empty workflows unless configured or demo mode is on
     private val _workflows = MutableStateFlow<List<WorkflowInfo>>(emptyList())
@@ -527,12 +558,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             timestampLabel = "Now"
         )
         _voiceMessages.update { it + userMsg }
+        persistVoiceHistoryIfEnabled()
 
         viewModelScope.launch {
             _waveformState.value = WaveformState.Thinking
 
             var replyText: String
             var actionHint: String? = null
+            var verifiedProviderResponse = false
 
             // Only the explicitly selected provider may process this utterance.
             // Never silently switch to another AI provider based on a stored key.
@@ -551,6 +584,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val actualReply = remoteReply?.getOrNull()?.reply
                         if (remoteReply?.isSuccess == true && !actualReply.isNullOrBlank()) {
                             replyText = actualReply
+                            verifiedProviderResponse = true
                             actionHint = "Response from Windows runtime"
                         } else {
                             val err = remoteReply?.exceptionOrNull()?.message
@@ -573,7 +607,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 prompt = query,
                                 apiKey = keystore.getGeminiApiKey().orEmpty(),
                                 model = activeModel,
-                                systemInstruction = systemPrompt
+                                systemInstruction = systemPrompt,
+                                history = verifiedGeminiHistory()
                             )
                         }
                         if (geminiRes == null) {
@@ -581,6 +616,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             actionHint = "Provider timeout"
                         } else if (geminiRes.isSuccess) {
                             replyText = geminiRes.getOrThrow()
+                            verifiedProviderResponse = true
                             actionHint = "Google Gemini ($activeModel)"
                         } else {
                             val ex = geminiRes.exceptionOrNull()
@@ -610,6 +646,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             actionHint = "Provider timeout"
                         } else if (customRes.isSuccess) {
                             replyText = customRes.getOrThrow()
+                            verifiedProviderResponse = true
                             actionHint = "Custom AI (${endpoint.modelName})"
                         } else {
                             val err = customRes.exceptionOrNull()?.message ?: "Request failed"
@@ -629,10 +666,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 actionHint = actionHint
             )
             _voiceMessages.update { it + assistantMsg }
+            persistVoiceHistoryIfEnabled()
             _waveformState.value = WaveformState.Responding
             isProcessingVoiceCommand.set(false)
 
-            if (_ttsEnabled.value) {
+            // Network/provider failures should be read as actionable text,
+            // not voiced as though Javo completed a legitimate AI reply.
+            if (verifiedProviderResponse && _ttsEnabled.value) {
                 _waveformState.value = WaveformState.Speaking
                 val started = ttsManager.speak(replyText, lang) {
                     viewModelScope.launch {
@@ -1041,7 +1081,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearVoiceHistory() {
         _voiceMessages.value = emptyList()
-        _statusToast.value = "Voice conversation cleared."
+        keystore.clearVoiceConversation()
+        _statusToast.value = "Voice conversation and saved local history cleared."
     }
 
     override fun onCleared() {
