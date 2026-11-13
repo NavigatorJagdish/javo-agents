@@ -329,11 +329,6 @@ fun VoiceModeScreen(
                     fontWeight = if (isListening && liveTranscript.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
                     color = if (isListening && liveTranscript.isNotBlank()) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isListening && liveTranscript.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
-                    color = if (isListening && liveTranscript.isNotBlank()) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
