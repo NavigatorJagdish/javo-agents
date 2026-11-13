@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.javo.agents.data.model.OperatingMode
+import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.WaveformState
 import com.javo.agents.ui.components.BottomNavBar
 import com.javo.agents.ui.components.EmergencyStopDialog
@@ -94,8 +95,15 @@ fun HomeScreen(
     // Configured agents are not counted as actively executing jobs.
     val pendingApprovals = approvals.count { it.status == "pending" }
     val verifiedSocialAccounts = socialConnections.count { it.isConnected }
-    val mobileAiReady = aiConfig.hasGeminiKeyStored ||
-        (customAiConfig?.isEnabled == true && !customAiConfig?.endpointUrl.isNullOrBlank())
+    // A stored key for an unrelated provider is NOT evidence that the
+    // user-selected provider can process a request.
+    val mobileAiReady = when (aiConfig.activeProvider) {
+        ProviderType.GEMINI_DIRECT -> aiConfig.hasGeminiKeyStored
+        ProviderType.CUSTOM_ENDPOINT -> customAiConfig?.isEnabled == true &&
+            !customAiConfig?.endpointUrl.isNullOrBlank()
+        ProviderType.LOCAL_PC_OLLAMA -> operatingMode == OperatingMode.WINDOWS_ENHANCED &&
+            connectionState.name == "Connected"
+    }
 
     if (showModeDialog) {
         AlertDialog(
@@ -214,9 +222,9 @@ fun HomeScreen(
                         val isConnected = connectionState.name == "Connected"
                         StatusPill(
                             text = when {
-                                mobileAiReady -> "AI key configured"
+                                mobileAiReady -> "Selected AI configured"
                                 operatingMode == OperatingMode.WINDOWS_ENHANCED && isConnected -> "Windows online"
-                                else -> "Set up AI"
+                                else -> "Set up selected AI"
                             },
                             color = if (mobileAiReady || (operatingMode == OperatingMode.WINDOWS_ENHANCED && isConnected)) EmeraldSuccess else VioletAccent
                         )
@@ -266,7 +274,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text("Talk to Javo", style = MaterialTheme.typography.titleMedium)
                 }
-                if (!mobileAiReady && !(operatingMode == OperatingMode.WINDOWS_ENHANCED && connectionState.name == "Connected")) {
+                if (!mobileAiReady) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "To get real AI replies, first connect a provider. Voice recognition alone is not AI.",
