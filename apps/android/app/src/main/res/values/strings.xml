@@ -7,6 +7,8 @@
     <string name="channel_approvals_desc">Notifications when an AI agent requests publishing or action approval</string>
     <string name="channel_voice_name">Voice Assistant</string>
     <string name="channel_voice_desc">Active microphone capture indicator during user-initiated voice commands</string>
+    <string name="channel_tasks_name">Tasks &amp; Reminders</string>
+    <string name="channel_tasks_desc">Reminders and execution alerts for scheduled autonomous agent tasks</string>
     <string name="voice_notification_title">Javo Voice Listening</string>
     <string name="voice_notification_body">Tap to return to Voice Mode or stop capture</string>
 </resources>

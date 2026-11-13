@@ -66,7 +66,10 @@ class OfflineDraftRepository(
         title: String,
         body: String,
         platform: String,
-        scheduledDateLabel: String? = null
+        scheduledDateLabel: String? = null,
+        mediaUri: String? = null,
+        mediaMimeType: String? = null,
+        tags: String = ""
     ): DraftEntity {
         val draft = DraftEntity(
             id = "draft-" + UUID.randomUUID().toString().take(8),
@@ -75,6 +78,9 @@ class OfflineDraftRepository(
             platform = platform,
             status = "offline_draft",
             scheduledDateLabel = scheduledDateLabel,
+            mediaUri = mediaUri,
+            mediaMimeType = mediaMimeType,
+            tags = tags,
             pendingSync = true
         )
         draftStore.saveDraft(draft)
@@ -166,8 +172,24 @@ class JavoAppRepository(
         )
         taskDao.upsertAll(
             listOf(
-                TaskEntity("demo-tsk-1", "Scan D:\\JavoContent\\Reels folder", "content_factory", "completed", "normal", "demo-goal-1", true),
-                TaskEntity("demo-tsk-2", "Verify Brand Tone on Reel #14", "brand_manager", "running", "high", "demo-goal-1", true)
+                TaskEntity(
+                    id = "demo-tsk-1",
+                    title = "Scan D:\\JavoContent\\Reels folder",
+                    assignedAgent = "content_factory",
+                    state = "completed",
+                    priority = "normal",
+                    goalId = "demo-goal-1",
+                    syncedWithDesktop = true
+                ),
+                TaskEntity(
+                    id = "demo-tsk-2",
+                    title = "Verify Brand Tone on Reel #14",
+                    assignedAgent = "brand_manager",
+                    state = "running",
+                    priority = "high",
+                    goalId = "demo-goal-1",
+                    syncedWithDesktop = true
+                )
             )
         )
         accountDao.upsertAll(
@@ -191,7 +213,10 @@ class JavoAppRepository(
         title: String,
         assignedAgent: String = "general_assistant",
         priority: String = "normal",
-        goalId: String? = null
+        goalId: String? = null,
+        description: String = "",
+        scheduledEpochMs: Long? = null,
+        isReminderEnabled: Boolean = false
     ): TaskEntity {
         val task = TaskEntity(
             id = "tsk-" + UUID.randomUUID().toString().take(8),
@@ -199,6 +224,9 @@ class JavoAppRepository(
             assignedAgent = assignedAgent,
             state = "pending",
             priority = priority,
+            description = description.trim(),
+            scheduledEpochMs = scheduledEpochMs,
+            isReminderEnabled = isReminderEnabled,
             goalId = goalId,
             syncedWithDesktop = false
         )

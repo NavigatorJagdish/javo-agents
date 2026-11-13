@@ -1,5 +1,8 @@
 package com.javo.agents.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,10 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
@@ -42,7 +48,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.javo.agents.data.local.DraftEntity
+import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.ui.components.BottomNavBar
+import com.javo.agents.ui.components.GradientButton
+import com.javo.agents.ui.components.JavoOutlinedButton
 import com.javo.agents.ui.components.JavoSubScreenScaffold
 import com.javo.agents.ui.components.StatusCard
 import com.javo.agents.ui.components.StatusPill
@@ -82,18 +91,68 @@ fun ContentLibraryScreen(
         }
     }
 
+    val isGeneratingDraft by viewModel.isGeneratingDraft.collectAsState()
+
     // Create Draft Dialog
     if (showCreateDialog) {
         var title by remember { mutableStateOf("") }
         var body by remember { mutableStateOf("") }
         var platform by remember { mutableStateOf("Instagram") }
         var schedule by remember { mutableStateOf("") }
+        var tags by remember { mutableStateOf("") }
+        var attachedMediaUri by remember { mutableStateOf<String?>(null) }
+        var aiTopic by remember { mutableStateOf("") }
+        var showAiSection by remember { mutableStateOf(false) }
+
+        val mediaPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+        ) { uri ->
+            if (uri != null) {
+                attachedMediaUri = uri.toString()
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
-            title = { Text("New Offline Draft") },
+            title = { Text("New Content Draft") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // AI Generator toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("AI Content Assist", style = MaterialTheme.typography.titleSmall)
+                        JavoOutlinedButton(
+                            text = if (showAiSection) "Hide AI" else "AI Assist ✨",
+                            onClick = { showAiSection = !showAiSection },
+                            borderColor = ElectricCyan
+                        )
+                    }
+
+                    if (showAiSection) {
+                        OutlinedTextField(
+                            value = aiTopic,
+                            onValueChange = { aiTopic = it },
+                            label = { Text("Topic / Idea for Content Factory") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        GradientButton(
+                            text = if (isGeneratingDraft) "Generating..." else "Generate Hook & Caption",
+                            onClick = {
+                                viewModel.generateContentDraftWithAi(aiTopic, platform)
+                                showCreateDialog = false
+                            },
+                            enabled = aiTopic.isNotBlank() && !isGeneratingDraft
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
@@ -106,6 +165,13 @@ fun ContentLibraryScreen(
                         onValueChange = { body = it },
                         label = { Text("Caption / Script") },
                         minLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = tags,
+                        onValueChange = { tags = it },
+                        label = { Text("Hashtags / Tags (e.g. #tech #reels)") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
@@ -122,13 +188,40 @@ fun ContentLibraryScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // Media Picker Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        JavoOutlinedButton(
+                            text = if (attachedMediaUri != null) "Change Media" else "Attach Photo/Video",
+                            onClick = {
+                                mediaPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            borderColor = if (attachedMediaUri != null) EmeraldSuccess else ElectricCyan
+                        )
+                        if (attachedMediaUri != null) {
+                            StatusPill(text = "📸 Media Attached", color = EmeraldSuccess)
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         if (title.isNotBlank() && body.isNotBlank()) {
-                            viewModel.createOfflineDraft(title, body, platform, schedule.ifBlank { null })
+                            viewModel.createDraftWithMedia(
+                                title = title,
+                                body = body,
+                                platform = platform,
+                                scheduledDate = schedule.ifBlank { null },
+                                mediaUri = attachedMediaUri,
+                                tags = tags
+                            )
                             showCreateDialog = false
                         }
                     }
@@ -373,17 +466,26 @@ fun ContentLibraryScreen(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(draft.body, style = MaterialTheme.typography.bodyMedium)
+                            if (draft.tags.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(draft.tags, style = MaterialTheme.typography.labelMedium, color = ElectricCyan)
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = draft.platform,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = ElectricCyan
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = draft.platform,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = ElectricCyan
+                                    )
+                                    if (!draft.mediaUri.isNullOrBlank()) {
+                                        StatusPill(text = "📸 Media", color = EmeraldSuccess)
+                                    }
+                                }
                                 Text(
                                     text = draft.scheduledDateLabel ?: "Unscheduled",
                                     style = MaterialTheme.typography.labelMedium,

@@ -6,6 +6,8 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.javo.agents.data.model.CustomAiEndpointConfig
+import com.javo.agents.data.model.OperatingMode
 import com.javo.agents.data.model.RecognizerMode
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
@@ -272,6 +274,74 @@ class KeystoreManager(
         }
     }
 
+    fun saveOperatingMode(mode: OperatingMode) {
+        secretStore.putSecret(KEY_OPERATING_MODE, mode.name)
+    }
+
+    fun getOperatingMode(): OperatingMode {
+        val stored = secretStore.getSecret(KEY_OPERATING_MODE)
+        if (stored != null) {
+            return try {
+                OperatingMode.valueOf(stored)
+            } catch (_: Exception) {
+                if (isPaired()) OperatingMode.WINDOWS_ENHANCED else OperatingMode.ANDROID_STANDALONE
+            }
+        }
+        return if (isPaired()) OperatingMode.WINDOWS_ENHANCED else OperatingMode.ANDROID_STANDALONE
+    }
+
+    fun saveTtsEnabled(enabled: Boolean) {
+        secretStore.putSecret(KEY_TTS_ENABLED, enabled.toString())
+    }
+
+    fun isTtsEnabled(): Boolean = secretStore.getSecret(KEY_TTS_ENABLED)?.toBooleanStrictOrNull() ?: true
+
+    fun saveCustomAiEndpoint(url: String, apiKey: String, model: String, enabled: Boolean) {
+        secretStore.putSecret(KEY_CUSTOM_AI_URL, url.trim())
+        if (apiKey.isNotBlank()) {
+            secretStore.putSecret(KEY_CUSTOM_AI_KEY_ENC, aesCipher.encryptToBase64(apiKey.trim()))
+        } else {
+            secretStore.removeSecret(KEY_CUSTOM_AI_KEY_ENC)
+        }
+        secretStore.putSecret(KEY_CUSTOM_AI_MODEL, model.trim())
+        secretStore.putSecret(KEY_CUSTOM_AI_ENABLED, enabled.toString())
+    }
+
+    fun getCustomAiEndpoint(): CustomAiEndpointConfig {
+        val url = secretStore.getSecret(KEY_CUSTOM_AI_URL).orEmpty()
+        val encKey = secretStore.getSecret(KEY_CUSTOM_AI_KEY_ENC)
+        val apiKey = if (encKey != null) {
+            try { aesCipher.decryptFromBase64(encKey) } catch (_: Exception) { "" }
+        } else ""
+        val model = secretStore.getSecret(KEY_CUSTOM_AI_MODEL) ?: "gpt-4o-mini"
+        val enabled = secretStore.getSecret(KEY_CUSTOM_AI_ENABLED)?.toBooleanStrictOrNull() ?: false
+        return CustomAiEndpointConfig(url, apiKey, model, enabled)
+    }
+
+    fun saveSocialToken(platformId: String, accessToken: String, refreshToken: String?, expiresAtEpochSec: Long) {
+        val encAccess = aesCipher.encryptToBase64(accessToken)
+        secretStore.putSecret("social_${platformId}_token", encAccess)
+        if (refreshToken != null) {
+            secretStore.putSecret("social_${platformId}_refresh", aesCipher.encryptToBase64(refreshToken))
+        }
+        secretStore.putSecret("social_${platformId}_expires", expiresAtEpochSec.toString())
+    }
+
+    fun getSocialToken(platformId: String): String? {
+        val enc = secretStore.getSecret("social_${platformId}_token") ?: return null
+        return try {
+            aesCipher.decryptFromBase64(enc)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun removeSocialToken(platformId: String) {
+        secretStore.removeSecret("social_${platformId}_token")
+        secretStore.removeSecret("social_${platformId}_refresh")
+        secretStore.removeSecret("social_${platformId}_expires")
+    }
+
     fun isSampleDataMigrated(): Boolean = secretStore.getSecret(KEY_SAMPLE_DATA_MIGRATED)?.toBooleanStrictOrNull() ?: false
 
     fun markSampleDataMigrated() {
@@ -319,5 +389,11 @@ class KeystoreManager(
         private const val KEY_RECOGNIZER_MODE = "pref_recognizer_mode"
         private const val KEY_SAMPLE_DATA_MIGRATED = "sample_migration_v1_done"
         private const val KEY_DEMO_MODE = "pref_demo_mode_enabled"
+        private const val KEY_OPERATING_MODE = "pref_operating_mode"
+        private const val KEY_TTS_ENABLED = "pref_tts_enabled"
+        private const val KEY_CUSTOM_AI_URL = "custom_ai_url"
+        private const val KEY_CUSTOM_AI_KEY_ENC = "custom_ai_key_enc"
+        private const val KEY_CUSTOM_AI_MODEL = "custom_ai_model"
+        private const val KEY_CUSTOM_AI_ENABLED = "custom_ai_enabled"
     }
 }

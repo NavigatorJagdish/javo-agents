@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
@@ -81,6 +83,10 @@ fun VoiceModeScreen(
     val approvals by viewModel.approvals.collectAsState()
     val liveTranscript by viewModel.liveSpeechTranscript.collectAsState()
     val liveRmsAmplitude by viewModel.liveRmsAmplitude.collectAsState()
+    val ttsEnabled by viewModel.ttsEnabled.collectAsState()
+    val isTtsSpeaking by viewModel.isTtsSpeaking.collectAsState()
+    val operatingMode by viewModel.operatingMode.collectAsState()
+    val aiConfig by viewModel.aiConfig.collectAsState()
 
     var commandDraft by remember { mutableStateOf("") }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
@@ -165,6 +171,13 @@ fun VoiceModeScreen(
     JavoSubScreenScaffold(
         title = "Voice Mode & Assistant",
         actions = {
+            IconButton(onClick = { viewModel.toggleTts(!ttsEnabled) }) {
+                Icon(
+                    imageVector = if (ttsEnabled) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
+                    contentDescription = if (ttsEnabled) "Voice Audio Replies: ON" else "Voice Audio Replies: OFF",
+                    tint = if (ttsEnabled) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(onClick = { showModeDialog = true }) {
                 Icon(
                     Icons.Rounded.Tune,
@@ -203,7 +216,7 @@ fun VoiceModeScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
-            // Language Selector Chips & Recognizer Mode Pill
+            // Language Selector Chips & Badges
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -218,13 +231,35 @@ fun VoiceModeScreen(
                         )
                     }
                 }
-                StatusPill(
-                    text = recognizerMode.displayName,
-                    color = ElectricCyan
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    StatusPill(
+                        text = operatingMode.badge,
+                        color = ElectricCyan
+                    )
+                    StatusPill(
+                        text = recognizerMode.displayName,
+                        color = VioletAccent
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
+
+            // AI Unconfigured Advisory Banner for Standalone Mode
+            if (!aiConfig.hasGeminiKeyStored && operatingMode == com.javo.agents.data.model.OperatingMode.ANDROID_STANDALONE) {
+                StatusCard(onClick = { onNavigate(com.javo.agents.ui.navigation.Routes.AI_PROVIDERS) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Warning, contentDescription = "AI Setup", tint = com.javo.agents.ui.theme.AmberWarning)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Gemini API Key Recommended", style = MaterialTheme.typography.titleSmall, color = com.javo.agents.ui.theme.AmberWarning)
+                            Text("Tap to add your free Google Gemini key in Settings for full voice intelligence.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("Configure", style = MaterialTheme.typography.labelMedium, color = ElectricCyan)
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
 
             // Actionable Error 13 Banner (Missing Language Model)
             languageUnavailable?.let { event ->

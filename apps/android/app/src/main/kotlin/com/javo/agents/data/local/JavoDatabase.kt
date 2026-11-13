@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         AccountEntity::class,
         NotificationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class JavoDatabase : RoomDatabase() {

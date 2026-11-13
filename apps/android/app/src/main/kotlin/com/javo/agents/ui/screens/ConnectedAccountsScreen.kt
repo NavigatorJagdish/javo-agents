@@ -12,9 +12,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -28,13 +33,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.javo.agents.data.model.SocialPlatform
+import com.javo.agents.ui.components.JavoOutlinedButton
 import com.javo.agents.ui.components.JavoSubScreenScaffold
 import com.javo.agents.ui.components.StatusCard
 import com.javo.agents.ui.components.StatusPill
 import com.javo.agents.ui.theme.AmberWarning
+import com.javo.agents.ui.theme.CoralDanger
 import com.javo.agents.ui.theme.ElectricCyan
 import com.javo.agents.ui.theme.EmeraldSuccess
 import com.javo.agents.ui.theme.MidnightNavy
+import com.javo.agents.ui.theme.VioletAccent
 import com.javo.agents.ui.viewmodel.MainViewModel
 
 @Composable
@@ -43,6 +52,8 @@ fun ConnectedAccountsScreen(
     onBack: () -> Unit
 ) {
     val accounts by viewModel.accounts.collectAsState()
+    val socialConnections by viewModel.socialConnections.collectAsState()
+    val operatingMode by viewModel.operatingMode.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
 
     if (showAddDialog) {
@@ -66,7 +77,7 @@ fun ConnectedAccountsScreen(
                         viewModel.addAccount(platform, handle, brand)
                         showAddDialog = false
                     }
-                ) { Text("Queue OAuth") }
+                ) { Text("Queue Channel") }
             },
             dismissButton = {
                 TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
@@ -96,58 +107,83 @@ fun ConnectedAccountsScreen(
         ) {
             item {
                 StatusCard(highlightGradient = true) {
-                    Text("OAuth Credentials Stay on Windows", style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Lock, contentDescription = "Security", tint = ElectricCyan)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Honest Platform Integration", style = MaterialTheme.typography.titleMedium)
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Social OAuth tokens are never exposed to mobile storage. Complete Meta / YouTube OAuth on your paired Windows desktop.",
+                        "In Android Standalone mode, drafts and media are prepared locally. Direct publishing requires official OAuth Client IDs or pairing with your Windows PC DPAPI tokens.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            if (accounts.isEmpty()) {
-                item {
-                    StatusCard {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("No Connected Accounts", style = MaterialTheme.typography.titleMedium)
-                            Spacer(modifier = Modifier.height(4.dp))
+            item {
+                Text("Direct Social Integrations", style = MaterialTheme.typography.titleMedium)
+            }
+
+            items(socialConnections, key = { it.platform.id }) { item ->
+                StatusCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(item.platform.displayName, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "0 social channels connected. Tap '+' to queue a channel or connect on your paired Windows desktop.",
+                                if (item.isConnected) item.accountName.orEmpty() else "OAuth 2.0 PKCE / API",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                color = if (item.isConnected) ElectricCyan else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        StatusPill(
+                            text = item.statusLabel,
+                            color = if (item.isConnected) EmeraldSuccess else AmberWarning
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        item.statusDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (item.isConnected) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        JavoOutlinedButton(
+                            text = "Disconnect",
+                            onClick = { viewModel.disconnectSocialPlatform(item.platform) },
+                            borderColor = CoralDanger
+                        )
                     }
                 }
             }
 
-            items(accounts, key = { it.id }) { account ->
-                val pillColor = when (account.status) {
-                    "Connected" -> EmeraldSuccess
-                    "Beta" -> ElectricCyan
-                    else -> AmberWarning
+            if (accounts.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Configured Profiles", style = MaterialTheme.typography.titleMedium)
                 }
-                StatusCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(account.platform, style = MaterialTheme.typography.titleMedium)
-                            Text("${account.handle} • ${account.brandName}", style = MaterialTheme.typography.bodyMedium, color = ElectricCyan)
-                        }
-                        StatusPill(text = account.status, color = pillColor)
+                items(accounts, key = { it.id }) { account ->
+                    val pillColor = when (account.status) {
+                        "Connected" -> EmeraldSuccess
+                        "Beta" -> ElectricCyan
+                        else -> AmberWarning
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        "${account.followersLabel} • ${account.lastSyncLabel}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    StatusCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(account.platform, style = MaterialTheme.typography.titleMedium)
+                                Text("${account.handle} • ${account.brandName}", style = MaterialTheme.typography.bodyMedium, color = ElectricCyan)
+                            }
+                            StatusPill(text = account.status, color = pillColor)
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "${account.followersLabel} • ${account.lastSyncLabel}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

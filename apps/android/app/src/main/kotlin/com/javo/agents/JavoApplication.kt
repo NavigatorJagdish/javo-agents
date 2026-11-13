@@ -10,6 +10,7 @@ import com.javo.agents.data.local.KeystoreManager
 import com.javo.agents.data.remote.GeminiApiClient
 import com.javo.agents.data.remote.WindowsBridgeClient
 import com.javo.agents.data.repository.JavoAppRepository
+import com.javo.agents.service.MobileAgentOrchestrator
 import com.javo.agents.workers.SyncWorker
 
 class AppContainer(application: Application) {
@@ -17,6 +18,15 @@ class AppContainer(application: Application) {
     val keystoreManager: KeystoreManager by lazy { KeystoreManager(application) }
     val bridgeClient: WindowsBridgeClient by lazy { WindowsBridgeClient(keystoreManager) }
     val geminiClient: GeminiApiClient by lazy { GeminiApiClient() }
+    val orchestrator: MobileAgentOrchestrator by lazy {
+        MobileAgentOrchestrator(
+            context = application,
+            taskDao = database.taskDao(),
+            draftDao = database.draftDao(),
+            keystoreManager = keystoreManager,
+            geminiApiClient = geminiClient
+        )
+    }
     val repository: JavoAppRepository by lazy {
         JavoAppRepository(
             database = database,
@@ -67,6 +77,13 @@ class JavoApplication : Application(), Configuration.Provider {
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = getString(R.string.channel_voice_desc)
+                },
+                NotificationChannel(
+                    CHANNEL_TASKS,
+                    getString(R.string.channel_tasks_name),
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = getString(R.string.channel_tasks_desc)
                 }
             )
             manager.createNotificationChannels(channels)
@@ -77,5 +94,6 @@ class JavoApplication : Application(), Configuration.Provider {
         const val CHANNEL_SYNC = "javo_sync"
         const val CHANNEL_APPROVALS = "javo_approvals"
         const val CHANNEL_VOICE = "javo_voice"
+        const val CHANNEL_TASKS = "javo_tasks_and_reminders"
     }
 }

@@ -16,14 +16,18 @@ import com.javo.agents.data.model.AIProviderConfig
 import com.javo.agents.data.model.AgentInfo
 import com.javo.agents.data.model.AgentRoster
 import com.javo.agents.data.model.AnalyticsMetric
+import com.javo.agents.data.model.CustomAiEndpointConfig
 import com.javo.agents.data.model.DataProvenance
 import com.javo.agents.data.model.DiagnosticCheck
 import com.javo.agents.data.model.LanguageUnavailableEvent
+import com.javo.agents.data.model.OperatingMode
 import com.javo.agents.data.model.PairingTokenPayload
 import com.javo.agents.data.model.PairingTokenValidator
 import com.javo.agents.data.model.PairingValidationResult
 import com.javo.agents.data.model.ProviderType
 import com.javo.agents.data.model.RecognizerMode
+import com.javo.agents.data.model.SocialConnectionInfo
+import com.javo.agents.data.model.SocialPlatform
 import com.javo.agents.data.model.VoiceDiagnosticsData
 import com.javo.agents.data.model.VoiceLanguage
 import com.javo.agents.data.model.VoiceMessage
@@ -35,6 +39,8 @@ import com.javo.agents.data.remote.GeminiQuotaExceededException
 import com.javo.agents.data.remote.GeminiUnavailableException
 import com.javo.agents.service.VoiceRecognitionListener
 import com.javo.agents.service.VoiceRecognitionManager
+import com.javo.agents.service.VoiceTtsManager
+import com.javo.agents.workers.TaskReminderWorker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +49,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -52,6 +59,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val bridge = container.bridgeClient
     private val gemini = container.geminiClient
     private val repo = container.repository
+    private val orchestrator = container.orchestrator
+    private val ttsManager by lazy { VoiceTtsManager(app) }
+
+    private val _operatingMode = MutableStateFlow(keystore.getOperatingMode())
+    val operatingMode: StateFlow<OperatingMode> = _operatingMode.asStateFlow()
+
+    private val _ttsEnabled = MutableStateFlow(keystore.isTtsEnabled())
+    val ttsEnabled: StateFlow<Boolean> = _ttsEnabled.asStateFlow()
+    val isTtsSpeaking: StateFlow<Boolean> = ttsManager.isSpeaking
+
+    private val _customAiConfig = MutableStateFlow(keystore.getCustomAiEndpoint())
+    val customAiConfig: StateFlow<CustomAiEndpointConfig> = _customAiConfig.asStateFlow()
+
+    private val _isGeneratingDraft = MutableStateFlow(false)
+    val isGeneratingDraft: StateFlow<Boolean> = _isGeneratingDraft.asStateFlow()
+
+    private val _isExecutingTask = MutableStateFlow<String?>(null)
+    val isExecutingTask: StateFlow<String?> = _isExecutingTask.asStateFlow()
+
+    private val _socialConnections = MutableStateFlow<List<SocialConnectionInfo>>(emptyList())
+    val socialConnections: StateFlow<List<SocialConnectionInfo>> = _socialConnections.asStateFlow()
 
     val tasks: StateFlow<List<TaskEntity>> = repo.observeTasks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -113,7 +141,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _aiConfig = MutableStateFlow(
         AIProviderConfig(
-            activeProvider = ProviderType.LOCAL_PC_OLLAMA,
+            activeProvider = if (keystore.getOperatingMode() == OperatingMode.ANDROID_STANDALONE && keystore.hasGeminiApiKey()) {
+                ProviderType.GEMINI_DIRECT
+            } else if (keystore.getOperatingMode() == OperatingMode.ANDROID_STANDALONE && keystore.getCustomAiEndpoint().isEnabled) {
+                ProviderType.CUSTOM_ENDPOINT
+            } else if (keystore.isPaired()) {
+                ProviderType.LOCAL_PC_OLLAMA
+            } else if (keystore.hasGeminiApiKey()) {
+                ProviderType.GEMINI_DIRECT
+            } else {
+                ProviderType.GEMINI_DIRECT
+            },
             geminiModelName = keystore.getGeminiModel(),
             hasGeminiKeyStored = keystore.hasGeminiApiKey()
         )
@@ -216,6 +254,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (keystore.isPaired()) {
                 bridge.pingPairedHost()
             }
+            refreshSocialConnections()
         }
     }
 
@@ -238,6 +277,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleVoiceMode(enabled: Boolean) {
         _voiceModeEnabled.value = enabled
         keystore.saveVoiceModeEnabled(enabled)
+    }
+
+    fun setOperatingMode(mode: OperatingMode) {
+        keystore.saveOperatingMode(mode)
+        _operatingMode.value = mode
+        when (mode) {
+            OperatingMode.ANDROID_STANDALONE -> {
+                if (keystore.hasGeminiApiKey()) {
+                    selectAIProvider(ProviderType.GEMINI_DIRECT)
+                } else if (keystore.getCustomAiEndpoint().isEnabled) {
+                    selectAIProvider(ProviderType.CUSTOM_ENDPOINT)
+                }
+            }
+            OperatingMode.WINDOWS_ENHANCED -> {
+                if (keystore.isPaired()) {
+                    selectAIProvider(ProviderType.LOCAL_PC_OLLAMA)
+                }
+            }
+            OperatingMode.CLOUD_MODE -> {
+                if (keystore.hasGeminiApiKey()) {
+                    selectAIProvider(ProviderType.GEMINI_DIRECT)
+                }
+            }
+        }
+        _statusToast.value = "Switched to ${mode.displayName}"
+    }
+
+    fun toggleTts(enabled: Boolean) {
+        keystore.saveTtsEnabled(enabled)
+        _ttsEnabled.value = enabled
+        if (!enabled) {
+            ttsManager.stop()
+        }
+        _statusToast.value = if (enabled) "Voice replies enabled (TTS)" else "Voice audio replies muted"
+    }
+
+    fun stopTts() {
+        ttsManager.stop()
     }
 
     fun toggleAgentEnabled(slug: String) {
@@ -388,9 +465,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var replyText: String
             var actionHint: String? = null
 
-            // Route 1: Paired & reachable Windows Local Runtime
+            // Route 1: Paired & reachable Windows Local Runtime (Enhanced Mode only)
             val isBridgeConnected = connectionState.value == BridgeConnectionState.Connected
-            if (isBridgeConnected) {
+            if (_operatingMode.value == OperatingMode.WINDOWS_ENHANCED && isBridgeConnected) {
                 val remoteReply = bridge.sendVoiceCommand(query, lang.code)
                 if (remoteReply.isSuccess) {
                     val body = remoteReply.getOrNull()
@@ -424,6 +501,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     actionHint = "Direct API Error"
                 }
+            } else if (keystore.getCustomAiEndpoint().isEnabled && keystore.getCustomAiEndpoint().endpointUrl.isNotBlank()) {
+                // Route 2b: Custom AI Endpoint
+                val endpoint = keystore.getCustomAiEndpoint()
+                val systemPrompt = "You are Javo, a local-first AI assistant. You are helpful, concise, and communicate in English, Hindi, and Hinglish."
+                val customRes = orchestrator.callCustomEndpoint(endpoint, query, systemPrompt)
+                if (customRes.isSuccess) {
+                    replyText = customRes.getOrThrow()
+                    actionHint = "Custom AI (${endpoint.modelName})"
+                } else {
+                    val err = customRes.exceptionOrNull()?.message ?: "Custom AI call failed"
+                    replyText = "Custom AI Endpoint error: $err"
+                    actionHint = "Custom Endpoint Error"
+                }
             } else {
                 // Route 3: Neither provider configured - honest diagnostics + automatic local draft creation if requested
                 val lower = query.lowercase()
@@ -442,10 +532,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         body = query,
                         platform = platform
                     )
-                    replyText = "Saved '${created.title}' as an offline draft in Content Studio.\n\nNote: Live AI responses require an active provider. Pair with Windows or configure your Gemini API key in Settings → AI Providers."
+                    replyText = "Saved '${created.title}' as an offline draft in Content Studio.\n\nNote: Live AI responses require an active provider. Configure your free Gemini API key in Settings → AI Providers."
                     actionHint = "Saved to local Room drafts"
                 } else {
-                    replyText = "AI Provider not configured.\n\n• For local AI (Ollama), pair with your Windows PC in Settings → Pairing.\n• For cloud AI on your phone, enter your Gemini API key in Settings → AI Providers."
+                    replyText = "AI Provider not configured.\n\n• For Android Standalone mode: enter your free Google Gemini API key in Settings → AI Providers.\n• For local AI (Ollama): switch to Windows Enhanced mode and pair with your PC."
                     actionHint = "Unconfigured AI Provider"
                 }
             }
@@ -460,6 +550,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             _voiceMessages.update { it + assistantMsg }
             _waveformState.value = WaveformState.Finished
+            if (_ttsEnabled.value) {
+                ttsManager.speak(replyText, lang)
+            }
             delay(1000)
             _waveformState.value = WaveformState.Idle
         }
@@ -643,14 +736,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createLocalTask(
         title: String,
-        assignedAgent: String = "general_assistant",
+        assignedAgent: String = "growth_scientist",
         priority: String = "normal",
-        goalId: String? = null
+        goalId: String? = null,
+        description: String = "",
+        scheduledEpochMs: Long? = null,
+        isReminderEnabled: Boolean = false
     ) {
         if (title.isBlank()) return
         viewModelScope.launch {
-            repo.addTask(title, assignedAgent, priority, goalId)
-            _statusToast.value = "Task created in local queue."
+            val task = repo.addTask(
+                title = title,
+                assignedAgent = assignedAgent,
+                priority = priority,
+                goalId = goalId,
+                description = description,
+                scheduledEpochMs = scheduledEpochMs,
+                isReminderEnabled = isReminderEnabled
+            )
+            if (scheduledEpochMs != null && scheduledEpochMs > System.currentTimeMillis()) {
+                val delayMs = scheduledEpochMs - System.currentTimeMillis()
+                TaskReminderWorker.scheduleTaskReminder(
+                    context = app,
+                    taskId = task.id,
+                    taskTitle = task.title,
+                    taskAgent = task.assignedAgent,
+                    delayMs = delayMs,
+                    executeAtEnd = true
+                )
+                _statusToast.value = "Task scheduled with autonomous reminder."
+            } else if (isReminderEnabled) {
+                TaskReminderWorker.scheduleTaskReminder(
+                    context = app,
+                    taskId = task.id,
+                    taskTitle = task.title,
+                    taskAgent = task.assignedAgent,
+                    delayMs = 3600000L, // 1 hour reminder default
+                    executeAtEnd = false
+                )
+                _statusToast.value = "Task created with reminder enabled."
+            } else {
+                _statusToast.value = "Task created in local queue."
+            }
+        }
+    }
+
+    fun executeTaskLocally(taskId: String) {
+        viewModelScope.launch {
+            _isExecutingTask.value = taskId
+            val task = container.database.taskDao().getById(taskId)
+            if (task == null) {
+                _statusToast.value = "Task not found."
+                _isExecutingTask.value = null
+                return@launch
+            }
+            val result = orchestrator.executeTask(task)
+            _isExecutingTask.value = null
+            if (result.isSuccess) {
+                _statusToast.value = "Task completed by ${task.assignedAgent}."
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Execution failed"
+                _statusToast.value = err
+            }
         }
     }
 
@@ -663,9 +810,110 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTask(taskId: String) {
         viewModelScope.launch {
+            TaskReminderWorker.cancelTaskReminder(app, taskId)
             repo.deleteTask(taskId)
             _statusToast.value = "Task removed."
         }
+    }
+
+    fun generateContentDraftWithAi(
+        topic: String,
+        platform: String = "Instagram",
+        language: VoiceLanguage = _selectedVoiceLanguage.value
+    ) {
+        if (topic.isBlank()) return
+        viewModelScope.launch {
+            _isGeneratingDraft.value = true
+            val result = orchestrator.generateContentDraft(topic, platform, language)
+            _isGeneratingDraft.value = false
+            if (result.isSuccess) {
+                _statusToast.value = "Generated new draft for $platform!"
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Draft generation failed"
+                _statusToast.value = err
+            }
+        }
+    }
+
+    fun createDraftWithMedia(
+        title: String,
+        body: String,
+        platform: String,
+        scheduledDate: String? = null,
+        mediaUri: String? = null,
+        mediaMimeType: String? = null,
+        tags: String = ""
+    ) {
+        if (title.isBlank() || body.isBlank()) return
+        viewModelScope.launch {
+            repo.draftRepository.createOfflineDraft(
+                title = title,
+                body = body,
+                platform = platform,
+                scheduledDateLabel = scheduledDate,
+                mediaUri = mediaUri,
+                mediaMimeType = mediaMimeType,
+                tags = tags
+            )
+            val synced = repo.draftRepository.queueAndTrySync()
+            _statusToast.value = if (synced > 0) "Draft saved & synced ($synced)." else "Draft saved offline in local storage."
+        }
+    }
+
+    fun saveCustomAiEndpoint(url: String, apiKey: String, model: String, enabled: Boolean) {
+        keystore.saveCustomAiEndpoint(url, apiKey, model, enabled)
+        val updated = keystore.getCustomAiEndpoint()
+        _customAiConfig.value = updated
+        if (enabled) {
+            selectAIProvider(ProviderType.CUSTOM_ENDPOINT)
+        }
+        _statusToast.value = if (enabled) "Custom AI Endpoint saved & active." else "Custom AI Endpoint disabled."
+    }
+
+    fun refreshSocialConnections() {
+        val list = listOf(
+            createSocialInfo(SocialPlatform.YOUTUBE),
+            createSocialInfo(SocialPlatform.INSTAGRAM),
+            createSocialInfo(SocialPlatform.FACEBOOK),
+            createSocialInfo(SocialPlatform.TELEGRAM)
+        )
+        _socialConnections.value = list
+    }
+
+    private fun createSocialInfo(platform: SocialPlatform): SocialConnectionInfo {
+        val token = keystore.getSocialToken(platform.id)
+        val isConnected = !token.isNullOrBlank()
+        return if (isConnected) {
+            SocialConnectionInfo(
+                platform = platform,
+                isConnected = true,
+                accountName = "Connected Account",
+                statusLabel = "Connected",
+                statusDescription = "Authorized for publishing via Android Keystore token.",
+                requiresSetup = false,
+                lastSyncEpochMs = System.currentTimeMillis()
+            )
+        } else {
+            val setupDesc = when (platform) {
+                SocialPlatform.YOUTUBE -> "Requires Google Cloud Console OAuth 2.0 Client ID for YouTube Data API v3."
+                SocialPlatform.INSTAGRAM -> "Requires Meta App ID with Instagram Content Publishing permissions."
+                SocialPlatform.FACEBOOK -> "Requires Meta App ID with Pages Manage Posts permissions."
+                SocialPlatform.TELEGRAM -> "Requires Telegram Bot Token configured in Settings."
+            }
+            SocialConnectionInfo(
+                platform = platform,
+                isConnected = false,
+                statusLabel = "Setup Required",
+                statusDescription = setupDesc,
+                requiresSetup = true
+            )
+        }
+    }
+
+    fun disconnectSocialPlatform(platform: SocialPlatform) {
+        keystore.removeSocialToken(platform.id)
+        refreshSocialConnections()
+        _statusToast.value = "${platform.displayName} disconnected."
     }
 
     fun toggleDemoMode(enabled: Boolean) {
@@ -690,6 +938,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         voiceManager.destroy()
+        ttsManager.shutdown()
     }
 
     fun triggerEmergencyStop() {

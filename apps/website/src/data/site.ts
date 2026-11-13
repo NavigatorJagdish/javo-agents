@@ -43,7 +43,7 @@ export const SITE_CONFIG = {
     os: 'Android 10 (API 29) or higher',
     ram: '4 GB RAM minimum',
     storage: '250 MB free storage',
-    note: 'Companion app pairs over LAN/TLS with your Windows Local Runtime.',
+    note: 'Operates standalone with Google Gemini BYOK or pairs over LAN/TLS with Windows Local Runtime.',
   },
 };
 

@@ -44,7 +44,15 @@ fun AIProvidersScreen(
     val config by viewModel.aiConfig.collectAsState()
     val geminiFeedback by viewModel.geminiTestFeedback.collectAsState()
     val isTestingGemini by viewModel.isTestingGemini.collectAsState()
+    val customAiConfig by viewModel.customAiConfig.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+
     var geminiKeyInput by remember { mutableStateOf("") }
+
+    var customUrlInput by remember(customAiConfig) { mutableStateOf(customAiConfig?.endpointUrl.orEmpty()) }
+    var customKeyInput by remember(customAiConfig) { mutableStateOf(customAiConfig?.apiKey.orEmpty()) }
+    var customModelInput by remember(customAiConfig) { mutableStateOf(customAiConfig?.modelName.orEmpty().ifBlank { "gpt-4o-mini" }) }
+    var customEnabledInput by remember(customAiConfig) { mutableStateOf(customAiConfig?.isEnabled ?: false) }
 
     val supportedGeminiModels = listOf(
         "gemini-2.5-flash" to "Gemini 2.5 Flash (Recommended • Free Tier)",
@@ -78,6 +86,7 @@ fun AIProvidersScreen(
             }
 
             ProviderType.entries.forEach { provider ->
+                val isWindowsConnected = connectionState.name == "Connected"
                 StatusCard(onClick = { viewModel.selectAIProvider(provider) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
@@ -86,10 +95,18 @@ fun AIProvidersScreen(
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(provider.label, style = MaterialTheme.typography.titleMedium)
-                            val subtitle = if (provider == ProviderType.LOCAL_PC_OLLAMA) {
-                                "Model: ${config.localModelName} • Runs offline on paired Windows PC"
-                            } else {
-                                "Model: ${config.geminiModelName} • Free Developer API tier via encrypted Keystore"
+                            val subtitle = when (provider) {
+                                ProviderType.LOCAL_PC_OLLAMA -> {
+                                    if (isWindowsConnected) "Model: ${config.localModelName} • Windows Ollama online"
+                                    else "Requires paired Windows PC running Ollama (currently offline/unpaired)"
+                                }
+                                ProviderType.GEMINI_DIRECT -> {
+                                    "Model: ${config.geminiModelName} • Free Google Gemini Developer API on device"
+                                }
+                                ProviderType.CUSTOM_ENDPOINT -> {
+                                    if (customAiConfig?.isEnabled == true) "Active: ${customAiConfig?.endpointUrl?.take(32)} (${customAiConfig?.modelName})"
+                                    else "Configurable custom OpenAI-compatible / local proxy endpoint"
+                                }
                             }
                             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -182,6 +199,69 @@ fun AIProvidersScreen(
                         borderColor = CoralDanger
                     )
                 }
+            }
+
+            // Custom AI Endpoint Adapter Card
+            StatusCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Custom AI Endpoint Adapter", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    StatusPill(
+                        text = if (customAiConfig?.isEnabled == true) "Active" else "Disabled",
+                        color = if (customAiConfig?.isEnabled == true) EmeraldSuccess else ElectricCyan
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    "Connect an OpenAI-compatible endpoint, LM Studio, or local proxy. Secrets stay encrypted via Android Keystore AES-256-GCM.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Enable Custom Endpoint", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = customEnabledInput,
+                        onCheckedChange = { customEnabledInput = it }
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = customUrlInput,
+                    onValueChange = { customUrlInput = it },
+                    label = { Text("Endpoint URL (e.g. https://api.openai.com/v1/chat/completions)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = customModelInput,
+                    onValueChange = { customModelInput = it },
+                    label = { Text("Model Name (e.g. gpt-4o-mini, llama-3.2)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = customKeyInput,
+                    onValueChange = { customKeyInput = it },
+                    label = { Text("API Key (Optional / Bearer)") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                GradientButton(
+                    text = "Save Custom Endpoint Config",
+                    onClick = {
+                        viewModel.saveCustomAiEndpoint(
+                            url = customUrlInput,
+                            apiKey = customKeyInput,
+                            model = customModelInput,
+                            enabled = customEnabledInput
+                        )
+                    },
+                    enabled = customUrlInput.isNotBlank() || !customEnabledInput
+                )
             }
         }
     }
