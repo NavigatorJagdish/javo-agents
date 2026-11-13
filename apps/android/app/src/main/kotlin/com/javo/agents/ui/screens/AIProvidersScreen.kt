@@ -55,9 +55,10 @@ fun AIProvidersScreen(
     var customEnabledInput by remember(customAiConfig) { mutableStateOf(customAiConfig?.isEnabled ?: false) }
 
     val supportedGeminiModels = listOf(
-        "gemini-2.5-flash" to "Gemini 2.5 Flash (Recommended • Free Tier)",
-        "gemini-2.5-flash-lite" to "Gemini 2.5 Flash Lite (Lightweight • Fast)",
-        "gemini-2.0-flash" to "Gemini 2.0 Flash (Multimodal Baseline)"
+        "gemini-3.5-flash-lite" to "Gemini 3.5 Flash-Lite (Lower-cost default)",
+        "gemini-3.8-flash" to "Gemini 3.8 Flash (General conversational model)",
+        "gemini-2.5-flash" to "Gemini 2.5 Flash (Legacy; access may be restricted)",
+        "gemini-2.5-flash-lite" to "Gemini 2.5 Flash-Lite (Legacy; access may be restricted)"
     )
 
     JavoSubScreenScaffold(title = "AI Providers", onBack = onBack) { padding ->
@@ -119,7 +120,7 @@ fun AIProvidersScreen(
                     Text("Select Gemini Model", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Choose the Google Gemini model for on-device voice queries and content generation. Verified against current Google API models.",
+                        "Choose the Google Gemini model for on-device voice queries and content generation. Check available models and quotas for your own Google AI project; a model may be unavailable even if listed here.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
