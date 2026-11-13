@@ -552,11 +552,7 @@ fun VoiceModeScreen(
                                             color = if (msg.actionHint.contains("Error", ignoreCase = true)) CoralDanger else EmeraldSuccess
                                         )
                                     }
-                                    if (!msg.isUser && (
-                                            msg.actionHint?.startsWith("Google Gemini (") == true ||
-                                            msg.actionHint?.startsWith("Custom AI (") == true
-                                        )
-                                    ) {
+                                    if (!msg.isUser && msg.isVerifiedAiReply) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         JavoOutlinedButton(
                                             text = "Save as Content Draft",
