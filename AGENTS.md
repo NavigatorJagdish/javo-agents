@@ -2,7 +2,8 @@
 ## Read before any AI-assisted coding change
 
 **Canonical product contract:** [docs/JAVO_COMPLETE_ECOSYSTEM_MASTER_SPEC_v2.md](docs/JAVO_COMPLETE_ECOSYSTEM_MASTER_SPEC_v2.md)  
-**Reality / progress ledger:** [docs/JAVO_IMPLEMENTATION_TRACEABILITY_MATRIX_v2.md](docs/JAVO_IMPLEMENTATION_TRACEABILITY_MATRIX_v2.md)  
+**Reality / progress ledger:** [docs/JAVO_IMPLEMENTATION_TRACEABILITY_MATRIX_v2.md](docs/JAVO_IMPLEMENTATION_TRACEABILITY_MATRIX_v2.md)
+**Owner intent / explicit approvals / ordered work:** [docs/JAVO_OWNER_REQUIREMENTS_APPROVALS_EXECUTION_PLAN_v3.md](docs/JAVO_OWNER_REQUIREMENTS_APPROVALS_EXECUTION_PLAN_v3.md)  
 **Prior reference (older strategic baseline):** JAVO_5_Projects_Master_Documentation.docx, 12 Nov 2026. When the old order of product releases conflicts with the newer owner-approved Android-first requirements, follow the v2 spec.
 
 ### Owner's non-negotiables
