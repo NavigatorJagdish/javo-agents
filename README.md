@@ -2,9 +2,9 @@
 
 [![Open Javo Website](https://img.shields.io/badge/OPEN_JAVO_WEBSITE-00C8FF?style=for-the-badge&logo=googlechrome&logoColor=white)](https://javoagents.org)
 
-**[🌐 Open Javo Website](https://javoagents.org)** · [View Website Source](https://github.com/NavigatorJagdish/javo-agents/tree/main/apps/website) · [Website Documentation](https://github.com/NavigatorJagdish/javo-agents/tree/main/docs)
+**[🌐 Open Javo Website](https://javoagents.org)** · [🚀 Deploy / Repair Website](apps/website/DEPLOYMENT.md) · [View Website Source](https://github.com/NavigatorJagdish/javo-agents/tree/main/apps/website) · [Website Documentation](https://github.com/NavigatorJagdish/javo-agents/tree/main/docs)
 
-> **Website access:** This button points to the domain configured in `apps/website/src/data/site.ts`. If the domain does not open yet, verify website deployment, DNS and HTTPS; the GitHub source link above always opens the website project for authorized collaborators.
+> **Website deployment pending:** `javoagents.org` is an intended domain configured in the source, **not a verified live website**. If you see "Site can't be reached", use the [deployment & DNS repair instructions](apps/website/DEPLOYMENT.md). A public hosting deployment and domain connection are required before this button can work.
 
 Local-first, privacy-preserving multi-agent automation platform for creators, social growth, and personal workflows.
 
