@@ -14,10 +14,11 @@ The following artifacts have been built, verified, and attached directly to GitH
 
 | Asset File | Target Architecture | Package Type | File Size | Verified SHA-256 Checksum | Release Asset ID / Status |
 | :--- | :---: | :---: | :---: | :--- | :--- |
-| `JavoAgents-0.1.0-x64.exe` | Windows 10/11 x64 | NSIS Setup Installer | 82,823,342 bytes (~79 MB) | `5d6f13f07a3b84957814f5a079c8de78ee14bbfbae91eda5764d03df1e8e8fd0` | Asset ID: `740691815` (Attached) |
-| `JavoAgents-Portable-0.1.0-x64.exe` | Windows 10/11 x64 | Standalone Portable PE | 82,570,280 bytes (~78.7 MB) | `c8e092aa339137d615e474ca0b7ed598f0cc74bd76cca10d82c601620f51b7e7` | Asset ID: `740695186` (Attached) |
-| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 388 bytes | `9a752677d294863f69fc871032dfa5bf14a275463ae3df974f07a1be82be1be6` | Asset ID: `740691746` (Attached) |
-| `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | ~12 MB | `17c5829880e81b85024802054ba70f0b4a362e2a404eb79848d463a22b0f2311` | Automated CI Release Upload |
+| `JavoAgents-0.1.0-x64.exe` | Windows 10/11 x64 | NSIS Setup Installer | 81,863,491 bytes (~78 MB) | `f0cd79c0144701bb7a9f2fa8852f54f51ad0b5f606e4aa5b6b26cb388ddba1ff` | Asset ID: `742215572` (Verified in Storage) |
+| `JavoAgents-Portable-0.1.0-x64.exe` | Windows 10/11 x64 | Standalone Portable PE | 81,635,860 bytes (~77.8 MB) | `9aecb106a57d27567fd08980663431271440c1516076663ab8999b93fd927127` | Asset ID: `742215570` (Verified in Storage) |
+| `SHA256SUMS.txt` | ASCII Text | Checksum Ledger | 193 bytes | Verified from build output | Asset ID: `742215571` (Verified in Storage) |
+| `javo-agents-android-v0.1.0-alpha-debug.apk` | Android 10+ (API 29+) | Debug Test APK | 19,127,677 bytes (~18.2 MB) | `5ab88a647f3ec223a70aa6f5d7fbf67a4dab4f2481ac1ff30f667114c3f1bbb8` | Asset ID: `742231566` (Verified in Storage) |
+| `javo-agents-android-v0.1.0-alpha-release-unsigned.apk` | Android 10+ (API 29+) | Release APK (Unsigned) | 1,741,367 bytes (~1.66 MB) | CI Verification Package | Asset ID: `742231738` (Verified in Storage) |
 
 ---
 
