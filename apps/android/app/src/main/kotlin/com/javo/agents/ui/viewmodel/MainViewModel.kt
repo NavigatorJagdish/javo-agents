@@ -154,12 +154,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_voiceHistoryEnabled.value) keystore.saveVoiceConversation(_voiceMessages.value)
     }
 
-    /** Only verified Gemini replies and their immediate user turns may enter Gemini context. */
-    private fun verifiedGeminiHistory(): List<GeminiTurn> =
+    /**
+     * Only a provider's own verified replies and matching user turns are reused.
+     * Do not leak transcripts from another AI provider without separate consent.
+     */
+    private fun verifiedProviderHistory(providerPrefix: String): List<GeminiTurn> =
         _voiceMessages.value.zipWithNext()
             .filter { (before, after) ->
                 before.isUser && !after.isUser &&
-                    after.actionHint?.startsWith("Google Gemini (") == true
+                    after.actionHint?.startsWith(providerPrefix) == true
             }
             .takeLast(6)
             .flatMap { (before, after) ->
@@ -608,7 +611,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 apiKey = keystore.getGeminiApiKey().orEmpty(),
                                 model = activeModel,
                                 systemInstruction = systemPrompt,
-                                history = verifiedGeminiHistory()
+                                history = verifiedProviderHistory("Google Gemini (")
                             )
                         }
                         if (geminiRes == null) {
@@ -639,7 +642,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         val systemPrompt = "You are Javo, a helpful, Hindi/Hinglish-first assistant. Never fabricate completed external actions."
                         val customRes = withTimeoutOrNull(25_000L) {
-                            orchestrator.callCustomEndpoint(endpoint, query, systemPrompt)
+                            orchestrator.callCustomEndpoint(
+                                endpoint, query, systemPrompt,
+                                history = verifiedProviderHistory("Custom AI (")
+                            )
                         }
                         if (customRes == null) {
                             replyText = "Custom AI endpoint request timed out."
