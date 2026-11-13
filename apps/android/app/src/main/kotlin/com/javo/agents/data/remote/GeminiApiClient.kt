@@ -15,6 +15,13 @@ class GeminiQuotaExceededException(message: String) : GeminiApiException(message
 class GeminiAuthException(message: String) : GeminiApiException(message)
 class GeminiUnavailableException(message: String) : GeminiApiException(message)
 
+/**
+ * The only conversation turns sent to Gemini are verified exchanges with Gemini.
+ * History is capped and explicit; task-execution errors and other provider replies
+ * must never be silently leaked to a different AI provider.
+ */
+data class GeminiTurn(val role: String, val text: String)
+
 class GeminiApiClient(
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
@@ -48,6 +55,15 @@ class GeminiApiClient(
             }
             return MODEL_GEMINI_2_5_FLASH
         }
+
+        /** Bounded, validated prior conversation turns to avoid unbounded token use. */
+        fun boundedHistory(history: List<GeminiTurn>): List<GeminiTurn> =
+            history.takeLast(12).mapNotNull { turn ->
+                val role = turn.role.lowercase()
+                val trimmed = turn.text.trim().take(1800)
+                if (role !in setOf("user", "model") || trimmed.isBlank()) null
+                else GeminiTurn(role, trimmed)
+            }
 
         fun sanitizeError(raw: String?, apiKey: String): String {
             if (raw.isNullOrBlank()) return "Unknown Gemini API error."
@@ -84,7 +100,8 @@ class GeminiApiClient(
         prompt: String,
         apiKey: String,
         model: String = MODEL_GEMINI_2_5_FLASH,
-        systemInstruction: String = "You are Javo, a local-first AI assistant for creators and entrepreneurs. You are concise, friendly, and fluent in Hindi, Hinglish, and English. Respond naturally in the user's preferred language."
+        systemInstruction: String = "You are Javo, a local-first AI assistant for creators and entrepreneurs. You are concise, friendly, and fluent in Hindi, Hinglish, and English. Respond naturally in the user's preferred language.",
+        history: List<GeminiTurn> = emptyList()
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanKey = apiKey.trim()
         if (cleanKey.isBlank()) {
@@ -98,26 +115,40 @@ class GeminiApiClient(
         val targetModel = resolveModel(model)
 
         try {
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=$cleanKey"
+            // Keep the API key out of URL query strings / network error messages.
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent"
 
             val requestJson = JSONObject().apply {
+                if (systemInstruction.isNotBlank()) {
+                    put(
+                        "systemInstruction",
+                        JSONObject().put(
+                            "parts",
+                            JSONArray().put(JSONObject().put("text", systemInstruction.take(4000)))
+                        )
+                    )
+                }
                 val contentsArray = JSONArray()
-                val contentObj = JSONObject()
-                val partsArray = JSONArray()
-
-                // System guidance
-                partsArray.put(JSONObject().put("text", "Instruction: $systemInstruction"))
-                // User query
-                partsArray.put(JSONObject().put("text", cleanPrompt))
-
-                contentObj.put("parts", partsArray)
-                contentsArray.put(contentObj)
+                val safeHistory = boundedHistory(history)
+                safeHistory.forEach { turn ->
+                    contentsArray.put(
+                        JSONObject()
+                            .put("role", turn.role)
+                            .put("parts", JSONArray().put(JSONObject().put("text", turn.text)))
+                    )
+                }
+                contentsArray.put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put("parts", JSONArray().put(JSONObject().put("text", cleanPrompt)))
+                )
                 put("contents", contentsArray)
             }
 
             val body = requestJson.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url(url)
+                .header("x-goog-api-key", cleanKey)
                 .post(body)
                 .build()
 
