@@ -203,6 +203,11 @@ class MobileAgentOrchestrator(
         }
     }
 
+    private fun redactCustomError(raw: String?, apiKey: String): String {
+        val text = raw.orEmpty()
+        return if (apiKey.isBlank()) text else text.replace(apiKey.trim(), "[REDACTED_API_KEY]")
+    }
+
     suspend fun callCustomEndpoint(
         config: CustomAiEndpointConfig,
         userPrompt: String,
@@ -247,7 +252,7 @@ class MobileAgentOrchestrator(
             response.use { res ->
                 if (!res.isSuccessful) {
                     val err = res.body?.string().orEmpty()
-                    return@withContext Result.failure(Exception("Custom AI Endpoint error HTTP ${res.code}: ${err.replace(config.apiKey, "[REDACTED_API_KEY]").take(120)}"))
+                    return@withContext Result.failure(Exception("Custom AI Endpoint error HTTP ${res.code}: ${redactCustomError(err, config.apiKey).take(120)}"))
                 }
                 val resBody = res.body?.string().orEmpty()
                 val json = JSONObject(resBody)
@@ -267,7 +272,7 @@ class MobileAgentOrchestrator(
                 Result.failure(Exception("Could not parse AI response from custom endpoint."))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Custom AI Endpoint network error: ${e.message?.replace(config.apiKey, "[REDACTED_API_KEY]") ?: "Connection failed"}"))
+            Result.failure(Exception("Custom AI Endpoint network error: ${redactCustomError(e.message, config.apiKey).ifBlank { "Connection failed" }}"))
         }
     }
 }
