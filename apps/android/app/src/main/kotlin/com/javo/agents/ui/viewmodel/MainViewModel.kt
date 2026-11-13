@@ -144,17 +144,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _aiConfig = MutableStateFlow(
         AIProviderConfig(
-            activeProvider = if (keystore.getOperatingMode() == OperatingMode.ANDROID_STANDALONE && keystore.hasGeminiApiKey()) {
-                ProviderType.GEMINI_DIRECT
-            } else if (keystore.getOperatingMode() == OperatingMode.ANDROID_STANDALONE && keystore.getCustomAiEndpoint().isEnabled) {
-                ProviderType.CUSTOM_ENDPOINT
-            } else if (keystore.isPaired()) {
-                ProviderType.LOCAL_PC_OLLAMA
-            } else if (keystore.hasGeminiApiKey()) {
-                ProviderType.GEMINI_DIRECT
-            } else {
-                ProviderType.GEMINI_DIRECT
-            },
+            activeProvider = keystore.getSelectedAiProvider(),
             geminiModelName = keystore.getGeminiModel(),
             hasGeminiKeyStored = keystore.hasGeminiApiKey()
         )
@@ -324,26 +314,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setOperatingMode(mode: OperatingMode) {
         keystore.saveOperatingMode(mode)
         _operatingMode.value = mode
-        when (mode) {
-            OperatingMode.ANDROID_STANDALONE -> {
-                if (keystore.hasGeminiApiKey()) {
-                    selectAIProvider(ProviderType.GEMINI_DIRECT)
-                } else if (keystore.getCustomAiEndpoint().isEnabled) {
-                    selectAIProvider(ProviderType.CUSTOM_ENDPOINT)
-                }
-            }
-            OperatingMode.WINDOWS_ENHANCED -> {
-                if (keystore.isPaired()) {
-                    selectAIProvider(ProviderType.LOCAL_PC_OLLAMA)
-                }
-            }
-            OperatingMode.CLOUD_MODE -> {
-                if (keystore.hasGeminiApiKey()) {
-                    selectAIProvider(ProviderType.GEMINI_DIRECT)
-                }
-            }
+        // Mode controls available device capabilities, not the user's chosen AI provider.
+        // Never replace an explicitly selected provider just because another key exists.
+        _statusToast.value = if (
+            mode != OperatingMode.WINDOWS_ENHANCED &&
+            _aiConfig.value.activeProvider == ProviderType.LOCAL_PC_OLLAMA
+        ) {
+            "Mobile mode enabled. Select Gemini or Custom AI in Settings → AI Providers to receive phone-only replies."
+        } else {
+            "Switched to ${mode.displayName}"
         }
-        _statusToast.value = "Switched to ${mode.displayName}"
     }
 
     fun toggleTts(enabled: Boolean) {
@@ -554,90 +534,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var replyText: String
             var actionHint: String? = null
 
-            // Route 1: Paired & reachable Windows Local Runtime (Enhanced Mode only)
-            val isBridgeConnected = connectionState.value == BridgeConnectionState.Connected
-            if (_operatingMode.value == OperatingMode.WINDOWS_ENHANCED && isBridgeConnected) {
-                val remoteReply = withTimeoutOrNull(25_000L) {
-                    bridge.sendVoiceCommand(query, lang.code)
-                }
-                if (remoteReply != null && remoteReply.isSuccess) {
-                    val body = remoteReply.getOrNull()
-                    replyText = body?.reply ?: "Received confirmation from Windows runtime."
-                    actionHint = "Executed via ${body?.routedAgent ?: "Javo Desktop"}"
-                } else {
-                    val err = remoteReply?.exceptionOrNull()?.message ?: "Windows request timed out or host unreachable"
-                    replyText = "Failed to deliver voice command to Windows runtime: $err"
-                    actionHint = "Windows Delivery Failed • Tap to Retry"
-                }
-            } else if (keystore.hasGeminiApiKey()) {
-                // Route 2: Direct Gemini API via user-provided developer key in Keystore
-                val activeModel = keystore.getGeminiModel().takeIf { !it.isNullOrBlank() } ?: com.javo.agents.data.remote.GeminiApiClient.MODEL_GEMINI_2_5_FLASH
-                val systemPrompt = "You are Javo, a helpful, local-first conversational AI assistant. You answer concisely and speak naturally in English, Hindi, and Hinglish. Answer general questions accurately and helpfully. If the user asks for content or scripts, provide ready-to-use hooks and drafts."
-                val geminiRes = withTimeoutOrNull(25_000L) {
-                    gemini.generateResponse(
-                        prompt = query,
-                        apiKey = keystore.getGeminiApiKey().orEmpty(),
-                        model = activeModel,
-                        systemInstruction = systemPrompt
-                    )
-                }
-                if (geminiRes != null && geminiRes.isSuccess) {
-                    replyText = geminiRes.getOrThrow()
-                    actionHint = "Generated via Google Gemini ($activeModel)"
-                } else if (geminiRes == null) {
-                    replyText = "Gemini API request timed out after 25 seconds. Please check your internet connection."
-                    actionHint = "Connection Timeout"
-                } else {
-                    val ex = geminiRes.exceptionOrNull()
-                    replyText = when (ex) {
-                        is GeminiQuotaExceededException -> "Gemini API rate/quota limit reached (HTTP 429). Please try again shortly or check your Google AI Studio quota."
-                        is GeminiAuthException -> "Gemini API authentication failed (HTTP 401/403). Please verify your API key in Settings → AI Providers."
-                        is GeminiUnavailableException -> "Gemini API service is temporarily unavailable (HTTP 500/503). Please try again in a few moments."
-                        else -> "Gemini API encountered an error: ${ex?.message ?: "Request failed"}"
+            // Only the explicitly selected provider may process this utterance.
+            // Never silently switch to another AI provider based on a stored key.
+            when (_aiConfig.value.activeProvider) {
+                ProviderType.LOCAL_PC_OLLAMA -> {
+                    if (_operatingMode.value != OperatingMode.WINDOWS_ENHANCED) {
+                        replyText = "Windows Ollama is selected, but Android is in standalone mode. Open Settings → AI Providers and select Gemini or your Custom AI endpoint."
+                        actionHint = "Provider requires Windows mode"
+                    } else if (connectionState.value != BridgeConnectionState.Connected) {
+                        replyText = "Selected provider Windows Ollama is not connected. Pair with the Windows runtime, or explicitly choose a phone AI provider."
+                        actionHint = "Windows unavailable"
+                    } else {
+                        val remoteReply = withTimeoutOrNull(25_000L) {
+                            bridge.sendVoiceCommand(query, lang.code)
+                        }
+                        val actualReply = remoteReply?.getOrNull()?.reply
+                        if (remoteReply?.isSuccess == true && !actualReply.isNullOrBlank()) {
+                            replyText = actualReply
+                            actionHint = "Response from Windows runtime"
+                        } else {
+                            val err = remoteReply?.exceptionOrNull()?.message
+                                ?: "Timed out, unreachable, or empty response"
+                            replyText = "Windows request failed: $err. Nothing was confirmed as executed."
+                            actionHint = "Provider request failed"
+                        }
                     }
-                    actionHint = "Direct API Error"
                 }
-            } else if (keystore.getCustomAiEndpoint().isEnabled && keystore.getCustomAiEndpoint().endpointUrl.isNotBlank()) {
-                // Route 2b: Custom AI Endpoint
-                val endpoint = keystore.getCustomAiEndpoint()
-                val systemPrompt = "You are Javo, a local-first AI assistant. You are helpful, concise, and communicate in English, Hindi, and Hinglish."
-                val customRes = withTimeoutOrNull(25_000L) {
-                    orchestrator.callCustomEndpoint(endpoint, query, systemPrompt)
-                }
-                if (customRes != null && customRes.isSuccess) {
-                    replyText = customRes.getOrThrow()
-                    actionHint = "Custom AI (${endpoint.modelName})"
-                } else if (customRes == null) {
-                    replyText = "Custom AI request timed out after 25 seconds."
-                    actionHint = "Endpoint Timeout"
-                } else {
-                    val err = customRes.exceptionOrNull()?.message ?: "Custom AI call failed"
-                    replyText = "Custom AI Endpoint error: $err"
-                    actionHint = "Custom Endpoint Error"
-                }
-            } else {
-                // Route 3: Neither provider configured - honest diagnostics + automatic local draft creation if requested
-                val lower = query.lowercase()
-                val isDraftRequest = lower.contains("draft") || lower.contains("hook") ||
-                    lower.contains("reel") || lower.contains("script") || lower.contains("post") ||
-                    lower.contains("write") || lower.contains("banao") || lower.contains("likho")
 
-                if (isDraftRequest) {
-                    val platform = when {
-                        lower.contains("youtube") -> "YouTube"
-                        lower.contains("facebook") -> "Facebook"
-                        else -> "Instagram"
+                ProviderType.GEMINI_DIRECT -> {
+                    if (!keystore.hasGeminiApiKey()) {
+                        replyText = "Google Gemini is selected but no API key is configured. Open Settings → AI Providers, save your own key, and test the connection."
+                        actionHint = "Set up Gemini key"
+                    } else {
+                        val activeModel = keystore.getGeminiModel()
+                        val systemPrompt = "You are Javo, a helpful Hindi/Hinglish-first conversational assistant. Answer the user's actual question accurately, naturally and concisely. Propose authorized tool actions instead of claiming to execute them. Never fabricate actions, completed tasks or social publishing."
+                        val geminiRes = withTimeoutOrNull(25_000L) {
+                            gemini.generateResponse(
+                                prompt = query,
+                                apiKey = keystore.getGeminiApiKey().orEmpty(),
+                                model = activeModel,
+                                systemInstruction = systemPrompt
+                            )
+                        }
+                        if (geminiRes == null) {
+                            replyText = "Gemini request timed out. Check your network and try again."
+                            actionHint = "Provider timeout"
+                        } else if (geminiRes.isSuccess) {
+                            replyText = geminiRes.getOrThrow()
+                            actionHint = "Google Gemini ($activeModel)"
+                        } else {
+                            val ex = geminiRes.exceptionOrNull()
+                            replyText = when (ex) {
+                                is GeminiQuotaExceededException -> "Gemini quota/rate limit reached. Check your quota and retry later."
+                                is GeminiAuthException -> "Gemini key rejected. Review Settings → AI Providers."
+                                is GeminiUnavailableException -> "Gemini service is temporarily unavailable. Please retry."
+                                else -> "Gemini request failed: ${ex?.message ?: "Unknown error"}"
+                            }
+                            actionHint = "Provider error"
+                        }
                     }
-                    val created = repo.draftRepository.createOfflineDraft(
-                        title = query.take(45),
-                        body = query,
-                        platform = platform
-                    )
-                    replyText = "Saved '${created.title}' as an offline draft in Content Studio.\n\nNote: Live AI responses require an active provider. Configure your free Gemini API key in Settings → AI Providers."
-                    actionHint = "Saved to local Room drafts"
-                } else {
-                    replyText = "AI Provider not configured.\n\n• For Android Standalone mode: enter your free Google Gemini API key in Settings → AI Providers.\n• For local AI (Ollama): switch to Windows Enhanced mode and pair with your PC."
-                    actionHint = "Unconfigured AI Provider"
+                }
+
+                ProviderType.CUSTOM_ENDPOINT -> {
+                    val endpoint = keystore.getCustomAiEndpoint()
+                    if (!endpoint.isEnabled || endpoint.endpointUrl.isBlank()) {
+                        replyText = "Custom AI is selected but its endpoint is not configured. Set a valid endpoint URL and model under Settings → AI Providers."
+                        actionHint = "Configure Custom AI"
+                    } else {
+                        val systemPrompt = "You are Javo, a helpful, Hindi/Hinglish-first assistant. Never fabricate completed external actions."
+                        val customRes = withTimeoutOrNull(25_000L) {
+                            orchestrator.callCustomEndpoint(endpoint, query, systemPrompt)
+                        }
+                        if (customRes == null) {
+                            replyText = "Custom AI endpoint request timed out."
+                            actionHint = "Provider timeout"
+                        } else if (customRes.isSuccess) {
+                            replyText = customRes.getOrThrow()
+                            actionHint = "Custom AI (${endpoint.modelName})"
+                        } else {
+                            val err = customRes.exceptionOrNull()?.message ?: "Request failed"
+                            replyText = "Custom AI endpoint failed: $err"
+                            actionHint = "Provider error"
+                        }
+                    }
                 }
             }
 
@@ -784,7 +763,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectAIProvider(provider: ProviderType) {
+        keystore.saveSelectedAiProvider(provider)
         _aiConfig.update { it.copy(activeProvider = provider) }
+        _statusToast.value = if (
+            provider == ProviderType.LOCAL_PC_OLLAMA &&
+            _operatingMode.value != OperatingMode.WINDOWS_ENHANCED
+        ) {
+            "Windows Ollama requires Windows Enhanced mode and a verified pairing."
+        } else {
+            "AI provider selected: ${provider.label}"
+        }
     }
 
     fun selectGeminiModel(model: String) {
