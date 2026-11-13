@@ -118,6 +118,16 @@ Existing branch now contains:
 - CI release upload guarded by explicit manual opt-in; older same-version release asset has checksum drift from previous workflow.
 **All these are CODE-LEVEL changes.** No fresh APK or real device acceptance has been verified for them.
 
+## H. Current implementation progress and issues (13 November 2026)
+
+- **Private owner requirements and approval ledger:** `docs/JAVO_OWNER_REQUIREMENTS_APPROVALS_EXECUTION_PLAN_v3.md`
+- **CI release blocker:** [Issue #2](https://github.com/NavigatorJagdish/javo-agents/issues/2). Latest PR runs still fail before usable job steps, even on Windows/Backend/Frontend/Security; source compilation for newer changes is **NOT VERIFIED**.
+- **Physical Android acceptance:** [Issue #3](https://github.com/NavigatorJagdish/javo-agents/issues/3). Requires owner device, actual STT/TTS and 10 turns.
+- **Mobile social OAuth:** [Issue #4](https://github.com/NavigatorJagdish/javo-agents/issues/4). Requires real OAuth app credentials and optional hosted broker.
+- **Latest code changes:** Genuine user-confirmed **Save as Content Draft** per verified AI reply; `isVerifiedAiReply` proof field and legacy migration-safe default; default Gemini 3.5 Flash-Lite and selectable Gemini 3.8 Flash; removed discontinued Gemini 2.0 model and false fixed free-RPM claims; selected-provider-specific readiness on Home; redacted custom errors and blocked keys over cleartext HTTP; social handle placeholder creation disabled; static "Active agent" statuses corrected; unimplemented $0 guard clearly disclosed rather than falsely presented as enforced.
+- **Current release:** NO new versioned APK is built or published for these source changes. Do not suggest that old `v0.1.4-alpha` packages contain them.
+- **Follow-up note:** The exact feature acceptance definition includes device tests, negative tests and private release SHA/version provenance; a file committed to GitHub is not a completed feature.
+
 ## G. Reporting format for every subsequent iteration
 Requirement ID → implementation path and commit → executable test and CI status → actual device/account evidence → result (DONE / CODE ONLY / BLOCKED / PENDING) → next dependency. Never conflate “requested,” “approved,” “implemented,” and “shipped.”
 
