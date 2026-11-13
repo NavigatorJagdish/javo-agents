@@ -10,8 +10,6 @@ Verifies:
 8. Emergency Stop verification
 """
 
-import asyncio
-import os
 import tempfile
 from pathlib import Path
 

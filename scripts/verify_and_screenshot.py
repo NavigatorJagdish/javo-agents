@@ -46,7 +46,9 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def start_server(directory: Path, port: int) -> tuple[socketserver.TCPServer, threading.Thread]:
-    handler = lambda *args, **kwargs: QuietHandler(*args, directory=str(directory), **kwargs)
+    def handler(*args, **kwargs):
+        return QuietHandler(*args, directory=str(directory), **kwargs)
+
     server = socketserver.TCPServer(("127.0.0.1", port), handler)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
@@ -169,10 +171,10 @@ def main():
     print("Found browser:", browser)
 
     # 1. Verify binaries
-    binary_audit = verify_windows_binaries()
+    verify_windows_binaries()
 
     # 2. Verify backend lifecycle
-    backend_audit = verify_backend_lifecycle()
+    verify_backend_lifecycle()
 
     # 3. Start static preview servers
     website_out = REPO_ROOT / "apps" / "website" / "out"
