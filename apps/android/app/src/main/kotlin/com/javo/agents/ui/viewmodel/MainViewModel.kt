@@ -679,6 +679,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Network/provider failures should be read as actionable text,
             // not voiced as though Javo completed a legitimate AI reply.
             if (verifiedProviderResponse && _ttsEnabled.value) {
+                // Wait briefly for Android's asynchronous speech engine init so
+                // an accepted reply is never spoken later from a stale queue.
+                val ttsReady = withTimeoutOrNull(3_000L) {
+                    while (!ttsManager.isReady()) delay(80)
+                    true
+                } == true
+                if (!ttsReady) {
+                    _waveformState.value = WaveformState.Idle
+                    _isHandsFreeSessionActive.value = false
+                    _statusToast.value = "Voice output engine isn't ready. Check Android Text-to-Speech settings; the real AI text reply is available above."
+                    return@launch
+                }
                 _waveformState.value = WaveformState.Speaking
                 val started = ttsManager.speak(replyText, lang) {
                     viewModelScope.launch {
@@ -696,6 +708,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (!started) {
                     _waveformState.value = WaveformState.Idle
+                    _isHandsFreeSessionActive.value = false
+                    _statusToast.value = "Speech playback failed. The AI reply is still available in text."
                 }
             } else {
                 delay(600)
