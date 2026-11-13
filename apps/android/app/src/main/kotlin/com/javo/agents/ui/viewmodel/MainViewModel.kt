@@ -1099,6 +1099,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Explicit user action to save an AI-generated response to the real local
+     * content library. This is NOT a publish request and requires no PC.
+     */
+    fun saveVerifiedReplyAsDraft(messageId: String, platform: String) {
+        val allowedPlatforms = setOf("Facebook", "Instagram", "YouTube", "Other")
+        if (platform !in allowedPlatforms) {
+            _statusToast.value = "Choose a supported draft platform."
+            return
+        }
+        val msg = _voiceMessages.value.firstOrNull { it.id == messageId && !it.isUser }
+        val verifiedResponse = msg?.actionHint?.startsWith("Google Gemini (") == true ||
+            msg?.actionHint?.startsWith("Custom AI (") == true
+        if (msg == null || !verifiedResponse || msg.text.isBlank()) {
+            _statusToast.value = "Only real, successful AI-generated replies can be saved as a content draft."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val created = repo.draftRepository.createOfflineDraft(
+                    title = msg.text.lineSequence().firstOrNull()?.trim()?.take(65)
+                        ?.ifBlank { "Javo AI Draft" } ?: "Javo AI Draft",
+                    body = msg.text,
+                    platform = platform
+                )
+                _statusToast.value = "Saved '${created.title}' in Content Studio as a local draft. Nothing was published."
+            } catch (e: Exception) {
+                _statusToast.value = "Draft save failed: ${e.message ?: "Local storage unavailable"}"
+            }
+        }
+    }
+
     fun clearVoiceHistory() {
         _voiceMessages.value = emptyList()
         keystore.clearVoiceConversation()
