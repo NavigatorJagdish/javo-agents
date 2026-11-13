@@ -346,7 +346,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val next = !agent.isEnabled
                     agent.copy(
                         isEnabled = next,
-                        status = if (next) "Active" else "Paused"
+                        status = if (next) "Enabled" else "Disabled"
                     )
                 } else agent
             }
@@ -356,10 +356,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun activateTemplate(slug: String) {
         _templates.update { list ->
             list.map { tpl ->
-                if (tpl.slug == slug) tpl.copy(isEnabled = true, status = "Applied") else tpl
+                if (tpl.slug == slug) tpl.copy(isEnabled = true, status = "Selected") else tpl
             }
         }
-        _statusToast.value = "Template queued for agent pipeline."
+        _statusToast.value = "Template selected for this session. Create an actual task in Workflows to run a specialist."
     }
 
     fun toggleWorkflow(id: String) {
