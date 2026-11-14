@@ -16,6 +16,14 @@ RUNTIME = ROOT / "services" / "local-runtime"
 OUTPUT = ROOT / "apps" / "windows" / "build" / "runtime"
 
 
+def source_fingerprints() -> dict[str, str]:
+    paths = sorted((RUNTIME / "app").rglob("*.py")) + [
+        RUNTIME / name for name in ("desktop_entry.py", "pyproject.toml", "requirements.txt")
+    ]
+    return {p.relative_to(RUNTIME).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in paths}
+
+
 def main() -> None:
     if sys.platform != "win32" or platform.machine().lower() not in {"amd64", "x86_64"}:
         raise SystemExit("Build the Windows x64 runtime using Windows x64 Python.")
@@ -39,6 +47,7 @@ def main() -> None:
     ]
     # Build hooks and the import check must never inherit owner credentials.
     env = {key: value for key, value in os.environ.items() if not key.startswith("JAVO_")}
+    source_files = source_fingerprints()
     subprocess.run(command, cwd=ROOT, env=env, check=True)
     bundle = OUTPUT / "javo-runtime"
     # Invalidate previous verification before inspecting the newly built payload.
@@ -54,9 +63,12 @@ def main() -> None:
         raise SystemExit("Bundled runtime import check failed; no verified manifest written.")
     files = {p.relative_to(bundle).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in sorted(bundle.rglob("*")) if p.is_file()}
+    if source_fingerprints() != source_files:
+        raise SystemExit("Backend source changed during bundling; rebuild from stable source.")
     manifest.write_text(json.dumps({"schema": 1, "platform": "win32", "arch": "x64",
                                    "built_utc": datetime.now(timezone.utc).isoformat(),
-                                   "self_test": evidence, "files": files}, indent=2), encoding="utf-8")
+                                   "self_test": evidence, "files": files,
+                                   "source_files": source_files}, indent=2), encoding="utf-8")
     print(f"BUNDLED_RUNTIME_IMPORTS_OK: {len(files)} files; HTTP startup still requires testing.")
 
 

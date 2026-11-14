@@ -124,3 +124,12 @@ Current packaging blockers: configured Python index provides no PyInstaller;
 minimal asyncio probe again timed out in Windows socketpair before app import.
 Electron binary and complete installer execution remain unverified. Existing
 historical backend/browser passes remain historical, not fresh verification.
+
+## Package provenance follow-up
+
+Backend bundles now record Python source and dependency-declaration hashes.
+Preflight rejects changed/added/deleted source, missing source provenance and
+extra payload files absent from the manifest. Build rejects source changing
+during bundling. Fifteen isolated desktop contract tests passed; this still
+does not verify a frozen executable or an installed desktop app. Cache cleanup
+was repeatedly interrupted and is deferred; no reclaimed-space claim.

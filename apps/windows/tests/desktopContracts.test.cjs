@@ -101,6 +101,8 @@ function payloadFixture(run) {
   const project = path.join(root, 'apps/windows');
   const runtime = path.join(project, 'build/runtime/javo-runtime');
   for (const name of ['apps/dashboard/dist/index.html', 'packages/brand-assets/icons/dist/javo-app.ico',
+                      'services/local-runtime/app/main.py', 'services/local-runtime/desktop_entry.py',
+                      'services/local-runtime/pyproject.toml', 'services/local-runtime/requirements.txt',
                       'apps/windows/build/runtime/javo-runtime/javo-runtime.exe',
                       'apps/windows/build/runtime/javo-runtime/_internal/python311.dll']) {
     const filename = path.join(root, name);
@@ -109,7 +111,9 @@ function payloadFixture(run) {
   const digest = createHash('sha256').update('fixture').digest('hex');
   const manifest = { schema: 1, platform: 'win32', arch: 'x64',
     self_test: { result: 'RUNTIME_IMPORTS_OK', agents: 30 },
-    files: { 'javo-runtime.exe': digest, '_internal/python311.dll': digest } };
+    files: { 'javo-runtime.exe': digest, '_internal/python311.dll': digest },
+    source_files: { 'app/main.py': digest, 'desktop_entry.py': digest,
+                    'pyproject.toml': digest, 'requirements.txt': digest } };
   const write = () => fs.writeFileSync(path.join(runtime, 'runtime-manifest.json'), JSON.stringify(manifest));
   write();
   try { run({ project, runtime, manifest, write }); }
@@ -141,5 +145,30 @@ test('package preflight rejects unverified import checks', () => {
   payloadFixture(({ project, manifest, write }) => {
     manifest.self_test.result = 'failed'; write();
     assert.throws(() => verifyPackage(project), /incomplete or unverified/);
+  });
+});
+
+test('package preflight rejects extra files absent from runtime manifest', () => {
+  payloadFixture(({ project, runtime }) => {
+    fs.writeFileSync(path.join(runtime, 'unexpected.env'), 'unverified');
+    assert.throws(() => verifyPackage(project), /unverified payload/);
+  });
+});
+test('package preflight rejects backend source changes after bundling', () => {
+  payloadFixture(({ project }) => {
+    fs.writeFileSync(path.resolve(project, '../../services/local-runtime/app/main.py'), 'changed');
+    assert.throws(() => verifyPackage(project), /source changed/);
+  });
+});
+test('package preflight rejects newly added backend modules absent from bundle', () => {
+  payloadFixture(({ project }) => {
+    fs.writeFileSync(path.resolve(project, '../../services/local-runtime/app/new.py'), 'new');
+    assert.throws(() => verifyPackage(project), /source manifest is outdated/);
+  });
+});
+test('package preflight rejects bundles with no source provenance', () => {
+  payloadFixture(({ project, manifest, write }) => {
+    delete manifest.source_files; write();
+    assert.throws(() => verifyPackage(project), /source manifest is outdated/);
   });
 });

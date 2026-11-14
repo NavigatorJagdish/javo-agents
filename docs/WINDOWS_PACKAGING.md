@@ -36,6 +36,9 @@ npm run dist:win
 dashboard/icon/runtime payloads, missing Python DLLs, failed self-test markers
 and checksum mismatches. These are build-integrity checks, not code signing or
 proof that an executable is trustworthy. Publishing is disabled in this build.
+The manifest also binds the bundle to the backend Python source and dependency
+declarations. Added, removed or edited backend source requires a new bundle.
+Extra files absent from the payload manifest are rejected before packaging.
 
 Release acceptance still requires a clean Windows VM without Python: install,
 authenticated healthy backend, import/review/approve/simulate/receipt flow,
