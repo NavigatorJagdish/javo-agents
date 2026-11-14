@@ -4,8 +4,9 @@ Owner instruction, 14 November 2026: keep milestone backups on Google Drive,
 keep usable source/final deliverables on GitHub, and reclaim unnecessary local storage.
 
 - Make a dated checkpoint after meaningful work. Store source, build instructions,
-  verification results and a SHA256 file manifest in an archive. Include the project
-  continuity document in the private Drive archive.
+  verification results and a SHA256 file manifest in an archive. Keep the private
+  continuity document in its existing saved file; exclude it from Drive/source
+  archives unless its export to the destination is specifically authorized.
 - Exclude credentials, `.env` files, user databases, account data, logs, models,
   `node_modules`, caches and temporary files from source backups and GitHub.
   This is a source/development backup; it is not an encrypted user-data backup.
