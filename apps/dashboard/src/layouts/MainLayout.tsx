@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
+import { RouteContent } from '../components/RouteContent';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -32,6 +34,7 @@ import {
   ToastContainer,
   Modal,
 } from '@javo/design-system';
+import { apiRequest } from '../api/client';
 import { useAppStore } from '../store/useAppStore';
 import { useAgentStore } from '../store/useAgentStore';
 import { useEmergencyStopMutation, useHealthQuery } from '../api/hooks';
@@ -48,9 +51,7 @@ export const MainLayout: React.FC = () => {
     toggleTheme,
     sidebarCollapsed,
     toggleSidebar,
-    emergencyStopped,
     resetEmergencyStop,
-    autopilotEnabled,
     setAutopilotEnabled,
     toasts,
     dismissToast,
@@ -58,10 +59,14 @@ export const MainLayout: React.FC = () => {
   } = useAppStore();
 
   const agents = useAgentStore((s) => s.agents);
-  const enableCoreAgents = useAgentStore((s) => s.enableCoreAgents);
   const activeAgentCount = agents.filter((a) => a.enabled).length;
 
-  const { data: health } = useHealthQuery();
+  const healthQuery = useHealthQuery();
+  const health = healthQuery.data;
+  const runtimeOnline = healthQuery.isSuccess && health?.status === 'healthy';
+  const control = useQuery({ queryKey: ['runtime-control'], queryFn: () => apiRequest<{ paused: boolean; emergency_stopped: boolean }>('/api/security/autopilot-status'), refetchInterval: 5000, retry: false });
+  const emergencyStopped = control.data?.emergency_stopped ?? false;
+  const autopilotEnabled = control.isSuccess && !control.data.paused;
   const emergencyStopMutation = useEmergencyStopMutation();
 
   useEffect(() => {
@@ -92,16 +97,30 @@ export const MainLayout: React.FC = () => {
   ];
 
   const handleConfirmEmergencyStop = async () => {
-    await emergencyStopMutation.mutateAsync();
-    useAppStore.getState().triggerEmergencyStop();
-    setStopModalOpen(false);
-    addToast('Emergency Stop Triggered', 'All 29 agents and scheduled jobs have been halted.', 'error');
+    try {
+      await emergencyStopMutation.mutateAsync();
+      useAppStore.getState().triggerEmergencyStop();
+      await control.refetch();
+      setStopModalOpen(false);
+      addToast('Stop requested', 'Runtime cancelled local work. Remote actions already sent may still complete.', 'info');
+    } catch { addToast('Stop failed', 'Runtime did not confirm the request.', 'error'); }
   };
-
-  const handleResumeSystem = () => {
-    resetEmergencyStop();
-    enableCoreAgents();
-    addToast('System Resumed', 'Core autonomous agents are back online.', 'success');
+  const handleResumeSystem = async () => {
+    try {
+      await apiRequest('/api/security/resume', { method: 'POST' });
+      await control.refetch();
+      resetEmergencyStop();
+      addToast('Runtime resumed', 'Resume confirmed by the runtime.', 'success');
+    } catch { addToast('Resume failed', 'Runtime did not confirm the request.', 'error'); }
+  };
+  const handleAutopilot = async () => {
+    if (emergencyStopped) return;
+    try {
+      await apiRequest(autopilotEnabled ? '/api/security/pause' : '/api/security/resume', { method: 'POST' });
+      await control.refetch();
+      setAutopilotEnabled(!autopilotEnabled);
+      addToast('Command confirmed', 'Runtime confirmed pause/resume.', 'info');
+    } catch { addToast('Command failed', 'Runtime did not confirm the request.', 'error'); }
   };
 
   const handleQuickSearch = (e: React.FormEvent) => {
@@ -133,12 +152,12 @@ export const MainLayout: React.FC = () => {
               <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-[#131C40] border border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-700 dark:text-slate-300">Local Runtime</span>
-                  <Badge status={emergencyStopped ? 'error' : 'active'} size="sm" pulse={!emergencyStopped}>
-                    {emergencyStopped ? 'Halted' : 'Online'}
+                  <Badge status={emergencyStopped || !runtimeOnline ? 'error' : 'active'} size="sm" pulse={runtimeOnline && !emergencyStopped}>
+                    {emergencyStopped ? 'Halted' : runtimeOnline ? 'Online' : 'Unavailable'}
                   </Badge>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  CPU {health?.cpu_percent ?? 24}% • RAM {health?.memory_percent ?? 42}%
+                  CPU {health?.cpu_percent ?? '—'}% • RAM {health?.memory_percent ?? '—'}%
                 </p>
               </div>
               <button
@@ -195,17 +214,7 @@ export const MainLayout: React.FC = () => {
             {/* Autopilot pill */}
             <button
               type="button"
-              onClick={() => {
-                if (emergencyStopped) return;
-                setAutopilotEnabled(!autopilotEnabled);
-                addToast(
-                  autopilotEnabled ? 'Autopilot Paused' : 'Autopilot Enabled',
-                  autopilotEnabled
-                    ? 'Manual approval required for scheduled tasks.'
-                    : 'Agents can execute approved workflows autonomously.',
-                  'info'
-                );
-              }}
+                onClick={handleAutopilot}
               className={`hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
                 autopilotEnabled && !emergencyStopped
                   ? 'bg-[#00E5FF]/12 border-[#00E5FF]/35 text-[#008CA8] dark:text-[#00E5FF]'
@@ -213,7 +222,7 @@ export const MainLayout: React.FC = () => {
               }`}
             >
               <Activity className="h-3.5 w-3.5" />
-              Autopilot: {autopilotEnabled && !emergencyStopped ? 'ON' : 'OFF'}
+              Autopilot: {control.isError || control.isPending ? 'UNKNOWN' : autopilotEnabled && !emergencyStopped ? 'ON' : 'OFF'}
             </button>
 
             {/* Theme toggle */}
@@ -258,7 +267,10 @@ export const MainLayout: React.FC = () => {
 
         {/* Page Outlet */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
-          <Outlet />
+          <p role="status" className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            Rebuild in progress. Home and Content use runtime data. Other screens still contain prototype data and unfinished controls; charts and activity are not verified account results.
+          </p>
+          <RouteContent><Outlet /></RouteContent>
         </main>
       </div>
 

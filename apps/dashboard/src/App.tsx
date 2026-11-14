@@ -1,38 +1,39 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { lazy } from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { OwnerAccess } from './components/OwnerAccess';
 import { MainLayout } from './layouts/MainLayout';
 import { AuthLayout } from './layouts/AuthLayout';
 
-import { Dashboard } from './pages/Dashboard';
-import { AITeam } from './pages/AITeam';
-import { Goals } from './pages/Goals';
-import { Content } from './pages/Content';
-import { Workflows } from './pages/Workflows';
-import { Automation } from './pages/Automation';
-import { Accounts } from './pages/Accounts';
-import { Integrations } from './pages/Integrations';
-import { Analytics } from './pages/Analytics';
-import { Approvals } from './pages/Approvals';
-import { Voice } from './pages/Voice';
-import { GitHub } from './pages/GitHub';
-import { Skills } from './pages/Skills';
-import { Security } from './pages/Security';
-import { Settings } from './pages/Settings';
+const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
+const AITeam = lazy(() => import('./pages/AITeam').then(module => ({ default: module.AITeam })));
+const Goals = lazy(() => import('./pages/Goals').then(module => ({ default: module.Goals })));
+const Content = lazy(() => import('./pages/Content').then(module => ({ default: module.Content })));
+const Workflows = lazy(() => import('./pages/Workflows').then(module => ({ default: module.Workflows })));
+const Automation = lazy(() => import('./pages/Automation').then(module => ({ default: module.Automation })));
+const Accounts = lazy(() => import('./pages/Accounts').then(module => ({ default: module.Accounts })));
+const Integrations = lazy(() => import('./pages/Integrations').then(module => ({ default: module.Integrations })));
+const Analytics = lazy(() => import('./pages/Analytics').then(module => ({ default: module.Analytics })));
+const Approvals = lazy(() => import('./pages/Approvals').then(module => ({ default: module.Approvals })));
+const Voice = lazy(() => import('./pages/Voice').then(module => ({ default: module.Voice })));
+const GitHub = lazy(() => import('./pages/GitHub').then(module => ({ default: module.GitHub })));
+const Skills = lazy(() => import('./pages/Skills').then(module => ({ default: module.Skills })));
+const Security = lazy(() => import('./pages/Security').then(module => ({ default: module.Security })));
+const Settings = lazy(() => import('./pages/Settings').then(module => ({ default: module.Settings })));
 
-import { Welcome } from './pages/setup/Welcome';
-import { HardwareCheck } from './pages/setup/HardwareCheck';
-import { AISetup } from './pages/setup/AISetup';
-import { ContentFolder } from './pages/setup/ContentFolder';
-import { SocialAccounts } from './pages/setup/SocialAccounts';
-import { BrandSetup } from './pages/setup/BrandSetup';
-import { AutopilotConfig } from './pages/setup/AutopilotConfig';
-import { TelegramSetup } from './pages/setup/TelegramSetup';
-import { VoiceSetup } from './pages/setup/VoiceSetup';
-import { PrivacyControls } from './pages/setup/PrivacyControls';
-import { Diagnostics } from './pages/setup/Diagnostics';
-import { Complete } from './pages/setup/Complete';
+const Welcome = lazy(() => import('./pages/setup/Welcome').then(module => ({ default: module.Welcome })));
+const HardwareCheck = lazy(() => import('./pages/setup/HardwareCheck').then(module => ({ default: module.HardwareCheck })));
+const AISetup = lazy(() => import('./pages/setup/AISetup').then(module => ({ default: module.AISetup })));
+const ContentFolder = lazy(() => import('./pages/setup/ContentFolder').then(module => ({ default: module.ContentFolder })));
+const SocialAccounts = lazy(() => import('./pages/setup/SocialAccounts').then(module => ({ default: module.SocialAccounts })));
+const BrandSetup = lazy(() => import('./pages/setup/BrandSetup').then(module => ({ default: module.BrandSetup })));
+const AutopilotConfig = lazy(() => import('./pages/setup/AutopilotConfig').then(module => ({ default: module.AutopilotConfig })));
+const TelegramSetup = lazy(() => import('./pages/setup/TelegramSetup').then(module => ({ default: module.TelegramSetup })));
+const VoiceSetup = lazy(() => import('./pages/setup/VoiceSetup').then(module => ({ default: module.VoiceSetup })));
+const PrivacyControls = lazy(() => import('./pages/setup/PrivacyControls').then(module => ({ default: module.PrivacyControls })));
+const Diagnostics = lazy(() => import('./pages/setup/Diagnostics').then(module => ({ default: module.Diagnostics })));
+const Complete = lazy(() => import('./pages/setup/Complete').then(module => ({ default: module.Complete })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,7 +47,8 @@ const queryClient = new QueryClient({
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <OwnerAccess>
+      <HashRouter>
         <Routes>
           <Route element={<MainLayout />}>
             <Route path="/" element={<Dashboard />} />
@@ -84,7 +86,8 @@ export function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
+      </OwnerAccess>
     </QueryClientProvider>
   );
 }

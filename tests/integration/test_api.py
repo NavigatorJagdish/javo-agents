@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,6 +11,11 @@ from app.main import create_app
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
+    token = secrets.token_urlsafe(32)
+    monkeypatch.setenv("JAVO_OWNER_ACCESS_TOKEN", token)
+    monkeypatch.setenv("JAVO_CONTROL_STATE_PATH", str(tmp_path / "control.json"))
+    import app.core.resource_manager as resources
+    resources._resource_manager = None
     db_path = tmp_path / "integration_test.db"
     sched_path = tmp_path / "integration_sched.db"
     monkeypatch.setenv("JAVO_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
@@ -23,7 +29,7 @@ def client(tmp_path, monkeypatch):
     cfg._settings = None
 
     app = create_app()
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as test_client:
         yield test_client
 
     cfg._settings = None
@@ -142,3 +148,44 @@ def test_goal_and_security_pause_resume_emergency_stop(client: TestClient):
     assert r_resume.status_code == 200
     assert r_resume.json()["emergency_stopped"] is False
     assert r_resume.json()["paused"] is False
+
+
+def test_control_requires_owner_token(client):
+    assert client.post("/security/emergency-stop", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.get("/api/health/", headers={"Authorization": ""}).status_code == 401
+
+
+def test_content_import_approval_and_simulated_receipt(client, tmp_path):
+    assert client.post("/security/resume").status_code == 200
+    folder = tmp_path / "incoming"
+    folder.mkdir()
+    (folder / "caption.txt").write_text("Original local content", encoding="utf-8")
+    imported = client.post("/api/content/scan-folder", json={"folder_path": str(folder)})
+    assert imported.status_code == 200
+    asset = imported.json()["imported_assets"][0]
+    account = client.post("/api/accounts/", json={"platform": "other", "username": "simulation"})
+    assert account.status_code == 201
+    from datetime import datetime, timedelta, timezone
+    scheduled = client.post("/api/content/schedule", json={
+        "asset_id": asset["id"], "account_id": account.json()["id"],
+        "scheduled_at": (datetime.now(timezone.utc)+timedelta(days=1)).isoformat(), "caption": "Reviewed caption"})
+    assert scheduled.status_code == 201
+    prefix = "/api/content/schedule/" + scheduled.json()["id"]
+    assert client.post(prefix + "/publish").status_code == 409
+    preview = client.get(prefix + "/preview")
+    assert preview.status_code == 200
+    assert client.post(prefix + "/approve", json={"mode": "mock", "fingerprint": preview.json()["fingerprint"]}).status_code == 200
+    first = client.post(prefix + "/publish")
+    assert first.status_code == 200
+    assert first.json()["status"] == "simulated"
+    assert client.post(prefix + "/publish").json() == first.json()
+    assert client.get(prefix + "/receipt").json() == first.json()
+    assert client.get("/api/content/schedule").json()[0]["status"] == "approved"
+
+
+def test_emergency_stop_cancels_pending_task(client):
+    task = client.post("/tasks/", json={"title": "Pending work", "priority": "normal"})
+    assert task.status_code in (200, 201)
+    response = client.post("/security/emergency-stop")
+    assert response.status_code == 200
+    assert response.json()["stopped_tasks"] >= 1

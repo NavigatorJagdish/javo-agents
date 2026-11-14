@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.core.resource_manager import get_resource_manager
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -42,6 +43,7 @@ class SystemInfoResponse(BaseModel):
     disk_percent: float
     python_version: str
     platform: str
+    resource_profile: dict
 
 
 class ServiceCheck(BaseModel):
@@ -82,7 +84,7 @@ async def system_info() -> SystemInfoResponse:
     vm = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     return SystemInfoResponse(
-        cpu_percent=psutil.cpu_percent(interval=0.1),
+        cpu_percent=psutil.cpu_percent(interval=None),
         cpu_count=psutil.cpu_count() or 1,
         ram_total_mb=round(vm.total / 1_048_576, 1),
         ram_used_mb=round(vm.used / 1_048_576, 1),
@@ -92,6 +94,7 @@ async def system_info() -> SystemInfoResponse:
         disk_percent=disk.percent,
         python_version=platform.python_version(),
         platform=platform.platform(),
+        resource_profile=get_resource_manager().profile.to_dict(),
     )
 
 

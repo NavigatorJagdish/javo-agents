@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -19,6 +19,7 @@ from app.api import api_router
 from app.config import get_settings
 from app.core.resource_manager import get_resource_manager
 from app.core.scheduler import scheduler
+from app.core.local_auth import is_valid_owner_token, require_local_owner
 from app import database as db
 from app.database import close_db, create_tables, init_engine
 from app.models.agent import AgentDefinition, AgentStatus
@@ -105,6 +106,7 @@ async def _seed_agents() -> None:
 
 
 def _ensure_directories() -> None:
+    settings = get_settings()
     for path_str in (
         settings.content_root,
         settings.upload_dir,
@@ -117,35 +119,39 @@ def _ensure_directories() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle for Javo Agents local runtime."""
+    settings = get_settings()
     logger.info("Starting %s v%s", settings.app_name, settings.app_version)
     _ensure_directories()
 
-    # Initialize database & tables
-    init_engine()
-    await create_tables()
-    await _seed_agents()
+    # Register cleanup before each start, including partially failed starts.
+    # AsyncExitStack attempts all cleanups even if an earlier cleanup raises.
+    async with AsyncExitStack() as cleanup:
+        cleanup.push_async_callback(close_db)
+        init_engine()
+        await create_tables()
+        await _seed_agents()
 
-    # Start background services
-    resource_mgr = get_resource_manager()
-    resource_mgr.start_worker()
+        resource_mgr = get_resource_manager()
+        cleanup.push_async_callback(resource_mgr.stop_worker)
+        resource_mgr.start_worker()
 
-    scheduler.start()
+        cleanup.callback(scheduler.shutdown, wait=False)
+        scheduler.start(paused=resource_mgr._paused or resource_mgr._emergency_stopped)
 
-    watcher = get_content_watcher()
-    watcher.start_watching(settings.content_root)
+        watcher = get_content_watcher()
+        cleanup.callback(watcher.stop)
+        watcher.start_watching(settings.content_root)
 
-    try:
-        yield
-    finally:
-        logger.info("Shutting down %s", settings.app_name)
-        watcher.stop()
-        scheduler.shutdown(wait=False)
-        await resource_mgr.stop_worker()
-        await close_db()
+        try:
+            yield
+        finally:
+            logger.info("Shutting down %s", settings.app_name)
+
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    settings = get_settings()
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -155,13 +161,20 @@ def create_app() -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.allowed_origins + ["http://127.0.0.1:3000", "http://127.0.0.1:5173"],
+        allow_origins=settings.allowed_origins + ["http://127.0.0.1:3000", "http://127.0.0.1:5173", "null"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    application.include_router(api_router)
+    # Both path forms use exactly the same handlers and authentication boundary.
+    application.include_router(api_router, dependencies=[Depends(require_local_owner)])
+    application.include_router(api_router, prefix="/api", dependencies=[Depends(require_local_owner)])
+
+    @application.get("/auth/status", tags=["auth"])
+    async def auth_status() -> dict[str, bool]:
+        token = get_settings().owner_access_token
+        return {"configured": bool(token and len(token.get_secret_value()) >= 32)}
 
     @application.get("/", tags=["root"])
     async def root() -> dict[str, Any]:
@@ -176,6 +189,9 @@ def create_app() -> FastAPI:
     @application.websocket("/ws")
     @application.websocket("/ws/events")
     async def websocket_endpoint(websocket: WebSocket) -> None:
+        if not is_valid_owner_token(websocket.headers.get("authorization")):
+            await websocket.close(code=1008)
+            return
         await ws_manager.connect(websocket)
         try:
             await websocket.send_json({"event": "connected", "data": {"version": settings.app_version}})
@@ -191,6 +207,8 @@ def create_app() -> FastAPI:
                 else:
                     await websocket.send_json({"event": "ack", "data": msg})
         except WebSocketDisconnect:
+            pass
+        finally:
             ws_manager.disconnect(websocket)
 
     # Serve built local web dashboard when present (localhost-only by default via JAVO_HOST=127.0.0.1)

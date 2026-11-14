@@ -17,10 +17,12 @@ Local-first, privacy-preserving multi-agent automation platform for creators, so
 
 ## Quick Start (Backend)
 
+Set a private, random `JAVO_OWNER_ACCESS_TOKEN` (at least 32 characters) before starting. API requests require `Authorization: Bearer <token>`. The desktop shell generates a per-launch token automatically. Never commit a real token. See `docs/REBUILD_STATUS.md` for current limitations; historic verification below is not a release certification.
+
 ```bash
 cd services/local-runtime
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Once running, open the interactive API docs at `http://localhost:8000/docs`.
@@ -43,3 +45,5 @@ pytest ../../tests
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+Runtime control is persisted in JAVO_CONTROL_STATE_PATH (default ./runtime-control.json). First startup or unreadable state starts paused; explicitly resume through the owner-authorized control endpoint or dashboard. Pause/emergency state is restored on restart. A failed state write returns an error: current-process stopping still takes effect, but restart durability cannot be guaranteed after a storage failure. Keep the state path on durable writable storage.

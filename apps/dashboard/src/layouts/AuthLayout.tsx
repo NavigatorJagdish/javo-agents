@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { RouteContent } from '../components/RouteContent';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sun, Moon, ArrowLeft } from 'lucide-react';
 import { Logo, Button } from '@javo/design-system';
@@ -101,7 +102,7 @@ export const AuthLayout: React.FC = () => {
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-3xl">
-          <Outlet />
+          <RouteContent><Outlet /></RouteContent>
         </div>
       </main>
     </div>

@@ -47,7 +47,7 @@ class SchedulerService:
         }
         job_defaults = {
             "coalesce": True,
-            "max_instances": 3,
+            "max_instances": 1,
             "misfire_grace_time": 3600,  # 1 hour grace for misfires
         }
 
@@ -65,7 +65,7 @@ class SchedulerService:
 
         logger.info("Scheduler initialized with persistent job store")
 
-    def start(self) -> None:
+    def start(self, paused: bool = False) -> None:
         """Start the scheduler and reconcile any missed jobs."""
         if self._scheduler is None:
             self.initialize()
@@ -73,11 +73,13 @@ class SchedulerService:
         if self._scheduler.running:
             return
 
-        self._scheduler.start()
+        self._scheduler.start(paused=True)
         logger.info("Scheduler started")
 
         # Reconcile after restart
         self._reconcile_jobs()
+        if not paused:
+            self._scheduler.resume()
 
     def shutdown(self, wait: bool = True) -> None:
         """Shut down the scheduler."""
@@ -95,14 +97,15 @@ class SchedulerService:
             if job.next_run_time and job.next_run_time < now:
                 logger.warning(
                     f"Job '{job.id}' missed its scheduled time "
-                    f"({job.next_run_time}). Rescheduling."
+                    f"({job.next_run_time}). Held for review."
                 )
                 self._missed_jobs.append({
                     "job_id": job.id,
                     "scheduled_time": job.next_run_time.isoformat(),
                     "detected_at": now.isoformat(),
                 })
-                # APScheduler's misfire_grace_time handles re-execution
+                # Persistently hold missed jobs; never burst-publish after downtime.
+                self._scheduler.pause_job(job.id)
                 reconciled += 1
 
         if reconciled:
@@ -149,7 +152,10 @@ class SchedulerService:
 
         if cron_expression:
             parts = cron_expression.split()
+            if len(parts) != 5:
+                raise ValueError("Cron expression must have exactly five fields")
             trigger = CronTrigger(
+                timezone="Asia/Kolkata",
                 minute=parts[0] if len(parts) > 0 else None,
                 hour=parts[1] if len(parts) > 1 else None,
                 day=parts[2] if len(parts) > 2 else None,
@@ -158,7 +164,7 @@ class SchedulerService:
             )
         else:
             trigger = CronTrigger(
-                hour=hour, minute=minute, day_of_week=day_of_week
+                hour=hour, minute=minute, day_of_week=day_of_week, timezone="Asia/Kolkata"
             )
 
         job = self._scheduler.add_job(
@@ -178,7 +184,11 @@ class SchedulerService:
         run_at: datetime,
         kwargs: Optional[dict] = None,
     ) -> str:
-        """Add a one-time job to run at a specific time."""
+        """Add a one-time job to run at an explicit timezone-aware future time."""
+        if run_at.tzinfo is None or run_at.utcoffset() is None:
+            raise ValueError("Schedule requires an explicit timezone")
+        if run_at <= datetime.now(timezone.utc):
+            raise ValueError("Schedule must be in the future")
         if not self._scheduler:
             self.initialize()
 

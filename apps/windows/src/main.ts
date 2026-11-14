@@ -7,7 +7,10 @@ import { detectHardwareProfile } from "./hardware";
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
-let isPaused = false;
+let isPaused = true;
+let controlStateKnown = false;
+let shutdownComplete = false;
+let trayRefresh: ReturnType<typeof setInterval> | null = null;
 
 function resolveRepoRoot(): string {
   if (app.isPackaged) {
@@ -36,7 +39,9 @@ function resolveIconPath(): string {
   return candidates.find((p) => fs.existsSync(p)) ?? "";
 }
 
-const runtimeManager = new LocalRuntimeManager(resolveRuntimeDir());
+const runtimeManager = new LocalRuntimeManager(
+  resolveRuntimeDir(), path.join(app.getPath("userData"), "runtime")
+);
 
 function showDesktopNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -77,13 +82,24 @@ function createMainWindow(backendUrl: string): BrowserWindow {
     }
   });
 
+  // Keep the owner credential in the main process. Only this window can receive
+  // authorization, and only for its exact loopback backend origin.
+  win.webContents.session.webRequest.onBeforeSendHeaders(
+    { urls: [`${backendUrl}/*`] }, (details, callback) => {
+      if (details.webContentsId === win.webContents.id && new URL(details.url).origin === backendUrl) {
+        details.requestHeaders.Authorization = runtimeManager.authorizationHeader();
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
+
   const devUrl = process.env.JAVO_DASHBOARD_URL;
   const root = resolveRepoRoot();
   const builtDashboard = app.isPackaged
     ? path.join(root, "dashboard", "index.html")
     : path.join(root, "apps", "dashboard", "dist", "index.html");
 
-  if (devUrl) {
+  if (devUrl && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(devUrl)) {
     win.loadURL(`${devUrl}?apiBase=${encodeURIComponent(backendUrl)}`);
   } else if (fs.existsSync(builtDashboard)) {
     win.loadFile(builtDashboard, { query: { apiBase: backendUrl } });
@@ -93,15 +109,24 @@ function createMainWindow(backendUrl: string): BrowserWindow {
     });
   }
 
+  win.webContents.on("will-navigate", (event, url) => {
+    const current = win.webContents.getURL();
+    if (url.split("#")[0] !== current.split("#")[0]) event.preventDefault();
+  });
+
   return win;
 }
 
-function updateTrayMenu(): void {
+async function updateTrayMenu(): Promise<void> {
   if (!tray) return;
+  const control = await runtimeManager.getControlState();
+  controlStateKnown = control !== null;
+  if (control) isPaused = control.paused || control.emergency_stopped;
+  if (!tray || isQuitting) return;
   const status = runtimeManager.getStatus();
   const menu = Menu.buildFromTemplate([
     {
-      label: `Javo Agents (${status.running ? `Port ${status.port}` : "Starting..."})`,
+      label: `Javo Agents (${status.running ? `Port ${status.port}` : "Runtime unavailable"})`,
       enabled: false,
     },
     { type: "separator" },
@@ -117,37 +142,43 @@ function updateTrayMenu(): void {
       },
     },
     {
-      label: isPaused ? "Resume Autopilot" : "Pause Autopilot",
+      label: !controlStateKnown ? "Autopilot status unavailable" : isPaused ? "Resume Autopilot" : "Pause Autopilot",
+      enabled: controlStateKnown,
       click: async () => {
         if (isPaused) {
-          await runtimeManager.callControlEndpoint("/security/resume");
+          if (!await runtimeManager.callControlEndpoint("/security/resume")) {
+            showDesktopNotification("Resume failed", "Runtime did not confirm the action.");
+            return;
+          }
           isPaused = false;
           showDesktopNotification("Javo Agents", "Supervised Autopilot resumed.");
         } else {
-          await runtimeManager.callControlEndpoint("/security/pause");
+          if (!await runtimeManager.callControlEndpoint("/security/pause")) {
+            showDesktopNotification("Pause failed", "Runtime did not confirm the action.");
+            return;
+          }
           isPaused = true;
           showDesktopNotification("Javo Agents", "Autopilot paused. Pending jobs held.");
         }
-        updateTrayMenu();
+        await updateTrayMenu();
       },
     },
     {
       label: "Emergency Stop (Kill Switch)",
       click: async () => {
-        await runtimeManager.callControlEndpoint("/security/emergency-stop", {
+        const ok = await runtimeManager.callControlEndpoint("/security/emergency-stop", {
           reason: "Triggered from Windows System Tray",
         });
+        if (!ok) { showDesktopNotification("Emergency stop unconfirmed", "Runtime could not be reached. Check running jobs."); return; }
         isPaused = true;
-        showDesktopNotification("EMERGENCY STOP ACTIVATED", "All agent actions and publishes halted.");
-        updateTrayMenu();
+        showDesktopNotification("EMERGENCY STOP REQUESTED", "Local cancellation requested. Verify any in-flight remote actions.");
+        await updateTrayMenu();
       },
     },
     { type: "separator" },
     {
       label: "Quit Javo Agents",
       click: async () => {
-        isQuitting = true;
-        await runtimeManager.stop();
         app.quit();
       },
     },
@@ -166,28 +197,31 @@ function createTray(): void {
       mainWindow.focus();
     }
   });
-  updateTrayMenu();
+  tray.on("right-click", () => { void updateTrayMenu(); });
+  void updateTrayMenu();
+  trayRefresh = setInterval(() => { void updateTrayMenu(); }, 3000);
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle("javo:runtime-status", () => ({
-    ...runtimeManager.getStatus(),
-    paused: isPaused,
-  }));
+  ipcMain.handle("javo:runtime-status", async () => {
+    const control = await runtimeManager.getControlState();
+    return { ...runtimeManager.getStatus(), paused: control ? control.paused : null,
+      emergencyStopped: control ? control.emergency_stopped : null };
+  });
 
   ipcMain.handle("javo:hardware-profile", () => detectHardwareProfile());
 
   ipcMain.handle("javo:pause-agents", async () => {
     const ok = await runtimeManager.callControlEndpoint("/security/pause");
     if (ok) isPaused = true;
-    updateTrayMenu();
+    await updateTrayMenu();
     return ok;
   });
 
   ipcMain.handle("javo:resume-agents", async () => {
     const ok = await runtimeManager.callControlEndpoint("/security/resume");
     if (ok) isPaused = false;
-    updateTrayMenu();
+    await updateTrayMenu();
     return ok;
   });
 
@@ -195,9 +229,9 @@ function registerIpcHandlers(): void {
     const ok = await runtimeManager.callControlEndpoint("/security/emergency-stop", {
       reason: "Triggered from Desktop UI",
     });
-    isPaused = true;
-    updateTrayMenu();
-    showDesktopNotification("EMERGENCY STOP", "All Javo Agents stopped immediately.");
+    if (ok) isPaused = true;
+    await updateTrayMenu();
+    showDesktopNotification(ok ? "EMERGENCY STOP REQUESTED" : "STOP UNCONFIRMED", ok ? "Local cancellation requested; check in-flight remote actions." : "Runtime did not confirm cancellation.");
     return ok;
   });
 
@@ -230,12 +264,21 @@ if (!gotLock) {
     const status = await runtimeManager.start(preferredPort).catch(() => runtimeManager.getStatus());
     mainWindow = createMainWindow(status.baseUrl);
     createTray();
-    updateTrayMenu();
+    void updateTrayMenu();
   });
 
-  app.on("before-quit", async () => {
+  app.on("before-quit", (event) => {
+    if (shutdownComplete) return;
+    event.preventDefault();
+    if (isQuitting) return;
     isQuitting = true;
-    await runtimeManager.stop();
+    if (trayRefresh) clearInterval(trayRefresh);
+    void runtimeManager.stop().catch(() => {
+      showDesktopNotification("Shutdown unconfirmed", "Check that the local runtime has stopped before restarting.");
+    }).finally(() => {
+      shutdownComplete = true;
+      app.quit();
+    });
   });
 
   app.on("window-all-closed", () => {

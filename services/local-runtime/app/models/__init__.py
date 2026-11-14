@@ -143,3 +143,5 @@ __all__ = [
     "AlertSeverity",
     "AlertStatus",
 ]
+
+from app.models.publication import PublicationApproval, PublicationAttempt

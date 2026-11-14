@@ -7,7 +7,8 @@ export interface JavoDesktopBridge {
     baseUrl: string;
     pid: number | null;
     lastError: string | null;
-    paused: boolean;
+    paused: boolean | null;
+    emergencyStopped: boolean | null;
   }>;
   getHardwareProfile: () => Promise<Record<string, unknown>>;
   pauseAgents: () => Promise<boolean>;

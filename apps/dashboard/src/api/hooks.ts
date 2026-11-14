@@ -1,167 +1,41 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type GoalDto, type HealthResponse, type WorkflowDto } from './client';
-import { useAgentStore } from '../store/useAgentStore';
-import { useGoalStore } from '../store/useGoalStore';
-import { useContentStore } from '../store/useContentStore';
+import { apiClient, type GoalDto, type WorkflowDto } from './client';
 
-const DEFAULT_HEALTH: HealthResponse = {
-  status: 'healthy',
-  version: '2.4.0',
-  uptime_seconds: 14820,
-  database: 'SQLite (WAL encrypted)',
-  ai_providers: { ollama: true, gemini: true, openai: false },
-  cpu_percent: 24,
-  memory_percent: 42,
-};
-
+// Errors must reach callers; a failed command is never replaced with demo success.
 export function useHealthQuery() {
-  return useQuery({
-    queryKey: ['health'],
-    queryFn: async () => {
-      try {
-        return await apiClient.health.check();
-      } catch {
-        return DEFAULT_HEALTH;
-      }
-    },
-    refetchInterval: 15000,
-    retry: false,
-  });
+  return useQuery({ queryKey: ['health'], queryFn: apiClient.health.check, refetchInterval: 15000, retry: false });
 }
-
 export function useAgentsQuery() {
-  const agents = useAgentStore((s) => s.agents);
-  return useQuery({
-    queryKey: ['agents'],
-    queryFn: async () => {
-      try {
-        const res = await apiClient.agents.list();
-        return Array.isArray(res) && res.length > 0 ? res : agents;
-      } catch {
-        return agents;
-      }
-    },
-    retry: false,
-  });
+  return useQuery({ queryKey: ['agents'], queryFn: apiClient.agents.list, retry: false });
 }
-
 export function useToggleAgentMutation() {
   const qc = useQueryClient();
-  const toggleAgent = useAgentStore((s) => s.toggleAgent);
-
   return useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      toggleAgent(id);
-      try {
-        return await apiClient.agents.toggle(id, enabled);
-      } catch {
-        return { id, enabled };
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['agents'] });
-    },
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => apiClient.agents.toggle(id, enabled),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['agents'] }); },
   });
 }
-
 export function useRunAgentMutation() {
-  const setAgentStatus = useAgentStore((s) => s.setAgentStatus);
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      setAgentStatus(id, 'running');
-      try {
-        return await apiClient.agents.run(id);
-      } catch {
-        return { status: 'simulated_run', agent: id };
-      }
-    },
-    onSettled: (_data, _err, id) => {
-      setTimeout(() => setAgentStatus(id, 'active'), 1600);
-    },
-  });
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: string) => apiClient.agents.run(id),
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['agents'] }); } });
 }
-
 export function useGoalsQuery() {
-  const goals = useGoalStore((s) => s.goals);
-  return useQuery({
-    queryKey: ['goals'],
-    queryFn: async () => {
-      try {
-        const res = await apiClient.goals.list();
-        return Array.isArray(res) && res.length > 0 ? res : goals;
-      } catch {
-        return goals;
-      }
-    },
-    retry: false,
-  });
+  return useQuery({ queryKey: ['goals'], queryFn: apiClient.goals.list, retry: false });
 }
-
 export function useCreateGoalMutation() {
   const qc = useQueryClient();
-  const addGoal = useGoalStore((s) => s.addGoal);
-
-  return useMutation({
-    mutationFn: async (payload: Partial<GoalDto> & { title: string }) => {
-      addGoal({
-        title: payload.title,
-        description: payload.description || '',
-        targetValue: payload.target_value || 100,
-        unit: payload.unit || '%',
-        deadline: payload.deadline || '2026-12-31',
-      });
-      try {
-        return await apiClient.goals.create(payload);
-      } catch {
-        return payload;
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['goals'] });
-    },
-  });
+  return useMutation({ mutationFn: (payload: Partial<GoalDto> & { title: string }) => apiClient.goals.create(payload),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goals'] }); } });
 }
-
 export function useContentQuery() {
-  const assets = useContentStore((s) => s.assets);
-  return useQuery({
-    queryKey: ['content'],
-    queryFn: async () => {
-      try {
-        const res = await apiClient.content.list();
-        return Array.isArray(res) && res.length > 0 ? res : assets;
-      } catch {
-        return assets;
-      }
-    },
-    retry: false,
-  });
+  return useQuery({ queryKey: ['content'], queryFn: apiClient.content.list, retry: false });
 }
-
 export function useSaveWorkflowMutation() {
-  return useMutation({
-    mutationFn: async (workflow: Partial<WorkflowDto>) => {
-      try {
-        return await apiClient.workflows.save(workflow);
-      } catch {
-        return { ...workflow, id: workflow.id || `wf-${Date.now()}` };
-      }
-    },
-  });
+  return useMutation({ mutationFn: (workflow: Partial<WorkflowDto>) => apiClient.workflows.save(workflow) });
 }
-
 export function useEmergencyStopMutation() {
-  const stopAllAgents = useAgentStore((s) => s.emergencyStopAll);
-
-  return useMutation({
-    mutationFn: async () => {
-      stopAllAgents();
-      try {
-        return await apiClient.security.emergencyStop();
-      } catch {
-        return { stopped: true };
-      }
-    },
-  });
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: apiClient.security.emergencyStop,
+    onSuccess: () => { qc.invalidateQueries(); } });
 }

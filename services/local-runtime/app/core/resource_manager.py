@@ -12,6 +12,8 @@ import httpx
 import psutil
 
 from app.config import get_settings
+from app.core.resource_profiles import select_resource_profile
+from app.core.control_state import ControlState, ControlStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -32,40 +34,78 @@ class SystemMetrics:
 class ResourceManager:
     """Monitors host hardware resources and enforces concurrency/model limits."""
 
-    def __init__(self):
+    def __init__(self, state_store: ControlStateStore | None = None):
         settings = get_settings()
-        self._max_concurrent = settings.max_concurrent_agents
-        self._semaphore = asyncio.Semaphore(self._max_concurrent)
-        self._active_tasks: set[str] = set()
-        self._queue: asyncio.Queue[tuple[str, Callable[[], Awaitable[Any]], asyncio.Future]] = (
-            asyncio.Queue(maxsize=settings.max_queue_size)
+        self.profile = select_resource_profile(
+            psutil.virtual_memory().total / (1024 * 1024),
+            psutil.cpu_count() or 1,
+            settings.resource_profile,
+            settings.max_concurrent_agents,
+            settings.memory_headroom_mb,
         )
+        self._max_concurrent = self.profile.max_concurrent_agents
+        self._active_tasks: set[str] = set()
+        self._pending_ids: set[str] = set()
+        self._futures: dict[str, asyncio.Future] = {}
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=settings.max_queue_size)
         self._loaded_models: dict[str, datetime] = {}
-        self._worker_task: Optional[asyncio.Task] = None
-        self._emergency_stopped: bool = False
+        self._workers: list[asyncio.Task] = []
+        self._executions: dict[str, asyncio.Task] = {}
+        self._state_store = state_store or ControlStateStore(settings.control_state_path)
+        state = self._state_store.load()
+        self._emergency_stopped = state.emergency_stopped
+        self._paused = state.paused
+        self._closing = False
+        self._loop = None
+        self._resume_event: Optional[asyncio.Event] = None
 
     def start_worker(self) -> None:
         loop = asyncio.get_running_loop()
-        if getattr(self, "_loop", None) is not loop:
-            settings = get_settings()
-            self._semaphore = asyncio.Semaphore(self._max_concurrent)
-            self._queue = asyncio.Queue(maxsize=settings.max_queue_size)
-            self._loop = loop
-        if self._worker_task is None or self._worker_task.done():
-            self._worker_task = asyncio.create_task(self._process_queue())
-            logger.info("ResourceManager queue worker started (max_concurrent=%d)", self._max_concurrent)
+        if self._workers and any(not w.done() for w in self._workers):
+            if self._loop is not loop:
+                raise RuntimeError("Resource manager is running on another event loop")
+            return
+        self._loop = loop
+        self._closing = False
+        self._queue = asyncio.Queue(maxsize=get_settings().max_queue_size)
+        self._resume_event = asyncio.Event()
+        if not self._paused and not self._emergency_stopped:
+            self._resume_event.set()
+        self._workers = [
+            asyncio.create_task(self._process_queue(), name=f"javo-worker-{i}")
+            for i in range(self._max_concurrent)
+        ]
+
+    def _drain_queue(self, reason: str) -> int:
+        drained = 0
+        while True:
+            try:
+                task_id, _, future = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if not future.done():
+                future.set_exception(RuntimeError(reason))
+            self._pending_ids.discard(task_id)
+            self._futures.pop(task_id, None)
+            self._queue.task_done()
+            drained += 1
+        return drained
 
     async def stop_worker(self) -> None:
-        if self._worker_task and not self._worker_task.done():
-            self._worker_task.cancel()
-            try:
-                await self._worker_task
-            except asyncio.CancelledError:
-                pass
-            logger.info("ResourceManager queue worker stopped")
+        self._closing = True
+        self._drain_queue("Resource manager stopped")
+        tasks = [*self._executions.values(), *self._workers]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._workers.clear()
+        self._executions.clear()
+        self._active_tasks.clear()
+        self._pending_ids.clear()
+        self._futures.clear()
 
     def get_metrics(self) -> SystemMetrics:
-        """Collect current CPU, RAM, disk, and queue metrics."""
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage(".")
         return SystemMetrics(
@@ -76,57 +116,96 @@ class ResourceManager:
             disk_percent=disk.percent,
             disk_free_gb=round(disk.free / (1024 * 1024 * 1024), 2),
             active_tasks=len(self._active_tasks),
-            queued_tasks=self._queue.qsize(),
-            loaded_models=list(self._loaded_models.keys()),
+            queued_tasks=len(self._pending_ids) - len(self._active_tasks),
+            loaded_models=list(self._loaded_models),
         )
 
     def can_accept_work(self) -> tuple[bool, str]:
-        """Check whether system resources allow accepting a new task."""
         if self._emergency_stopped:
             return False, "System is in emergency stop state"
+        if self._paused or self._closing:
+            return False, "System is paused or shutting down"
         settings = get_settings()
         metrics = self.get_metrics()
         if metrics.cpu_percent > settings.cpu_limit_percent:
             return False, f"CPU usage too high ({metrics.cpu_percent:.1f}%)"
-        if metrics.memory_percent > settings.memory_limit_percent:
-            return False, f"RAM usage too high ({metrics.memory_percent:.1f}%)"
+        if (metrics.memory_percent > settings.memory_limit_percent
+                or metrics.memory_available_mb < self.profile.memory_headroom_mb):
+            return False, "Insufficient RAM headroom"
         if self._queue.full():
             return False, "Execution queue is full"
         return True, "OK"
 
     async def submit_task(self, task_id: str, coro_factory: Callable[[], Awaitable[Any]]) -> Any:
-        """Queue a coroutine task and await its result under concurrency limits."""
-        if self._emergency_stopped:
-            raise RuntimeError("Cannot submit task during emergency stop")
-
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        await self._queue.put((task_id, coro_factory, future))
-        return await future
+        if not task_id or task_id in self._pending_ids:
+            raise ValueError("Task ID is empty or already queued/running")
+        allowed, reason = self.can_accept_work()
+        if not allowed:
+            raise RuntimeError(reason)
+        if not self._workers or not any(not w.done() for w in self._workers):
+            self.start_worker()
+        future = asyncio.get_running_loop().create_future()
+        # Nonblocking admission keeps queue bounds real and does not leave producers
+        # stuck behind a stop. Workers never fan out an unbounded set of tasks.
+        self._queue.put_nowait((task_id, coro_factory, future))
+        self._pending_ids.add(task_id)
+        self._futures[task_id] = future
+        try:
+            return await future
+        except asyncio.CancelledError:
+            execution = self._executions.get(task_id)
+            if execution:
+                execution.cancel()
+            raise
 
     async def _process_queue(self) -> None:
         while True:
+            await self._resume_event.wait()
             task_id, coro_factory, future = await self._queue.get()
-            asyncio.create_task(self._run_with_semaphore(task_id, coro_factory, future))
-
-    async def _run_with_semaphore(
-        self,
-        task_id: str,
-        coro_factory: Callable[[], Awaitable[Any]],
-        future: asyncio.Future,
-    ) -> None:
-        async with self._semaphore:
-            self._active_tasks.add(task_id)
             try:
-                result = await coro_factory()
-                if not future.done():
-                    future.set_result(result)
-            except Exception as exc:
-                if not future.done():
-                    future.set_exception(exc)
+                await self._resume_event.wait()
+                if future.done():
+                    continue
+                if self._emergency_stopped or self._closing:
+                    future.set_exception(RuntimeError("Execution stopped"))
+                    continue
+                self._active_tasks.add(task_id)
+                try:
+                    execution = asyncio.ensure_future(coro_factory())
+                    self._executions[task_id] = execution
+                    result = await execution
+                    if not future.done():
+                        future.set_result(result)
+                except asyncio.CancelledError:
+                    if not future.done():
+                        future.set_exception(RuntimeError("Execution cancelled"))
+                    if self._closing:
+                        raise
+                except Exception as exc:
+                    if not future.done():
+                        future.set_exception(exc)
             finally:
+                if not future.done():
+                    future.set_exception(RuntimeError("Worker stopped"))
+                self._executions.pop(task_id, None)
                 self._active_tasks.discard(task_id)
+                self._pending_ids.discard(task_id)
+                self._futures.pop(task_id, None)
                 self._queue.task_done()
+
+    def pause(self) -> None:
+        self._paused = True
+        if self._resume_event:
+            self._resume_event.clear()
+        self._state_store.save(ControlState(True, self._emergency_stopped))
+
+    def resume(self) -> None:
+        # Persist before releasing any queued work. Failed writes keep it held.
+        self._state_store.save(ControlState(False, False))
+        self._paused = False
+        self._emergency_stopped = False
+        if self._resume_event:
+            self._resume_event.set()
 
     async def load_ollama_model(self, model_name: str) -> dict[str, Any]:
         """Warm/load an Ollama model into memory."""
@@ -134,7 +213,7 @@ class ResourceManager:
         url = f"{settings.ollama_base_url.rstrip('/')}/api/generate"
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.post(url, json={"model": model_name, "keep_alive": "10m"})
+                res = await client.post(url, json={"model": model_name, "keep_alive": "10m", "stream": False})
                 res.raise_for_status()
             self._loaded_models[model_name] = datetime.now(timezone.utc)
             return {"status": "loaded", "model": model_name}
@@ -157,24 +236,23 @@ class ResourceManager:
             return {"status": "error", "model": model_name, "error": str(exc)}
 
     def trigger_emergency_stop(self) -> int:
-        """Block new work and drain pending queued tasks."""
+        """Cancel queued/cooperative in-flight work; remote side effects cannot be undone."""
         self._emergency_stopped = True
-        drained = 0
-        while not self._queue.empty():
-            try:
-                task_id, _, future = self._queue.get_nowait()
-                if not future.done():
-                    future.set_exception(RuntimeError("Cancelled by emergency stop"))
-                self._queue.task_done()
-                drained += 1
-            except asyncio.QueueEmpty:
-                break
-        logger.critical("Emergency stop triggered! Drained %d queued tasks", drained)
+        self._paused = True
+        if self._resume_event:
+            self._resume_event.clear()
+        drained = self._drain_queue("Cancelled by emergency stop")
+        for future in self._futures.values():
+            if not future.done():
+                future.set_exception(RuntimeError("Cancelled by emergency stop"))
+        for execution in self._executions.values():
+            execution.cancel()
+        self._state_store.save(ControlState(True, True))
+        logger.critical("Emergency stop: %d queued tasks cancelled", drained)
         return drained
 
     def clear_emergency_stop(self) -> None:
-        self._emergency_stopped = False
-        logger.info("Emergency stop cleared")
+        self.resume()
 
 
 _resource_manager: Optional[ResourceManager] = None

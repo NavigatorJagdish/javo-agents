@@ -21,6 +21,8 @@ from app.models.content import ContentSchedule, ScheduleStatus
 from app.models.security import AuditAction, AuditLog, AuditSeverity
 from app.models.task import Goal, Task, TaskState
 
+from app.core.runtime_control import pause_runtime, resume_runtime
+
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 _TELEGRAM_OVERRIDES: dict[str, Any] = {}
@@ -194,8 +196,7 @@ async def telegram_webhook(
         rm = get_resource_manager()
         reply = f"Security posture: Local-first encrypted DB | Emergency stop={rm._emergency_stopped} | Paired users={len(allowed)}."
     elif cmd == "/pause":
-        if scheduler.is_running and scheduler._scheduler is not None:
-            scheduler._scheduler.pause()
+        pause_runtime()
         session.add(
             AuditLog(
                 id=str(uuid4()),
@@ -208,9 +209,7 @@ async def telegram_webhook(
         await session.commit()
         reply = "Autopilot paused via Telegram."
     elif cmd == "/resume":
-        get_resource_manager().clear_emergency_stop()
-        if scheduler._scheduler is not None and scheduler._scheduler.state == 2:
-            scheduler._scheduler.resume()
+        resume_runtime()
         session.add(
             AuditLog(
                 id=str(uuid4()),

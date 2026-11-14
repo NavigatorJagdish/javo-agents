@@ -5,28 +5,28 @@ from __future__ import annotations
 import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_session
-from app.models.account import Platform
+from app.models.account import SocialAccount
+from app.services.publishing import approve_schedule, dispatch_schedule, load_snapshot, receipt, fingerprint_payload
 from app.models.content import (
     AssetStatus,
     AssetType,
     ContentAsset,
     ContentSchedule,
     MediaMetadata,
-    PublishRecord,
-    PublishStatus,
     ScheduleStatus,
 )
 from app.models.user import User
+from app.models.publication import PublicationAttempt
 
 router = APIRouter(prefix="/content", tags=["content"])
 
@@ -70,8 +70,23 @@ class ScheduleCreate(BaseModel):
     asset_id: str
     account_id: str
     scheduled_at: datetime
+
+    @field_validator("scheduled_at")
+    @classmethod
+    def validate_time(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Schedule requires an explicit timezone")
+        if value <= datetime.now(timezone.utc):
+            raise ValueError("Schedule must be in the future")
+        return value.astimezone(timezone.utc)
+
     caption: Optional[str] = None
     platform_options: Optional[dict[str, Any]] = None
+
+
+class ApprovalRequest(BaseModel):
+    mode: Literal["mock", "live"] = "live"
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ScheduleResponse(BaseModel):
@@ -261,8 +276,15 @@ async def create_schedule(
 ) -> ScheduleResponse:
     """Schedule a content asset for publishing to a social account."""
     asset_res = await session.execute(select(ContentAsset).where(ContentAsset.id == body.asset_id))
-    if not asset_res.scalar_one_or_none():
+    asset = asset_res.scalar_one_or_none()
+    if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content asset not found")
+
+    account = await session.get(SocialAccount, body.account_id)
+    if account is None:
+        raise HTTPException(404, "Destination account not found")
+    if account.user_id != asset.user_id:
+        raise HTTPException(403, "Content and destination have different owners")
 
     schedule = ContentSchedule(
         id=str(uuid4()),
@@ -296,44 +318,31 @@ async def list_schedules(
     return [ScheduleResponse.model_validate(s) for s in result.scalars().all()]
 
 
+@router.get("/schedule/{schedule_id}/preview")
+async def preview_schedule(schedule_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    schedule, snapshot = await load_snapshot(session, schedule_id)
+    return {"schedule_id": schedule.id, "status": schedule.status, "snapshot": snapshot, "fingerprint": fingerprint_payload(snapshot)}
+
+
+@router.get("/schedule/{schedule_id}/receipt")
+async def publication_receipt(schedule_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    attempt = (await session.execute(select(PublicationAttempt).where(
+        PublicationAttempt.schedule_id == schedule_id))).scalar_one_or_none()
+    if attempt is None:
+        raise HTTPException(404, "No dispatch receipt recorded")
+    return receipt(attempt)
+
+
+@router.post("/schedule/{schedule_id}/approve")
+async def approve_content(schedule_id: str, body: ApprovalRequest,
+                          session: AsyncSession = Depends(get_session)) -> dict:
+    return await approve_schedule(session, schedule_id, body.mode, "local-owner", body.fingerprint)
+
+
 @router.post("/schedule/{schedule_id}/publish", response_model=PublishResponse)
-async def publish_scheduled_content(
-    schedule_id: str,
-    session: AsyncSession = Depends(get_session),
-) -> PublishResponse:
-    """Execute immediate publish for a scheduled content item."""
-    res = await session.execute(select(ContentSchedule).where(ContentSchedule.id == schedule_id))
-    schedule = res.scalar_one_or_none()
-    if not schedule:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content schedule not found")
-
-    from app.models.account import SocialAccount
-
-    acc_res = await session.execute(select(SocialAccount).where(SocialAccount.id == schedule.account_id))
-    account = acc_res.scalar_one_or_none()
-    platform_val = account.platform.value if account and isinstance(account.platform, Platform) else (
-        str(account.platform) if account else Platform.OTHER.value
-    )
-
-    record = PublishRecord(
-        id=str(uuid4()),
-        schedule_id=schedule.id,
-        platform=platform_val,
-        status=PublishStatus.SUCCESS,
-        published_at=datetime.now(timezone.utc),
-    )
-    schedule.status = ScheduleStatus.PUBLISHED
-    session.add(record)
-    await session.commit()
-    await session.refresh(record)
-
-    return PublishResponse(
-        schedule_id=schedule.id,
-        publish_record_id=record.id,
-        status=PublishStatus.SUCCESS.value,
-        platform_post_id=record.platform_post_id,
-        message="Content published",
-    )
+async def publish_scheduled_content(schedule_id: str,
+                                    session: AsyncSession = Depends(get_session)) -> dict:
+    return await dispatch_schedule(session, schedule_id)
 
 
 @router.get("/{asset_id}", response_model=ContentAssetResponse)

@@ -27,6 +27,8 @@ from app.models.security import (
 )
 from app.models.task import Task, TaskState
 
+from app.core.runtime_control import pause_runtime, resume_runtime, stop_runtime
+
 router = APIRouter(prefix="/security", tags=["security"])
 
 
@@ -224,10 +226,11 @@ async def emergency_stop(
     session: AsyncSession = Depends(get_session),
 ) -> EmergencyStopResponse:
     """Immediately cancel all running/queued tasks and agent executions."""
+    stop_runtime()
     now = datetime.now(timezone.utc)
 
     running_tasks = (
-        await session.execute(select(Task).where(Task.state == TaskState.RUNNING))
+        await session.execute(select(Task).where(Task.state.in_([TaskState.RUNNING, TaskState.PENDING, TaskState.PAUSED])))
     ).scalars().all()
     for task in running_tasks:
         task.state = TaskState.CANCELLED
@@ -266,20 +269,13 @@ async def emergency_stop(
             },
         )
     )
-    get_resource_manager().trigger_emergency_stop()
-    try:
-        if scheduler.is_running and scheduler._scheduler is not None:
-            scheduler._scheduler.pause()
-    except Exception:
-        pass
-
     await session.commit()
 
     return EmergencyStopResponse(
         stopped_tasks=len(running_tasks),
         stopped_executions=len(active_execs),
         timestamp=now.isoformat(),
-        message="All running tasks and agent executions have been cancelled.",
+        message="Local queued tasks cancelled; cooperative running cancellation requested. Verify remote actions already in flight.",
     )
 
 
@@ -288,7 +284,7 @@ async def autopilot_status() -> AutopilotControlResponse:
     """Return global autopilot pause and emergency-stop status."""
     rm = get_resource_manager()
     paused = bool(
-        rm._emergency_stopped
+        rm._emergency_stopped or rm._paused
         or (scheduler._scheduler is not None and scheduler._scheduler.state == 2)
     )
     return AutopilotControlResponse(
@@ -304,13 +300,8 @@ async def pause_autopilot(
     session: AsyncSession = Depends(get_session),
 ) -> AutopilotControlResponse:
     """Pause scheduled automation without cancelling persisted jobs."""
+    pause_runtime()
     now = datetime.now(timezone.utc)
-    try:
-        if scheduler.is_running and scheduler._scheduler is not None:
-            scheduler._scheduler.pause()
-    except Exception:
-        pass
-
     session.add(
         AuditLog(
             id=str(uuid4()),
@@ -335,13 +326,7 @@ async def resume_autopilot(
 ) -> AutopilotControlResponse:
     """Clear emergency stop (if active) and resume scheduled automation."""
     now = datetime.now(timezone.utc)
-    rm = get_resource_manager()
-    rm.clear_emergency_stop()
-    try:
-        if scheduler._scheduler is not None and scheduler._scheduler.state == 2:
-            scheduler._scheduler.resume()
-    except Exception:
-        pass
+    resume_runtime()
 
     session.add(
         AuditLog(

@@ -9,6 +9,8 @@ function resolveApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+let ownerToken = '';
+export function setOwnerToken(token: string): void { ownerToken = token; }
 
 export class ApiError extends Error {
   status: number;
@@ -51,6 +53,7 @@ export async function apiRequest<T>(
     ...rest,
     headers: {
       'Content-Type': 'application/json',
+      ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}),
       ...(headers ?? {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -140,14 +143,13 @@ export const apiClient = {
   agents: {
     list: () => apiRequest<AgentDto[]>('/api/agents'),
     toggle: (id: string, enabled: boolean) =>
-      apiRequest<AgentDto>(`/api/agents/${id}`, {
-        method: 'PATCH',
-        body: { enabled },
+      apiRequest<AgentDto>(`/api/agents/${id}/${enabled ? "enable" : "disable"}`, {
+        method: 'POST',
       }),
     run: (id: string, payload?: Record<string, unknown>) =>
       apiRequest<Record<string, unknown>>(`/api/agents/${id}/run`, {
         method: 'POST',
-        body: payload ?? {},
+        body: { task_data: payload ?? {} },
       }),
   },
   goals: {
@@ -155,14 +157,14 @@ export const apiClient = {
     create: (payload: Partial<GoalDto>) =>
       apiRequest<GoalDto>('/api/goals', { method: 'POST', body: payload }),
     update: (id: string, payload: Partial<GoalDto>) =>
-      apiRequest<GoalDto>(`/api/goals/${id}`, { method: 'PATCH', body: payload }),
+      apiRequest<GoalDto>(`/api/goals/${id}`, { method: 'PUT', body: payload }),
   },
   content: {
     list: () => apiRequest<ContentAssetDto[]>('/api/content'),
     scanFolder: (path: string) =>
-      apiRequest<{ scanned: number }>('/api/content/scan', {
+      apiRequest<{ scanned: number }>('/api/content/scan-folder', {
         method: 'POST',
-        body: { path },
+        body: { folder_path: path },
       }),
   },
   workflows: {

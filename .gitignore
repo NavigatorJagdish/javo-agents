@@ -55,3 +55,7 @@ apps/windows/dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local runtime control state (not source)
+runtime-control.json
+runtime-control.json.*.tmp

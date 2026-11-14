@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Literal
+import secrets
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -18,7 +19,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     host: str = "127.0.0.1"
     port: int = 8000
-    secret_key: str = Field(default="change-me-in-production-use-a-real-secret-key")
+    secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    owner_access_token: Optional[SecretStr] = None
     allowed_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"])
 
     # Database
@@ -64,9 +66,14 @@ class Settings(BaseSettings):
     max_sessions_per_user: int = 5
     require_device_approval: bool = True
 
+    control_state_path: str = "./runtime-control.json"
+
     # Resource limits
-    max_concurrent_agents: int = 5
-    max_queue_size: int = 100
+    # Zero selects a hardware-derived concurrency limit; explicit overrides remain bounded.
+    max_concurrent_agents: int = Field(default=0, ge=0, le=256)
+    max_queue_size: int = Field(default=100, ge=1, le=10000)
+    resource_profile: Literal["auto", "low", "balanced", "performance"] = "auto"
+    memory_headroom_mb: int = Field(default=1536, ge=512)
     cpu_limit_percent: float = 80.0
     memory_limit_percent: float = 80.0
 

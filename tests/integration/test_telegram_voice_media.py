@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import secrets
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +15,11 @@ from app.services.media_processor import MediaProcessor
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
+    token = secrets.token_urlsafe(32)
+    monkeypatch.setenv("JAVO_OWNER_ACCESS_TOKEN", token)
+    monkeypatch.setenv("JAVO_CONTROL_STATE_PATH", str(tmp_path / "control.json"))
+    import app.core.resource_manager as resources
+    resources._resource_manager = None
     db_path = tmp_path / "tg_voice_test.db"
     sched_path = tmp_path / "tg_voice_sched.db"
     monkeypatch.setenv("JAVO_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
@@ -30,7 +36,7 @@ def client(tmp_path, monkeypatch):
     tg_route._TELEGRAM_OVERRIDES.clear()
 
     app = create_app()
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as test_client:
         yield test_client
 
     tg_route._TELEGRAM_OVERRIDES.clear()
