@@ -40,7 +40,8 @@ function resolveIconPath(): string {
 }
 
 const runtimeManager = new LocalRuntimeManager(
-  resolveRuntimeDir(), path.join(app.getPath("userData"), "runtime")
+  resolveRuntimeDir(), path.join(app.getPath("userData"), "runtime"),
+  app.isPackaged ? path.join(process.resourcesPath, "runtime", "javo-runtime.exe") : undefined
 );
 
 function showDesktopNotification(title: string, body: string): void {

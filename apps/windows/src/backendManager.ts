@@ -21,12 +21,14 @@ export class LocalRuntimeManager {
   private starting: Promise<BackendStatus> | null = null;
   private stoppingProcess: Promise<void> | null = null;
   private accessToken = randomBytes(32).toString("hex");
+  private generation = 0;
 
   public authorizationHeader(): string {
     return `Bearer ${this.accessToken}`;
   }
 
-  constructor(private readonly runtimeDir: string, private readonly dataDir: string) {}
+  constructor(private readonly runtimeDir: string, private readonly dataDir: string,
+              private readonly bundledExecutable?: string) {}
 
   public getStatus(): BackendStatus {
     return {
@@ -93,11 +95,18 @@ export class LocalRuntimeManager {
     this.stopping = false;
     this.lastError = null;
     this.ready = false;
+    const generation = this.generation;
     fs.mkdirSync(this.dataDir, { recursive: true });
     this.port = await this.findAvailablePort(preferredPort);
+    // Quit/stop may arrive while the asynchronous port probe is in flight.
+    if (generation !== this.generation) return this.getStatus();
 
-    const pythonExe = this.resolvePythonExecutable();
-    const args = [
+    if (this.bundledExecutable && !fs.existsSync(this.bundledExecutable)) {
+      this.lastError = "Bundled runtime is missing. Repair the Javo Agents installation.";
+      return this.getStatus();
+    }
+    const executable = this.bundledExecutable ?? this.resolvePythonExecutable();
+    const args = this.bundledExecutable ? ["--port", String(this.port)] : [
       "-m",
       "uvicorn",
       "app.main:app",
@@ -107,7 +116,7 @@ export class LocalRuntimeManager {
       String(this.port),
     ];
 
-    const child = spawn(pythonExe, args, {
+    const child = spawn(executable, args, {
       cwd: this.dataDir,
       env: {
         ...process.env,
@@ -132,7 +141,7 @@ export class LocalRuntimeManager {
     child.stdout?.resume();
     child.once("error", (error) => {
       if (this.proc !== child) return;
-      this.lastError = `Could not start local runtime (${(error as NodeJS.ErrnoException).code || "spawn error"}). Check Python and runtime dependencies.`;
+        this.lastError = `Could not start local runtime (${(error as NodeJS.ErrnoException).code || "spawn error"}). ${this.bundledExecutable ? "Repair the Javo Agents installation." : "Check Python and runtime dependencies."}`;
       this.ready = false;
       this.proc = null;
     });
@@ -160,14 +169,18 @@ export class LocalRuntimeManager {
   }
 
   public async waitForHealth(timeoutMs = 20000): Promise<boolean> {
+    const child = this.proc;
+    const generation = this.generation;
     const deadline = Date.now() + timeoutMs;
     const healthUrl = `http://127.0.0.1:${this.port}/health/`;
 
     while (Date.now() < deadline) {
-      if (!this.proc || this.proc.exitCode !== null) return false;
+      if (!child || this.proc !== child || child.exitCode !== null || generation !== this.generation) return false;
       try {
         const res = await fetch(healthUrl, { headers: { Authorization: this.authorizationHeader() }, signal: AbortSignal.timeout(1500) });
-        if (res.ok) {
+        const health = res.ok ? await res.json() as { status?: unknown; database?: unknown } : null;
+        if (this.proc !== child || generation !== this.generation || child.exitCode !== null) return false;
+        if (health?.status === "healthy" && health.database === "connected") {
           this.lastError = null;
           this.ready = true;
           return true;
@@ -209,6 +222,7 @@ export class LocalRuntimeManager {
   }
 
   public async stop(): Promise<void> {
+    this.generation++;
     if (this.stoppingProcess) return this.stoppingProcess;
     this.stoppingProcess = this.stopProcess();
     try { await this.stoppingProcess; }

@@ -99,3 +99,28 @@ of unnecessary storage. See BACKUP_POLICY.md. New create-checkpoint.py creates
 credential-filtered source archives with manifests and extraction/hash checks.
 Remote upload receipts and cleanup evidence belong to private project memory.
 No installer is labelled final or ready to install in this increment.
+
+## Bundled runtime and desktop readiness increment
+
+Added a Windows x64 PyInstaller build script and dedicated backend entry point.
+Packaged Electron launches the bundled executable directly, while developer mode
+retains Python. Missing packaged runtime does not fall back to system Python.
+Packaging preflight and electron-builder beforePack verify dashboard/icon/runtime
+presence, Python DLL, import-test evidence and payload SHA256 hashes. Build-time
+publishing is disabled. See WINDOWS_PACKAGING.md for procedure and acceptance.
+
+Fixed desktop readiness accepting a degraded database response as ready, stop
+during asynchronous port allocation spawning a late backend, and a late health
+response marking a stopped backend ready. Corrected the older Node test mock
+cleanup API from mockFunction.restore() to mockFunction.mock.restore().
+
+New isolated contract checks: 11 passed (0.67s), using mocked process/network
+boundaries and temporary package fixtures. These do not prove live process/HTTP
+behavior. Unfrozen Python entry point import check returned RUNTIME_IMPORTS_OK
+with 30 registered agents; this is not evidence of a frozen executable working.
+Desktop TypeScript build and changed-Python syntax checks passed.
+
+Current packaging blockers: configured Python index provides no PyInstaller;
+minimal asyncio probe again timed out in Windows socketpair before app import.
+Electron binary and complete installer execution remain unverified. Existing
+historical backend/browser passes remain historical, not fresh verification.

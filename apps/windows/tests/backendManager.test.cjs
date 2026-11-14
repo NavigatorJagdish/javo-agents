@@ -18,7 +18,7 @@ http.createServer((req, res) => {
   if (req.headers.authorization !== 'Bearer ' + process.env.JAVO_OWNER_ACCESS_TOKEN) {
     res.writeHead(401).end(); return;
   }
-  if (req.url === '/health/') { res.end(JSON.stringify({status:'healthy'})); return; }
+  if (req.url === '/health/') { res.end(JSON.stringify({status:'healthy', database:'connected'})); return; }
   if (req.url === '/security/resume') state = {paused:false, emergency_stopped:false};
   if (req.url === '/security/pause') state.paused = true;
   if (req.url === '/security/emergency-stop') state = {paused:true, emergency_stopped:true};
@@ -71,7 +71,7 @@ test('desktop manager lifecycle, occupied port, auth and persisted controls', { 
     } finally { await restarted.stop(); }
   } finally {
     await manager.stop();
-    spawnMock.restore();
+    spawnMock.mock.restore();
     await new Promise(resolve => blocker.close(resolve));
     fs.rmSync(folder, { recursive: true, force: true });
   }

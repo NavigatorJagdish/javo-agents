@@ -4,6 +4,7 @@ copyright: Copyright © 2026 Javo Agents
 directories:
   output: release
   buildResources: build
+beforePack: ./scripts/verify-package.cjs
 files:
   - dist/**/*
   - public/**/*
@@ -17,12 +18,10 @@ extraResources:
     to: icons
     filter:
       - "**/*"
-  - from: ../../services/local-runtime
-    to: local-runtime
+  - from: build/runtime/javo-runtime
+    to: runtime
     filter:
-      - "app/**/*"
-      - "pyproject.toml"
-      - "requirements*.txt"
+      - "**/*"
 win:
   target:
     - target: nsis
@@ -43,7 +42,4 @@ nsis:
   uninstallDisplayName: Javo Agents
 portable:
   artifactName: "JavoAgents-Portable-${version}-${arch}.${ext}"
-publish:
-  provider: github
-  owner: javo-agents
-  repo: javo-agents
+publish: null
