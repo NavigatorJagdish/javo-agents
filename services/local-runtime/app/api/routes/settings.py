@@ -159,10 +159,8 @@ async def get_all_settings() -> SettingsResponse:
 
 @router.put("/", response_model=SettingsResponse)
 async def update_settings(body: SettingsUpdate) -> SettingsResponse:
-    """Update runtime application settings."""
-    updates = body.model_dump(exclude_unset=True)
-    _RUNTIME_OVERRIDES.update(updates)
-    return _effective_settings()
+    """Do not report budget/resource configuration that the runtime has not applied."""
+    raise HTTPException(503, "Settings changes are unavailable until durable configuration is connected; no settings were changed")
 
 
 @router.get("/ai-providers", response_model=list[AIProviderInfo])
@@ -180,15 +178,7 @@ async def update_ai_provider(name: str, body: AIProviderUpdate) -> AIProviderInf
     if key not in providers:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"AI provider '{name}' not found")
 
-    cfg = providers[key]
-    data = body.model_dump(exclude_unset=True)
-    if "api_key" in data:
-        api_key = data.pop("api_key")
-        cfg["has_api_key"] = bool(api_key)
-        if api_key and "enabled" not in data:
-            cfg["enabled"] = True
-    cfg.update(data)
-    return AIProviderInfo(**cfg)
+    raise HTTPException(503, "Provider changes are unavailable until encrypted persistence and routing are connected; no credentials were saved")
 
 
 @router.post("/backup", response_model=BackupInfo, status_code=status.HTTP_201_CREATED)

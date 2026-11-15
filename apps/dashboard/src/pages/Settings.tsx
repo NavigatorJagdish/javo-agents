@@ -117,7 +117,7 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Dashboard v2.4.0 • Windows Desktop Edition
+            Runtime version: {settings.data?.app_version ?? 'Unavailable'}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Registered agent definitions; production coverage varies. • FastAPI Runtime (localhost:8000)

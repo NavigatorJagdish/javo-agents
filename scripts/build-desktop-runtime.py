@@ -37,6 +37,7 @@ def main() -> None:
         "--collect-submodules", "app", "--collect-submodules", "apscheduler",
         "--copy-metadata", "apscheduler",
         "--hidden-import", "sqlalchemy.dialects.sqlite.aiosqlite",
+        "--hidden-import", "aiosqlite",
         "--hidden-import", "sqlalchemy.dialects.sqlite.pysqlite",
         "--hidden-import", "uvicorn.logging",
         "--hidden-import", "uvicorn.loops.asyncio",

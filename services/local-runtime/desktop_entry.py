@@ -21,7 +21,12 @@ def main() -> None:
         from app.main import app
         from app.agents import get_all_agents
         from sqlalchemy.dialects.sqlite import aiosqlite, pysqlite  # noqa: F401
+        import aiosqlite as sqlite_async_driver  # noqa: F401 - dynamic DBAPI in frozen builds
+        from sqlalchemy.ext.asyncio import create_async_engine
         import uvicorn
+
+        probe = create_async_engine("sqlite+aiosqlite:///:memory:")
+        probe.sync_engine.dispose()  # No connection or event loop is opened by this probe.
 
         print(json.dumps({"result": "RUNTIME_IMPORTS_OK", "version": app.version,
                           "agents": len(get_all_agents())}))

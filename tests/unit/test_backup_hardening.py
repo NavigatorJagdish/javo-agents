@@ -117,3 +117,18 @@ def test_live_restore_and_agent_cannot_report_false_success(tmp_path):
     assert error.value.status_code == 409
     result = finish(RecoveryAgent().execute({"action": "restore_backup", "backup_id": "any"}))
     assert result["status"] == "blocked" and result["verified_checksum"] is False
+
+
+def test_settings_mutations_never_claim_unapplied_budgets_or_credentials():
+    with pytest.raises(HTTPException) as error:
+        finish(routes.update_settings(routes.SettingsUpdate(ai_daily_budget=5)))
+    assert error.value.status_code == 503
+    before = finish(routes.list_ai_providers())
+    with pytest.raises(HTTPException) as error:
+        finish(
+            routes.update_ai_provider(
+                "gemini", routes.AIProviderUpdate(api_key="synthetic-unsaved-key")
+            )
+        )
+    assert error.value.status_code == 503
+    assert finish(routes.list_ai_providers()) == before

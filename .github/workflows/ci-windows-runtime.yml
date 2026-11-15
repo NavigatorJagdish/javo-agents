@@ -60,6 +60,7 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item Env:ELECTRON_SKIP_BINARY_DOWNLOAD
+          python ../../packages/brand-assets/icons/generate_icons.py
           node node_modules/electron/install.js
           npm run verify:package
           npx electron-builder --win --dir --publish never --config electron-builder.yml
