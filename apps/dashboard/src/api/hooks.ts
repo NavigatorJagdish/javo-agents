@@ -6,7 +6,7 @@ export function useHealthQuery() {
   return useQuery({ queryKey: ['health'], queryFn: apiClient.health.check, refetchInterval: 15000, retry: false });
 }
 export function useAgentsQuery() {
-  return useQuery({ queryKey: ['agents'], queryFn: apiClient.agents.list, retry: false });
+  return useQuery({ queryKey: ['agents'], queryFn: apiClient.agents.list, retry: false, refetchInterval: 5000 });
 }
 export function useToggleAgentMutation() {
   const qc = useQueryClient();
@@ -20,8 +20,8 @@ export function useRunAgentMutation() {
   return useMutation({ mutationFn: (id: string) => apiClient.agents.run(id),
     onSettled: () => { qc.invalidateQueries({ queryKey: ['agents'] }); } });
 }
-export function useGoalsQuery(offset = 0) {
-  return useQuery({ queryKey: ['goals', offset], queryFn: () => apiClient.goals.list(offset), retry: false });
+export function useGoalsQuery(offset = 0, enabled = true) {
+  return useQuery({ queryKey: ['goals', offset], queryFn: () => apiClient.goals.list(offset), retry: false, enabled });
 }
 export function useCreateGoalMutation() {
   const qc = useQueryClient();

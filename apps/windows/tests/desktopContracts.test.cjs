@@ -19,13 +19,21 @@ async function withManager(run, packaged = false) {
   Object.assign(child, { pid: 101, exitCode: null, stdout: { resume() {} }, stderr: new EventEmitter(),
     kill() { child.exitCode = 0; child.emit('exit', 0); return true; } });
   const spawned = mock.method(childProcess, 'spawn', () => child);
+  // Never send OS process-control commands to a fixture PID.
+  const stopped = mock.method(childProcess, 'execFile', (command, args, options, callback) => {
+    assert.equal(command, 'taskkill');
+    assert.deepEqual(args, ['/PID', '101', '/T', '/F']);
+    child.kill();
+    callback(null, '', '');
+    return new EventEmitter();
+  });
   const fetched = mock.method(global, 'fetch', async () => new Response(JSON.stringify({
     status: 'healthy', database: 'connected'
   })));
   try { await run({ manager, child, spawned, fetched, exe }); }
   finally {
     await manager.stop();
-    spawned.mock.restore(); fetched.mock.restore();
+    spawned.mock.restore(); fetched.mock.restore(); stopped.mock.restore();
     fs.rmSync(folder, { recursive: true, force: true });
   }
 }

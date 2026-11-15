@@ -36,7 +36,6 @@ import {
 } from '@javo/design-system';
 import { apiRequest } from '../api/client';
 import { useAppStore } from '../store/useAppStore';
-import { useAgentStore } from '../store/useAgentStore';
 import { useEmergencyStopMutation, useHealthQuery } from '../api/hooks';
 
 export const MainLayout: React.FC = () => {
@@ -58,9 +57,6 @@ export const MainLayout: React.FC = () => {
     addToast,
   } = useAppStore();
 
-  const agents = useAgentStore((s) => s.agents);
-  const activeAgentCount = agents.filter((a) => a.enabled).length;
-
   const healthQuery = useHealthQuery();
   const health = healthQuery.data;
   const runtimeOnline = healthQuery.isSuccess && health?.status === 'healthy';
@@ -80,7 +76,7 @@ export const MainLayout: React.FC = () => {
 
   const navItems: SidebarNavItem[] = [
     { id: 'dashboard', label: 'Dashboard', path: '/', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { id: 'ai-team', label: 'AI Team', path: '/ai-team', icon: <Bot className="h-4 w-4" />, badge: activeAgentCount },
+    { id: 'ai-team', label: 'AI Team', path: '/ai-team', icon: <Bot className="h-4 w-4" /> },
     { id: 'goals', label: 'Goals', path: '/goals', icon: <Target className="h-4 w-4" /> },
     { id: 'content', label: 'Content', path: '/content', icon: <FolderKanban className="h-4 w-4" /> },
     { id: 'workflows', label: 'Workflows', path: '/workflows', icon: <GitBranch className="h-4 w-4" /> },
@@ -88,7 +84,7 @@ export const MainLayout: React.FC = () => {
     { id: 'accounts', label: 'Accounts', path: '/accounts', icon: <Users className="h-4 w-4" /> },
     { id: 'integrations', label: 'Integrations', path: '/integrations', icon: <Blocks className="h-4 w-4" /> },
     { id: 'analytics', label: 'Analytics', path: '/analytics', icon: <BarChart3 className="h-4 w-4" /> },
-    { id: 'approvals', label: 'Approvals', path: '/approvals', icon: <CheckSquare className="h-4 w-4" />, badge: 4 },
+    { id: 'approvals', label: 'Approvals', path: '/approvals', icon: <CheckSquare className="h-4 w-4" /> },
     { id: 'voice', label: 'Voice', path: '/voice', icon: <Mic className="h-4 w-4" /> },
     { id: 'github', label: 'GitHub', path: '/github', icon: <Github className="h-4 w-4" /> },
     { id: 'skills', label: 'Skills', path: '/skills', icon: <Sparkles className="h-4 w-4" /> },
@@ -268,7 +264,7 @@ export const MainLayout: React.FC = () => {
         {/* Page Outlet */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
           <p role="status" className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            Rebuild in progress. Home, Content, Goals, Settings and Companion use runtime APIs. Other screens still contain prototype data and unfinished controls; charts and activity are not verified account results.
+            Rebuild in progress. Home, AI Team, Content, Goals, Settings and Companion use runtime APIs. Other screens still contain prototype data and unfinished controls; charts and activity are not verified account results.
           </p>
           <RouteContent><Outlet /></RouteContent>
         </main>
@@ -279,7 +275,7 @@ export const MainLayout: React.FC = () => {
         open={stopModalOpen}
         onClose={() => setStopModalOpen(false)}
         title="Trigger Emergency Stop?"
-        description="This immediately pauses all 29 AI agents, cancels active workflow runs, and locks publishing connectors."
+        description="Pauses the local runtime and cancels queued tasks and supported agent operations. Check any remote action already in flight."
         footer={
           <>
             <Button variant="ghost" onClick={() => setStopModalOpen(false)}>

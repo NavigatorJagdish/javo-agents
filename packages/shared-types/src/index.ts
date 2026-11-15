@@ -193,9 +193,26 @@ export interface AgentDefinition {
   dependencies: string[] | null;
   trust_score: number;
   is_enabled: boolean;
+  supported_actions?: string[];
   config?: AgentConfig | null;
   created_at?: ISODateTime;
   updated_at?: ISODateTime;
+}
+
+export type AgentSummary = Pick<AgentDefinition, 'id' | 'agent_key' | 'name' | 'description' | 'category' | 'version' | 'status' | 'trust_score' | 'is_enabled' | 'supported_actions'>;
+
+export interface QueuedAgentReceipt {
+  execution_id: UUID;
+  agent_id: UUID;
+  agent_key: string;
+  status: 'queued';
+}
+
+export interface TaskExecutionReceipt {
+  task_id: UUID;
+  execution_id: UUID;
+  state: 'pending';
+  message: string;
 }
 
 export interface AgentExecution {

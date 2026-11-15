@@ -46,6 +46,33 @@ checks passed. Dashboard build passed. Chrome usage scenario completed
 USAGE_SAVED_API_COUNTERS_RELOAD_OK against actual saved synthetic records.
 This is persistence/UI evidence, not a real cloud billing or model-quality test.
 
+At accounting commit `97f14df048baba17a7c68c6e6243b0f95d9c5ccf`, all four
+workflows passed: Windows43718337298, backend43718337328,
+frontend43718337268 and security43718337242.
+
+## Supported specialist execution — local Windows evidence
+
+AI Team now reads real definitions, availability and saved execution receipts.
+Budget/Goal summaries run through a bounded durable worker; other module run
+requests explicitly report unavailable. Task execution no longer claims running
+before a worker starts. Pause/stop, cancellation, authorization snapshots,
+deadline checks, process recovery and linked task results are persisted.
+An OS lease prevents competing dispatchers. See AGENT_EXECUTION.md.
+
+Current full backend suite:179 passed, one platform skip, one dependency warning
+in164.20s. Targeted real job/lease checks11 passed; desktop18 passed, including a
+real Windows HTTP grandchild terminated with its launcher. Dashboard and shared
+TypeScript builds, full Ruff and Bandit -ll passed. Chrome completed
+AGENTS_REAL_QUEUE_CANCEL_BUDGET_GOAL_RELOAD_OK using fixture capacity with an
+actual runtime/queue/database. Development Electron with the actual Windows
+venv backend started, navigated Home/AI Team/Goals/Settings, quit and left no
+backend listener: DEVELOPMENT_ELECTRON_VENV_START_PAGES_QUIT_NO_ORPHAN_OK.
+Its generated profile was removed; the owner's existing profile was untouched.
+
+Added the frozen agent scenario to Windows CI; its result on this increment
+must be checked separately. This is not complete specialist, social integration,
+minimum-hardware, signing or full product release acceptance.
+
 Current source and CI: [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 Linux full-suite, Windows standalone/browser/packaged-app and NSIS QA-profile
 install/uninstall/reinstall checks have passed. Provider configuration now

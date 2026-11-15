@@ -1,41 +1,14 @@
 """Real HTTP/SQLite evidence for persisted goals, isolation and task retention."""
 from datetime import datetime, timedelta, timezone
-import secrets
 import sqlite3
 
-from fastapi.testclient import TestClient
 import pytest
 
-from app.main import create_app
 
 
 @pytest.fixture
-def goal_runtime(tmp_path, monkeypatch):
-    import app.config as cfg
-    import app.core.resource_manager as resources
-    token = secrets.token_urlsafe(32)
-    values = {
-        "OWNER_ACCESS_TOKEN": token,
-        "DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'goals.db'}",
-        "SCHEDULER_DB_URL": f"sqlite:///{tmp_path / 'schedule.db'}",
-        "CONTROL_STATE_PATH": str(tmp_path / 'control.json'),
-        "PROVIDER_CONFIG_PATH": str(tmp_path / 'provider.enc'),
-        "USAGE_LEDGER_PATH": str(tmp_path / 'usage.sqlite'),
-        "ENCRYPTION_KEY": secrets.token_urlsafe(48),
-    }
-    for key in ("CONTENT_ROOT", "UPLOAD_DIR", "BACKUP_DIR", "THUMBNAIL_DIR"):
-        values[key] = str(tmp_path / key.lower())
-    for key, value in values.items():
-        monkeypatch.setenv("JAVO_" + key, value)
-
-    def client():
-        cfg._settings = None
-        resources._resource_manager = None
-        return TestClient(create_app(), headers={"Authorization": f"Bearer {token}"})
-
-    yield client, tmp_path / 'goals.db'
-    cfg._settings = None
-    resources._resource_manager = None
+def goal_runtime(owner_runtime):
+    return owner_runtime
 
 
 def objective(**changes):

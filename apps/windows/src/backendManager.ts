@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from "node:child_process";
+import { ChildProcess, execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import net from "node:net";
@@ -51,7 +51,11 @@ export class LocalRuntimeManager {
         srv.listen(port, "127.0.0.1");
       });
 
-    if (await canBind(preferredPort)) {
+    if (!Number.isInteger(preferredPort) || preferredPort < 0 || preferredPort > 65535) {
+      throw new RangeError("Runtime port must be an integer from 0 through 65535");
+    }
+    // Port zero requests allocation; it is never the resulting service port.
+    if (preferredPort !== 0 && await canBind(preferredPort)) {
       return preferredPort;
     }
 
@@ -238,6 +242,34 @@ export class LocalRuntimeManager {
     }
 
     const child = this.proc;
+    if (process.platform === "win32") {
+      // Windows virtual-environment Python can be a launcher whose interpreter
+      // owns the HTTP listener. Stop the exact owned process tree, not only the
+      // launcher. Await both tree termination and the child's exit notification.
+      await new Promise<void>((resolve, reject) => {
+        let exited = child.exitCode !== null;
+        let treeStopped = false;
+        const deadline = setTimeout(() => {
+          this.lastError = "Local runtime process-tree shutdown could not be confirmed.";
+          reject(new Error(this.lastError));
+        }, 6000);
+        const complete = () => { if (exited && treeStopped) { clearTimeout(deadline); resolve(); } };
+        child.once("exit", () => { exited = true; complete(); });
+        execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"],
+          { windowsHide: true, timeout: 5000 }, (error) => {
+            if (error) {
+              clearTimeout(deadline);
+              this.lastError = "Local runtime process-tree shutdown could not be confirmed.";
+              reject(new Error(this.lastError));
+              return;
+            }
+            treeStopped = true;
+            complete();
+          });
+      });
+      if (this.proc === child) this.proc = null;
+      return;
+    }
     await new Promise<void>((resolve, reject) => {
       const hardDeadline = setTimeout(() => {
         this.lastError = "Local runtime shutdown could not be confirmed.";

@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
+from app.services.agent_jobs import SUPPORTED_ACTIONS, cancel_execution, enqueue
 from app.models.agent import (
     AgentConfig,
     AgentDefinition,
@@ -53,6 +54,11 @@ class AgentSummary(BaseModel):
     trust_score: float = 1.0
     is_enabled: bool = True
 
+    @computed_field
+    @property
+    def supported_actions(self) -> list[str]:
+        return SUPPORTED_ACTIONS.get(self.agent_key, [])
+
 
 class AgentDetail(AgentSummary):
     capabilities: Optional[list[str]] = None
@@ -66,6 +72,7 @@ class AgentDetail(AgentSummary):
 
 
 class RunAgentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     task_data: dict[str, Any] = Field(default_factory=dict)
     task_id: Optional[str] = None
 
@@ -75,6 +82,28 @@ class RunAgentResponse(BaseModel):
     agent_id: str
     agent_key: str
     status: str
+
+
+class ExecutionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    agent_id: str
+    task_id: str | None
+    status: ExecutionStatus
+    outputs: dict[str, Any] | None
+    inputs: dict[str, Any] | None
+    error: str | None
+    duration_ms: int | None
+    tokens_used: int
+    cost: float
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+    @field_validator('created_at', 'started_at', 'completed_at')
+    @classmethod
+    def utc_dates(cls, value):
+        return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
 
 
 class AgentConfigUpdate(BaseModel):
@@ -97,6 +126,7 @@ async def _find_agent(
     stmt = select(AgentDefinition).where(
         or_(
             AgentDefinition.agent_key == agent_name,
+            AgentDefinition.id == agent_name,
             AgentDefinition.name == agent_name,
         )
     )
@@ -137,23 +167,9 @@ async def run_agent(
     session: AsyncSession = Depends(get_session),
 ) -> RunAgentResponse:
     """Dispatch a task execution to the named agent."""
+    await session.execute(text('BEGIN IMMEDIATE'))
     agent = await _find_agent(agent_name, session)
-    if not agent.is_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Agent '{agent.agent_key}' is disabled",
-        )
-
-    execution = AgentExecution(
-        id=str(uuid4()),
-        agent_id=agent.id,
-        task_id=body.task_id,
-        status=ExecutionStatus.QUEUED,
-        inputs=body.task_data,
-    )
-    session.add(execution)
-    await session.commit()
-    await session.refresh(execution)
+    execution = await enqueue(session, agent, body.task_data, body.task_id)
 
     return RunAgentResponse(
         execution_id=execution.id,
@@ -161,6 +177,33 @@ async def run_agent(
         agent_key=agent.agent_key,
         status=ExecutionStatus.QUEUED.value,
     )
+
+
+@router.get('/{agent_name}/executions', response_model=list[ExecutionResponse])
+async def list_executions(agent_name: str, limit: int = Query(50, ge=1, le=200),
+                          session: AsyncSession = Depends(get_session)):
+    agent = await _find_agent(agent_name, session)
+    return list((await session.execute(select(AgentExecution).where(AgentExecution.agent_id == agent.id)
+                .order_by(AgentExecution.created_at.desc(), AgentExecution.id).limit(limit))).scalars().all())
+
+
+async def _execution(agent_name, execution_id, session):
+    agent = await _find_agent(agent_name, session)
+    execution = await session.get(AgentExecution, execution_id)
+    if execution is None or execution.agent_id != agent.id:
+        raise HTTPException(404, 'Execution not found')
+    return execution
+
+
+@router.get('/{agent_name}/executions/{execution_id}', response_model=ExecutionResponse)
+async def get_execution(agent_name: str, execution_id: str, session: AsyncSession = Depends(get_session)):
+    return await _execution(agent_name, execution_id, session)
+
+
+@router.post('/{agent_name}/executions/{execution_id}/cancel', status_code=204)
+async def cancel_agent_execution(agent_name: str, execution_id: str, session: AsyncSession = Depends(get_session)):
+    await session.execute(text('BEGIN IMMEDIATE'))
+    await cancel_execution(session, await _execution(agent_name, execution_id, session))
 
 
 @router.put("/{agent_name}/config", response_model=AgentDetail)

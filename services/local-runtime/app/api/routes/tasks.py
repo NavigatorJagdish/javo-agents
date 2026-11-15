@@ -7,8 +7,8 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 # Schemas
 # ---------------------------------------------------------------------------
 class TaskCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, allow_inf_nan=False)
     title: str = Field(..., min_length=1, max_length=256)
     description: Optional[str] = None
     assigned_agent: Optional[str] = None
@@ -29,13 +30,14 @@ class TaskCreate(BaseModel):
     priority: TaskPriority = TaskPriority.NORMAL
     inputs: Optional[dict[str, Any]] = None
     permissions: Optional[dict[str, Any]] = None
-    deadline: Optional[datetime] = None
+    deadline: Optional[AwareDatetime] = None
     retry_budget: int = Field(default=3, ge=0)
     cost_budget: Optional[float] = Field(default=None, ge=0.0)
     resource_budget: Optional[dict[str, Any]] = None
 
 
 class TaskUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True, allow_inf_nan=False)
     title: Optional[str] = Field(default=None, min_length=1, max_length=256)
     description: Optional[str] = None
     assigned_agent: Optional[str] = None
@@ -44,7 +46,14 @@ class TaskUpdate(BaseModel):
     inputs: Optional[dict[str, Any]] = None
     outputs: Optional[dict[str, Any]] = None
     permissions: Optional[dict[str, Any]] = None
-    deadline: Optional[datetime] = None
+    deadline: Optional[AwareDatetime] = None
+
+    @model_validator(mode='after')
+    def required_non_null(self):
+        for name in ('title', 'priority', 'state'):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f'{name} cannot be null')
+        return self
 
 
 class TaskResponse(BaseModel):
@@ -71,6 +80,11 @@ class TaskResponse(BaseModel):
     updated_at: datetime
     completed_at: Optional[datetime] = None
 
+    @field_validator('deadline', 'created_at', 'updated_at', 'completed_at')
+    @classmethod
+    def database_utc(cls, value):
+        return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
+
 
 class TaskHistoryEntry(BaseModel):
     timestamp: str
@@ -81,6 +95,7 @@ class TaskHistoryEntry(BaseModel):
 
 class ExecuteTaskResponse(BaseModel):
     task_id: str
+    execution_id: str
     state: str
     message: str
 
@@ -138,7 +153,7 @@ async def create_task(
         priority=body.priority,
         inputs=body.inputs,
         permissions=body.permissions,
-        deadline=body.deadline,
+        deadline=body.deadline.astimezone(timezone.utc) if body.deadline else None,
         retry_budget=body.retry_budget,
         cost_budget=body.cost_budget,
         resource_budget=body.resource_budget,
@@ -165,10 +180,20 @@ async def update_task(
     session: AsyncSession = Depends(get_session),
 ) -> TaskResponse:
     """Update fields of an existing task."""
+    await session.execute(text('BEGIN IMMEDIATE'))
     task = await _get_task_or_404(task_id, session)
     update_data = body.model_dump(exclude_unset=True)
+    from app.models.agent import AgentExecution, ExecutionStatus
+    execution = (await session.execute(select(AgentExecution).where(AgentExecution.task_id == task_id)
+                                      .order_by(AgentExecution.status.in_([ExecutionStatus.QUEUED, ExecutionStatus.RUNNING]).desc(),
+                                                AgentExecution.created_at.desc(), AgentExecution.id.desc()).limit(1))).scalar_one_or_none()
+    if execution:
+        if {'state', 'outputs'} & update_data.keys():
+            raise HTTPException(409, 'Runtime execution state/results cannot be overwritten; use execution cancellation')
+        if execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.RUNNING} and {'inputs', 'assigned_agent', 'permissions', 'deadline'} & update_data.keys():
+            raise HTTPException(409, 'Cancel the pending execution before changing its inputs or permissions')
     for key, value in update_data.items():
-        setattr(task, key, value)
+        setattr(task, key, value.astimezone(timezone.utc) if isinstance(value, datetime) else value)
 
     trail = list(task.audit_trail or [])
     trail.append(
@@ -188,34 +213,34 @@ async def update_task(
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(task_id: str, session: AsyncSession = Depends(get_session)) -> None:
     """Delete a task."""
+    from app.models.agent import AgentExecution, ExecutionStatus
+    from app.services.agent_jobs import cancel_execution
+    await session.execute(text('BEGIN IMMEDIATE'))
     task = await _get_task_or_404(task_id, session)
+    active = list((await session.execute(select(AgentExecution).where(
+        AgentExecution.task_id == task_id, AgentExecution.status.in_([ExecutionStatus.QUEUED, ExecutionStatus.RUNNING])))).scalars().all())
+    for execution in active:
+        await cancel_execution(session, execution, commit=False)
+    await session.execute(update(AgentExecution).where(AgentExecution.task_id == task_id).values(task_id=None))
     await session.delete(task)
     await session.commit()
 
 
 @router.post("/{task_id}/execute", response_model=ExecuteTaskResponse, status_code=status.HTTP_202_ACCEPTED)
 async def execute_task(task_id: str, session: AsyncSession = Depends(get_session)) -> ExecuteTaskResponse:
-    """Start or queue a task for execution."""
+    """Persist a supported execution; running/completed require worker evidence."""
+    from app.models.agent import AgentDefinition
+    from app.services.agent_jobs import enqueue
+    await session.execute(text('BEGIN IMMEDIATE'))
     task = await _get_task_or_404(task_id, session)
-    if task.state == TaskState.RUNNING:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task is already running")
-
-    task.state = TaskState.RUNNING
-    trail = list(task.audit_trail or [])
-    trail.append(
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "action": "execute_requested",
-            "details": {"assigned_agent": task.assigned_agent},
-        }
-    )
-    task.audit_trail = trail
-
-    await session.commit()
+    agent = (await session.execute(select(AgentDefinition).where(
+        AgentDefinition.agent_key == task.assigned_agent))).scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(501, 'Select a supported specialist before executing this task')
+    execution = await enqueue(session, agent, task.inputs or {}, task.task_id)
     return ExecuteTaskResponse(
-        task_id=task_id,
-        state=TaskState.RUNNING.value,
-        message="Task dispatched for execution",
+        task_id=task_id, execution_id=execution.id, state=TaskState.PENDING.value,
+        message='Execution saved in the queue; inspect its receipt for actual completion',
     )
 
 

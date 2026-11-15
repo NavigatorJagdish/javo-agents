@@ -27,6 +27,25 @@ http.createServer((req, res) => {
 }).listen(Number(process.env.JAVO_PORT), '127.0.0.1');
 `;
 
+test('Windows shutdown stops an owned launcher and its HTTP child', { timeout: 20000, skip: process.platform !== 'win32' }, async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'javo-launcher-tree-'));
+  const originalSpawn = childProcess.spawn;
+  const launcher = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(fixture)}], {env:process.env,stdio:'inherit',windowsHide:true}); setInterval(()=>{},1000);`;
+  const spawnMock = mock.method(childProcess, 'spawn', (_command, _args, options) => originalSpawn(process.execPath, ['-e', launcher], options));
+  const manager = new LocalRuntimeManager(folder, path.join(folder, 'data'));
+  try {
+    const status = await manager.start(0);
+    assert.equal(status.running, true);
+    await manager.stop();
+    await assert.rejects(fetch(status.baseUrl + '/health/', { signal: AbortSignal.timeout(500) }));
+    assert.equal(manager.getStatus().pid, null);
+  } finally {
+    await manager.stop();
+    spawnMock.mock.restore();
+    fs.rmSync(folder, {recursive:true,force:true});
+  }
+});
+
 test('desktop manager lifecycle, occupied port, auth and persisted controls', { timeout: 30000 }, async () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'javo-desktop-test-'));
   const runtime = path.join(folder, 'read-only-source');

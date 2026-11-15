@@ -26,6 +26,11 @@ key protection; other platforms require a retained encryption secret. See
 Positive budget increases remain blocked pending durable spending controls.
 The [text companion](docs/COMPANION.md) now uses real runtime controls and configured AI
 with bounded context and cancellation. Audio engines remain unavailable.
+The [Goals screen](docs/GOALS.md) uses saved measurements and milestones;
+[AI usage accounting](docs/AI_USAGE.md) survives restart. The
+[AI Team execution queue](docs/AGENT_EXECUTION.md) supports real saved-goal and
+budget summaries with cancellation and receipts. Remaining specialists are
+explicitly unavailable for execution until their paths are completed.
 Android, full workflows/analytics, official live connectors and complete
 specialist functionality remain under development. See [evidence](docs/REBUILD_STATUS.md).
 

@@ -31,6 +31,7 @@ env/
 *.db-journal
 *.sqlite
 *.sqlite3
+*.agent-worker.lock
 *.jbackup
 *.sha256
 uploads/

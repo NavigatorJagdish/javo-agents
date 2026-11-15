@@ -16,7 +16,7 @@ import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage'], default='dashboard')
+parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents'], default='dashboard')
 args = parser.parse_args()
 
 
@@ -90,8 +90,18 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
         ledger.settle(request_id, prompt_tokens=3, completion_tokens=5, cost_microusd=0)
     with (data / "runtime.log").open("w", encoding="utf-8") as log:
         bundled = os.environ.get("JAVO_RUNTIME_EXE")
+        module = 'app.main:app'
+        if args.scenario == 'agents' and not bundled:
+            # Small deterministic read operations exercise the real worker with
+            # fixture capacity, independently of other apps using the host RAM.
+            (data / 'scenario_runtime.py').write_text(
+                'from app.core.resource_manager import ResourceManager, SystemMetrics\n'
+                'ResourceManager.get_metrics = lambda self: SystemMetrics(0,25,8192,16384,10,100,len(self._active_tasks),0)\n'
+                'from app.main import app\n', encoding='utf-8')
+            env['PYTHONPATH'] += os.pathsep + str(data)
+            module = 'scenario_runtime:app'
         command = ([str(Path(bundled).resolve()), "--port", str(port)] if bundled else
-                   [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)])
+                   [sys.executable, "-m", "uvicorn", module, "--host", "127.0.0.1", "--port", str(port)])
         backend = subprocess.Popen(command, cwd=data, env=env, stdout=log, stderr=log)
         failed = True
         try:
@@ -106,7 +116,7 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
+            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
             result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)

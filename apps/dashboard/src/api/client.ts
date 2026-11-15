@@ -92,15 +92,28 @@ export interface HealthResponse {
 
 export interface AgentDto {
   id: string;
-  number: number;
+  agent_key: string;
   name: string;
-  role: string;
-  category: string;
-  enabled: boolean;
-  status: 'active' | 'idle' | 'running' | 'error' | 'disabled';
-  tasks_completed: number;
-  success_rate: number;
-  last_run?: string;
+  description: string | null;
+  category: string | null;
+  version: string;
+  is_enabled: boolean;
+  status: 'idle' | 'running' | 'paused' | 'error' | 'disabled';
+  supported_actions: string[];
+}
+
+export interface AgentExecutionDto {
+  id: string;
+  agent_id: string;
+  task_id: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout';
+  inputs: Record<string, unknown> | null;
+  outputs: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
 }
 
 export interface GoalObjective {
@@ -187,10 +200,12 @@ export const apiClient = {
         method: 'POST',
       }),
     run: (id: string, payload?: Record<string, unknown>) =>
-      apiRequest<Record<string, unknown>>(`/api/agents/${id}/run`, {
+      apiRequest<{ execution_id: string; agent_key: string; status: string }>(`/api/agents/${encodeURIComponent(id)}/run`, {
         method: 'POST',
         body: { task_data: payload ?? {} },
       }),
+    executions: (key: string) => apiRequest<AgentExecutionDto[]>(`/api/agents/${encodeURIComponent(key)}/executions`),
+    cancelExecution: (key: string, executionId: string) => apiRequest<void>(`/api/agents/${encodeURIComponent(key)}/executions/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
   goals: {
     list: (offset = 0) => apiRequest<GoalDto[]>('/api/goals/', { params: { limit: 50, offset } }),

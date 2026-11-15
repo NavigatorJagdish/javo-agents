@@ -27,6 +27,7 @@ from app.database import close_db, create_tables, init_engine
 from app.models.agent import AgentDefinition, AgentStatus
 from app.services.content_watcher import get_content_watcher
 from app.services.timed_dispatch import timed_worker
+from app.services.agent_jobs import agent_worker
 
 settings = get_settings()
 logging.basicConfig(
@@ -80,12 +81,21 @@ async def _seed_agents() -> None:
 
     agents = get_all_agents()
     async with db.async_session_factory() as session:
-        existing_res = await session.execute(select(AgentDefinition.agent_key))
-        existing_keys = set(existing_res.scalars().all())
+        existing_res = await session.execute(select(AgentDefinition))
+        existing = {row.agent_key: row for row in existing_res.scalars().all()}
 
         created = 0
         for key, agent in agents.items():
-            if key in existing_keys:
+            if key in existing:
+                # Refresh code-owned metadata on upgrade. Preserve owner enable
+                # choices, saved config and execution history.
+                definition = existing[key]
+                definition.name = getattr(agent, 'display_name', key)
+                definition.description = getattr(agent, 'description', '')
+                definition.version = getattr(agent, 'version', '1.0.0')
+                definition.capabilities = list(getattr(agent, 'capabilities', []))
+                definition.input_schema = getattr(agent, 'input_schema', {})
+                definition.output_schema = getattr(agent, 'output_schema', {})
                 continue
             definition = AgentDefinition(
                 agent_key=key,
@@ -103,8 +113,8 @@ async def _seed_agents() -> None:
             session.add(definition)
             created += 1
 
+        await session.commit()
         if created:
-            await session.commit()
             logger.info("Seeded %d agent definitions into database", created)
 
 
@@ -147,6 +157,9 @@ async def lifespan(app: FastAPI):
 
         cleanup.push_async_callback(timed_worker.stop)
         await timed_worker.start()
+
+        cleanup.push_async_callback(agent_worker.stop)
+        await agent_worker.start()
 
         try:
             yield

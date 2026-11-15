@@ -3,6 +3,9 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentExecution,
+  AgentSummary,
+  QueuedAgentReceipt,
+  TaskExecutionReceipt,
   ApprovalItem,
   AuditLog,
   BrandProfile,
@@ -130,6 +133,7 @@ export class JavoApiClient {
       });
 
       const contentType = response.headers.get("content-type") ?? "";
+      if (response.status === 204) return undefined as T;
       const parsed = contentType.includes("application/json")
         ? await response.json()
         : await response.text();
@@ -168,22 +172,34 @@ export class JavoApiClient {
   // Agents
   // -------------------------------------------------------------------------
 
-  public listAgents(): Promise<AgentDefinition[]> {
-    return this.request<AgentDefinition[]>("GET", "/agents/");
+  public listAgents(): Promise<AgentSummary[]> {
+    return this.request<AgentSummary[]>("GET", "/agents/");
   }
 
   public getAgent(agentKeyOrId: string): Promise<AgentDefinition> {
     return this.request<AgentDefinition>("GET", `/agents/${encodeURIComponent(agentKeyOrId)}`);
   }
 
-  public runAgent(agentKeyOrId: string, inputs: Record<string, unknown>): Promise<AgentExecution> {
-    return this.request<AgentExecution>("POST", `/agents/${encodeURIComponent(agentKeyOrId)}/run`, {
-      body: { inputs },
+  public runAgent(agentKeyOrId: string, inputs: Record<string, unknown>): Promise<QueuedAgentReceipt> {
+    return this.request<QueuedAgentReceipt>("POST", `/agents/${encodeURIComponent(agentKeyOrId)}/run`, {
+      body: { task_data: inputs },
     });
   }
 
-  public updateAgentConfig(agentKeyOrId: string, config: Partial<AgentConfig>): Promise<AgentConfig> {
-    return this.request<AgentConfig>("PUT", `/agents/${encodeURIComponent(agentKeyOrId)}/config`, {
+  public listAgentExecutions(agentKeyOrId: string): Promise<AgentExecution[]> {
+    return this.request<AgentExecution[]>("GET", `/agents/${encodeURIComponent(agentKeyOrId)}/executions`);
+  }
+
+  public getAgentExecution(agentKeyOrId: string, executionId: string): Promise<AgentExecution> {
+    return this.request<AgentExecution>("GET", `/agents/${encodeURIComponent(agentKeyOrId)}/executions/${encodeURIComponent(executionId)}`);
+  }
+
+  public cancelAgentExecution(agentKeyOrId: string, executionId: string): Promise<void> {
+    return this.request<void>("POST", `/agents/${encodeURIComponent(agentKeyOrId)}/executions/${encodeURIComponent(executionId)}/cancel`);
+  }
+
+  public updateAgentConfig(agentKeyOrId: string, config: Partial<AgentConfig>): Promise<AgentDefinition> {
+    return this.request<AgentDefinition>("PUT", `/agents/${encodeURIComponent(agentKeyOrId)}/config`, {
       body: config,
     });
   }
@@ -204,8 +220,8 @@ export class JavoApiClient {
     return this.request<Task>("POST", "/tasks/", { body: payload });
   }
 
-  public executeTask(taskId: string): Promise<Task> {
-    return this.request<Task>("POST", `/tasks/${encodeURIComponent(taskId)}/execute`);
+  public executeTask(taskId: string): Promise<TaskExecutionReceipt> {
+    return this.request<TaskExecutionReceipt>("POST", `/tasks/${encodeURIComponent(taskId)}/execute`);
   }
 
   public listGoals(status?: string): Promise<Goal[]> {
