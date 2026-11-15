@@ -30,6 +30,11 @@ const dist = path.resolve(__dirname, '../apps/dashboard/dist');
     await page.route('http://127.0.0.1:8000/**', async route => {
       const url = new URL(route.request().url());
       let body = [];
+      if (url.pathname === '/api/settings/') body = { app_version: 'test', ai_daily_budget: 0, ai_monthly_budget: 0 };
+      if (url.pathname === '/api/settings/backup') {
+        return route.fulfill({ status: 503, json: { detail: 'Persistent backup key is required (fixture)' },
+          headers: { 'access-control-allow-origin': '*' } });
+      }
       const schedulePath = '/api/content/schedule/timer-fixture';
       if (url.pathname === '/api/content/schedule') body = [{ id: 'timer-fixture', asset_id: 'asset',
         account_id: 'account', caption: 'Explicit timer fixture', status: 'approved', scheduled_at: '2030-01-01T12:00:00' }];
@@ -76,6 +81,12 @@ const dist = path.resolve(__dirname, '../apps/dashboard/dist');
     await page.getByRole('button', { name: 'Cancel timer', exact: true }).click();
     await page.getByText('Timed simulation: cancelled.', { exact: false }).waitFor();
     assert.equal(timerState, 'cancelled');
+    await page.evaluate(() => { location.hash = '/settings'; });
+    await page.getByRole('heading', { name: 'System Settings', exact: true }).waitFor();
+    await page.getByText('Daily budget: $0.00', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Create encrypted database snapshot', exact: true }).click();
+    await page.getByText('Persistent backup key is required (fixture)', { exact: true }).waitFor();
+    assert.equal(await page.getByText('Snapshot saved', { exact: true }).count(), 0);
     await page.evaluate(() => { location.hash = '/workflows'; });
     await page.getByRole('textbox', { name: 'Workflow name', exact: true }).waitFor();
     await page.evaluate(() => { location.hash = '/analytics'; });

@@ -36,6 +36,7 @@ with tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
         command = ([str(Path(bundled).resolve()), "--port", str(port)] if bundled else
                    [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)])
         backend = subprocess.Popen(command, cwd=data, env=env, stdout=log, stderr=log)
+        failed = True
         try:
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline:
@@ -51,10 +52,19 @@ with tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
             result = subprocess.run(["node", str(repo / "scripts/dashboard-smoke.cjs")], env=env, timeout=90)
             if result.returncode:
                 sys.exit(result.returncode)
+            failed = False
         finally:
-            backend.terminate()
+            if backend.poll() is None:
+                backend.terminate()
             try:
                 backend.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 backend.kill()
                 backend.wait()
+            if failed:
+                log.flush()
+                tail = (data / "runtime.log").read_text(encoding="utf-8", errors="replace")[-6000:]
+                for key, value in env.items():
+                    if any(marker in key.upper() for marker in ("TOKEN", "KEY", "SECRET")) and len(value) > 8:
+                        tail = tail.replace(value, "[REDACTED]")
+                print("ISOLATED_RUNTIME_FAILURE_LOG:\n" + tail, file=sys.stderr)

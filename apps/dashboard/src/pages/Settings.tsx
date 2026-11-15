@@ -1,19 +1,27 @@
-import React, { useState } from 'react';
-import { Sun, Moon, Cpu, Database, Download, Info } from 'lucide-react';
-import { Card, Button, Badge } from '@javo/design-system';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest, ApiError } from '../api/client';
+import { Sun, Moon, Database, Download, Info } from 'lucide-react';
+import { Card, Button } from '@javo/design-system';
 import { useAppStore } from '../store/useAppStore';
 
 export const Settings: React.FC = () => {
   const { theme, setTheme, addToast } = useAppStore();
-  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
-  const [defaultLocalModel, setDefaultLocalModel] = useState('qwen2.5:14b');
-  const [dailyBudget, setDailyBudget] = useState('10.00');
-  const [geminiKey, setGeminiKey] = useState('••••••••••••••••••••');
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    addToast('Settings Saved', 'AI Router and local runtime configuration updated.', 'success');
-  };
+  const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: () => apiRequest<{ app_version: string; ai_daily_budget: number; ai_monthly_budget: number }>('/api/settings/'), retry: false });
+  const providers = useQuery({ queryKey: ['runtime-providers'], queryFn: () => apiRequest<{ name: string; model: string; enabled: boolean; has_api_key: boolean }[]>('/api/settings/ai-providers'), retry: false });
+  const budget = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? '$' + value.toFixed(2) : 'Unavailable';
+  const [backingUp, setBackingUp] = React.useState(false);
+  async function snapshot() {
+    setBackingUp(true);
+    try {
+      const result = await apiRequest<{ filename: string; encrypted: boolean; size_bytes: number }>('/api/settings/backup', { method: 'POST' });
+      if (!result.encrypted || result.size_bytes <= 0) throw new Error('Encrypted snapshot was not confirmed');
+      addToast('Snapshot saved', result.filename, 'success');
+    } catch (failure) {
+      const detail = failure instanceof ApiError ? (failure.detail as { detail?: unknown })?.detail : null;
+      addToast('Snapshot failed', typeof detail === 'string' ? detail : 'Runtime did not confirm an encrypted backup.', 'error');
+    } finally { setBackingUp(false); }
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -65,54 +73,17 @@ export const Settings: React.FC = () => {
         </div>
       </Card>
 
-      {/* AI Providers */}
       <Card variant="default">
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-[#00E5FF]" /> AI Providers & Budget Cap
-            </h2>
-            <Badge status="active" size="sm">Local First</Badge>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium mb-1">Ollama Endpoint</label>
-              <input
-                value={ollamaUrl}
-                onChange={(e) => setOllamaUrl(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Default Local Model</label>
-              <input
-                value={defaultLocalModel}
-                onChange={(e) => setDefaultLocalModel(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Gemini API Key (Encrypted)</label>
-              <input
-                type="password"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Daily Cloud Spend Cap ($ USD)</label>
-              <input
-                value={dailyBudget}
-                onChange={(e) => setDailyBudget(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button type="submit">Save Provider Config</Button>
-          </div>
-        </form>
+        <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">AI Providers & Configured Budgets</h2>
+        {(settings.isError || providers.isError) && <p role="alert">Runtime settings unavailable. No example values are substituted.</p>}
+        <p>Daily budget: {budget(settings.data?.ai_daily_budget)}</p>
+        <p>Monthly budget: {budget(settings.data?.ai_monthly_budget)}</p>
+        <p>Provider changes are not available in this build.</p>
+        {providers.data?.map(provider => <div key={provider.name} className="border-b border-slate-500 py-3">
+          <h3>{provider.name}</h3>
+          <p>Configured model: {provider.model}</p>
+          <p>{provider.enabled ? 'Enabled' : 'Disabled'}. API key: {provider.has_api_key ? 'Configured' : 'Not configured'}. Connection not tested here.</p>
+        </div>)}
       </Card>
 
       {/* Backup & About */}
@@ -125,15 +96,16 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-            Export SQLite memory, workflows, and encrypted vault keys as a portable `.javobak` bundle.
+            Create an encrypted database snapshot on the runtime computer. A persistent backup encryption key must be configured and retained separately. Media folders and vault keys are not included.
           </p>
           <Button
             size="sm"
             variant="secondary"
             leftIcon={<Download className="h-4 w-4" />}
-            onClick={() => addToast('Backup Exported', 'Saved javo-backup-2026-11-12.javobak.', 'success')}
+            disabled={backingUp}
+            onClick={() => { void snapshot(); }}
           >
-            Export Snapshot
+            Create encrypted database snapshot
           </Button>
         </Card>
 
@@ -148,7 +120,7 @@ export const Settings: React.FC = () => {
             Dashboard v2.4.0 • Windows Desktop Edition
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            29 Specialist Agents • FastAPI Runtime (localhost:8000)
+            Registered agent definitions; production coverage varies. • FastAPI Runtime (localhost:8000)
           </p>
         </Card>
       </div>
