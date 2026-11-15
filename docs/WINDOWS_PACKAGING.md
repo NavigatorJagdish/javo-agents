@@ -50,3 +50,18 @@ Current environment cannot complete the frozen build: PyInstaller is unavailable
 from its configured package index, Electron binary download previously failed
 DNS, and the minimal asyncio diagnostic currently hangs before app import.
 No tested installer is claimed.
+
+## Later CI verification — 15 November 2026
+
+At source commit 36e4a171727974c3c3c4344a1f156e26f6f07585, Windows
+[run 43683631252](https://github.com/NavigatorJagdish/javo-agents/actions/runs/43683631252)
+passed frozen backend/browser content flow, 17 desktop tests, packaged Electron
+controls/restart/quit, NSIS and portable compilation, and NSIS install/uninstall/
+reinstall with a separately retained QA profile. The app test excluded Python
+from the child PATH. This supersedes earlier inability to test those paths.
+
+The runner still has developer tooling installed, and QA profile preservation
+does not prove all default-profile migrations or every clean-PC installation.
+Portable wrapper execution, signing/SmartScreen, upgrade rollback and complete
+feature/release acceptance remain pending. Build outputs are unsigned
+development packages. This workflow does not publish or retain binaries.

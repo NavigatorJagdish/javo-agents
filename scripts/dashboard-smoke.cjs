@@ -50,6 +50,33 @@ const assert = require('node:assert/strict');
     await page.getByRole('textbox', { name: 'Workflow name', exact: true }).waitFor();
     await page.evaluate(() => { location.hash = '/analytics'; });
     await page.getByRole('heading', { name: 'Cross-Platform Analytics', exact: true }).waitFor();
+    await page.evaluate(() => { location.hash = '/settings'; });
+    await page.getByRole('heading', { name: 'System Settings', exact: true }).waitFor();
+    await page.getByLabel('ollama model', { exact: true }).fill('owner-smoke-model');
+    await page.getByRole('button', { name: 'Save ollama', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'Saved encrypted provider configuration' }).waitFor();
+    const fakeKey = 'synthetic-browser-key-not-a-real-provider-secret';
+    await page.getByLabel('gemini replacement API key', { exact: true }).fill(fakeKey);
+    await page.getByRole('button', { name: 'Save gemini', exact: true }).click();
+    await page.getByRole('button', { name: 'Remove gemini credentials', exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('input[type="password"]')?.value === '');
+    const response = await page.request.get(new URL('/api/settings/ai-providers', process.env.JAVO_SMOKE_URL).href, {
+      headers: { Authorization: 'Bearer ' + process.env.JAVO_OWNER_ACCESS_TOKEN },
+    });
+    assert.equal(response.status(), 200);
+    assert(!(await response.text()).includes(fakeKey), 'Provider metadata leaked credential');
+    const fs = require('node:fs');
+    assert(!fs.readFileSync(process.env.JAVO_PROVIDER_CONFIG_PATH).includes(Buffer.from(fakeKey)));
+    await page.reload();
+    await page.getByLabel('Owner access token').fill(process.env.JAVO_OWNER_ACCESS_TOKEN);
+    await page.getByRole('button', { name: 'Connect / retry' }).click();
+    await page.getByLabel('ollama model', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('ollama model', { exact: true }).inputValue(), 'owner-smoke-model');
+    assert.equal(await page.getByLabel('gemini replacement API key', { exact: true }).inputValue(), '');
+    await page.getByRole('button', { name: 'Remove gemini credentials', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'Saved credentials removed' }).waitFor();
+    assert.equal(await page.getByLabel('Enable gemini', { exact: true }).isChecked(), false);
+    console.log('PROVIDER_ENCRYPTED_SAVE_RELOAD_REDACTION_REMOVE_OK');
     assert.deepEqual(errors, [], 'Browser JavaScript errors');
     console.log('DASHBOARD_BROWSER_FLOW_OK');
   } finally { await browser.close(); }

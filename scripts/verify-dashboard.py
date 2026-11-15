@@ -24,6 +24,8 @@ with tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
         "JAVO_OWNER_ACCESS_TOKEN": secrets.token_urlsafe(32),
         "JAVO_DASHBOARD_DIST": str(repo / "apps/dashboard/dist"),
         "JAVO_CONTROL_STATE_PATH": str(data / "control.json"),
+        "JAVO_PROVIDER_CONFIG_PATH": str(data / "providers.enc"),
+        "JAVO_ENCRYPTION_KEY": secrets.token_urlsafe(48),
         "JAVO_DATABASE_URL": "sqlite+aiosqlite:///" + str(data / "runtime.db"),
         "JAVO_SCHEDULER_DB_URL": "sqlite:///" + str(data / "scheduler.db"),
         "JAVO_SMOKE_CONTENT": str(incoming),

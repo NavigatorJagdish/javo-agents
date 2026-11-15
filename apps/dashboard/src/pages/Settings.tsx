@@ -1,5 +1,6 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ProviderEditor, type ProviderInfo } from '../components/ProviderEditor';
 import { apiRequest, ApiError } from '../api/client';
 import { Sun, Moon, Database, Download, Info } from 'lucide-react';
 import { Card, Button } from '@javo/design-system';
@@ -7,8 +8,13 @@ import { useAppStore } from '../store/useAppStore';
 
 export const Settings: React.FC = () => {
   const { theme, setTheme, addToast } = useAppStore();
-  const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: () => apiRequest<{ app_version: string; ai_daily_budget: number; ai_monthly_budget: number }>('/api/settings/'), retry: false });
-  const providers = useQuery({ queryKey: ['runtime-providers'], queryFn: () => apiRequest<{ name: string; model: string; enabled: boolean; has_api_key: boolean }[]>('/api/settings/ai-providers'), retry: false });
+  const qc = useQueryClient();
+  const [defaultProvider, setDefaultProvider] = React.useState<string | null>(null);
+  const [savingDefaults, setSavingDefaults] = React.useState(false);
+  const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: () => apiRequest<{ app_version: string; default_ai_provider: string; ai_daily_budget: number; ai_monthly_budget: number }>('/api/settings/'), retry: false });
+  const providers = useQuery({ queryKey: ['runtime-providers'], queryFn: () => apiRequest<ProviderInfo[]>('/api/settings/ai-providers'), retry: false });
+  const storage = useQuery({ queryKey: ['provider-storage'], queryFn: () => apiRequest<{ available: boolean; protection: string }>('/api/settings/provider-storage'), retry: false });
+  async function refreshProviders() { await qc.invalidateQueries({ queryKey: ['runtime-providers'] }); }
   const budget = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? '$' + value.toFixed(2) : 'Unavailable';
   const [backingUp, setBackingUp] = React.useState(false);
   async function snapshot() {
@@ -75,15 +81,27 @@ export const Settings: React.FC = () => {
 
       <Card variant="default">
         <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">AI Providers & Configured Budgets</h2>
-        {(settings.isError || providers.isError) && <p role="alert">Runtime settings unavailable. No example values are substituted.</p>}
+        {(settings.isError || providers.isError || storage.isError) && <p role="alert">Runtime settings unavailable. No example values are substituted.</p>}
         <p>Daily budget: {budget(settings.data?.ai_daily_budget)}</p>
         <p>Monthly budget: {budget(settings.data?.ai_monthly_budget)}</p>
-        <p>Provider changes are not available in this build.</p>
-        {providers.data?.map(provider => <div key={provider.name} className="border-b border-slate-500 py-3">
-          <h3>{provider.name}</h3>
-          <p>Configured model: {provider.model}</p>
-          <p>{provider.enabled ? 'Enabled' : 'Disabled'}. API key: {provider.has_api_key ? 'Configured' : 'Not configured'}. Connection not tested here.</p>
-        </div>)}
+        <p>Saving provider settings does not make an AI request. Paid budget increases remain unavailable until durable spending controls are ready.</p>
+        {!storage.data?.available && <p role="status">Encrypted provider storage is unavailable or locked. Configure a persistent encryption key on this runtime or recover its Windows user profile.</p>}
+        <p>Storage protection: {storage.data?.protection ?? 'Unavailable'}</p>
+        <label className="block">Default AI provider
+          <select className="rounded border border-slate-400 bg-white dark:bg-slate-900 p-2" value={defaultProvider ?? settings.data?.default_ai_provider ?? 'ollama'} disabled={!storage.data?.available || savingDefaults} onChange={event => setDefaultProvider(event.target.value)}>
+            <option value="ollama">ollama</option><option value="gemini">gemini</option><option value="openai">openai</option>
+          </select>
+        </label>
+        <Button disabled={!storage.data?.available || savingDefaults || defaultProvider === null} onClick={async () => {
+          setSavingDefaults(true);
+          try {
+            await apiRequest('/api/settings/', { method: 'PUT', body: { default_ai_provider: defaultProvider } });
+            await qc.invalidateQueries({ queryKey: ['runtime-settings'] }); setDefaultProvider(null);
+            addToast('AI defaults saved', 'The selected default provider is persisted.', 'success');
+          } catch { addToast('AI defaults not saved', 'Runtime did not confirm the change.', 'error'); }
+          finally { setSavingDefaults(false); }
+        }}>Save AI default</Button>
+        {providers.data?.map(provider => <ProviderEditor key={provider.name} provider={provider} available={storage.data?.available === true} onSaved={refreshProviders} />)}
       </Card>
 
       {/* Backup & About */}

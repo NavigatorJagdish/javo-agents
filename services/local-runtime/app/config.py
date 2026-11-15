@@ -62,6 +62,7 @@ class Settings(BaseSettings):
 
     # Security
     encryption_key: Optional[str] = None
+    provider_config_path: str = "./provider-config.enc"
     token_expiry_hours: int = 24
     max_sessions_per_user: int = 5
     require_device_approval: bool = True

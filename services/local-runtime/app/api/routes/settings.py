@@ -7,18 +7,18 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_session
 from app.services.backup_service import BackupService
+from app.core.provider_store import VaultUnavailable
+from app.services import provider_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 # Runtime mutable overrides layered on top of Settings
-_RUNTIME_OVERRIDES: dict[str, Any] = {}
-_AI_PROVIDER_CONFIGS: dict[str, dict[str, Any]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +43,7 @@ class SettingsResponse(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     log_level: Optional[str] = None
     default_ai_provider: Optional[str] = None
     ai_daily_budget: Optional[float] = Field(default=None, ge=0.0)
@@ -63,10 +64,11 @@ class AIProviderInfo(BaseModel):
 
 
 class AIProviderUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     enabled: Optional[bool] = None
     model: Optional[str] = None
     base_url: Optional[str] = None
-    api_key: Optional[str] = None
+    api_key: Optional[SecretStr] = None
 
 
 class BackupInfo(BaseModel):
@@ -109,35 +111,12 @@ def _effective_settings() -> SettingsResponse:
         "upload_dir": s.upload_dir,
         "backup_dir": s.backup_dir,
     }
-    data.update(_RUNTIME_OVERRIDES)
+    data.update(provider_settings.effective()["settings"])
     return SettingsResponse(**data)
 
 
 def _init_providers() -> dict[str, dict[str, Any]]:
-    if not _AI_PROVIDER_CONFIGS:
-        s = get_settings()
-        _AI_PROVIDER_CONFIGS["ollama"] = {
-            "name": "ollama",
-            "enabled": True,
-            "model": s.ollama_default_model,
-            "base_url": s.ollama_base_url,
-            "has_api_key": False,
-        }
-        _AI_PROVIDER_CONFIGS["gemini"] = {
-            "name": "gemini",
-            "enabled": bool(s.gemini_api_key),
-            "model": s.gemini_model,
-            "base_url": None,
-            "has_api_key": bool(s.gemini_api_key),
-        }
-        _AI_PROVIDER_CONFIGS["openai"] = {
-            "name": "openai",
-            "enabled": bool(s.openai_api_key),
-            "model": s.openai_model,
-            "base_url": s.openai_base_url,
-            "has_api_key": bool(s.openai_api_key),
-        }
-    return _AI_PROVIDER_CONFIGS
+    return {cfg["name"]: cfg for cfg in provider_settings.metadata()}
 
 
 def _resolve_sqlite_path() -> Optional[Path]:
@@ -154,31 +133,70 @@ def _resolve_sqlite_path() -> Optional[Path]:
 @router.get("/", response_model=SettingsResponse)
 async def get_all_settings() -> SettingsResponse:
     """Return effective application settings (sensitive keys excluded)."""
-    return _effective_settings()
+    try:
+        return _effective_settings()
+    except VaultUnavailable as error:
+        raise HTTPException(503, str(error)) from None
 
 
 @router.put("/", response_model=SettingsResponse)
-async def update_settings(body: SettingsUpdate) -> SettingsResponse:
-    """Do not report budget/resource configuration that the runtime has not applied."""
-    raise HTTPException(503, "Settings changes are unavailable until durable configuration is connected; no settings were changed")
+def update_settings(body: SettingsUpdate) -> SettingsResponse:
+    try:
+        provider_settings.update_ai_settings(body.model_dump(exclude_unset=True, exclude_none=True))
+        return _effective_settings()
+    except VaultUnavailable as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
 
 
 @router.get("/ai-providers", response_model=list[AIProviderInfo])
 async def list_ai_providers() -> list[AIProviderInfo]:
     """List configured AI providers and their active models."""
-    providers = _init_providers()
-    return [AIProviderInfo(**cfg) for cfg in providers.values()]
+    try:
+        return [AIProviderInfo(**cfg) for cfg in provider_settings.metadata()]
+    except VaultUnavailable as error:
+        raise HTTPException(503, str(error)) from None
 
 
 @router.put("/ai-providers/{name}", response_model=AIProviderInfo)
-async def update_ai_provider(name: str, body: AIProviderUpdate) -> AIProviderInfo:
+def update_ai_provider(name: str, body: AIProviderUpdate) -> AIProviderInfo:
     """Update configuration for an AI provider (ollama, gemini, openai)."""
-    providers = _init_providers()
     key = name.lower()
-    if key not in providers:
+    if key not in provider_settings.PROVIDERS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"AI provider '{name}' not found")
 
-    raise HTTPException(503, "Provider changes are unavailable until encrypted persistence and routing are connected; no credentials were saved")
+    patch = body.model_dump(exclude_unset=True)
+    if body.api_key is not None:
+        patch["api_key"] = body.api_key.get_secret_value()
+    try:
+        providers = provider_settings.update_provider(key, patch)
+        return AIProviderInfo(**next(cfg for cfg in providers if cfg["name"] == key))
+    except VaultUnavailable as error:
+        raise HTTPException(503, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+
+
+@router.delete("/ai-providers/{name}/credentials", response_model=AIProviderInfo)
+def remove_provider_credentials(name: str) -> AIProviderInfo:
+    if name not in provider_settings.PROVIDERS:
+        raise HTTPException(404, "AI provider not found")
+    try:
+        providers = provider_settings.remove_credentials(name)
+        return AIProviderInfo(**next(cfg for cfg in providers if cfg["name"] == name))
+    except VaultUnavailable as error:
+        raise HTTPException(503, str(error)) from None
+
+
+@router.get("/provider-storage")
+def provider_storage_status() -> dict:
+    storage = provider_settings.vault()
+    try:
+        storage.read()
+        return {"available": storage.protection != "unavailable", "protection": storage.protection}
+    except VaultUnavailable:
+        return {"available": False, "protection": "locked"}
 
 
 @router.post("/backup", response_model=BackupInfo, status_code=status.HTTP_201_CREATED)

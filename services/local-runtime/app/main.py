@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -170,6 +172,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @application.exception_handler(RequestValidationError)
+    async def private_validation_error(request, error):
+        # Pydantic input/context can otherwise echo API keys or private content.
+        details = [{"loc": item["loc"], "type": item["type"], "msg": item["msg"]}
+                   for item in error.errors()]
+        return JSONResponse(status_code=422, content={"detail": details})
 
     # Both path forms use exactly the same handlers and authentication boundary.
     application.include_router(api_router, dependencies=[Depends(require_local_owner)])

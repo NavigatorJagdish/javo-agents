@@ -119,16 +119,22 @@ def test_live_restore_and_agent_cannot_report_false_success(tmp_path):
     assert result["status"] == "blocked" and result["verified_checksum"] is False
 
 
-def test_settings_mutations_never_claim_unapplied_budgets_or_credentials():
+def test_settings_mutations_never_claim_unapplied_budgets_or_credentials(monkeypatch):
+    from app.core.provider_store import VaultUnavailable
+    from app.services import provider_settings
+
+    def unavailable(*args, **kwargs):
+        raise VaultUnavailable("Test storage is unavailable")
+
+    monkeypatch.setattr(provider_settings, "update_ai_settings", unavailable)
+    monkeypatch.setattr(provider_settings, "update_provider", unavailable)
     with pytest.raises(HTTPException) as error:
-        finish(routes.update_settings(routes.SettingsUpdate(ai_daily_budget=5)))
+        routes.update_settings(routes.SettingsUpdate(ai_daily_budget=0))
     assert error.value.status_code == 503
     before = finish(routes.list_ai_providers())
     with pytest.raises(HTTPException) as error:
-        finish(
-            routes.update_ai_provider(
-                "gemini", routes.AIProviderUpdate(api_key="synthetic-unsaved-key")
-            )
+        routes.update_ai_provider(
+            "gemini", routes.AIProviderUpdate(api_key="synthetic-unsaved-key")
         )
     assert error.value.status_code == 503
     assert finish(routes.list_ai_providers()) == before

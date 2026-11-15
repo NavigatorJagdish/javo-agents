@@ -14,6 +14,8 @@ def client(tmp_path, monkeypatch):
     token = secrets.token_urlsafe(32)
     monkeypatch.setenv("JAVO_OWNER_ACCESS_TOKEN", token)
     monkeypatch.setenv("JAVO_CONTROL_STATE_PATH", str(tmp_path / "control.json"))
+    monkeypatch.setenv("JAVO_PROVIDER_CONFIG_PATH", str(tmp_path / "providers.enc"))
+    monkeypatch.setenv("JAVO_ENCRYPTION_KEY", "synthetic-owner-encryption-key-for-tests-" * 2)
     import app.core.resource_manager as resources
     resources._resource_manager = None
     db_path = tmp_path / "integration_test.db"
@@ -243,3 +245,37 @@ def test_armed_timer_worker_produces_saved_receipt_at_due_time(client, tmp_path)
         assert result.status_code == 404
         time.sleep(0.1)
     pytest.fail("Production timed worker did not persist a simulation receipt by deadline")
+
+
+def test_provider_save_redaction_reload_and_removal(client, tmp_path):
+    secret = "synthetic-owner-api-value-not-a-real-provider-key"
+    saved = client.put("/api/settings/ai-providers/gemini", json={
+        "api_key": secret, "model": "owner-chosen-model", "enabled": True})
+    assert saved.status_code == 200 and saved.json()["has_api_key"] is True
+    assert secret not in saved.text
+    assert secret.encode() not in (tmp_path / "providers.enc").read_bytes()
+    import app.config as config
+    config._settings = None
+    providers = client.get("/api/settings/ai-providers")
+    assert providers.status_code == 200 and secret not in providers.text
+    gemini = next(item for item in providers.json() if item["name"] == "gemini")
+    assert gemini["model"] == "owner-chosen-model" and gemini["has_api_key"] is True
+    removed = client.delete("/api/settings/ai-providers/gemini/credentials")
+    assert removed.status_code == 200 and removed.json()["has_api_key"] is False
+    assert removed.json()["enabled"] is False
+
+
+def test_provider_validation_does_not_echo_secret_input(client):
+    secret = "synthetic-private-input-must-not-appear"
+    invalid = client.put("/api/settings/ai-providers/gemini", json={"api_key": [secret]})
+    assert invalid.status_code == 422 and secret not in invalid.text
+    invalid = client.put("/api/settings/ai-providers/openai", json={"base_url": "http://example.com/", "api_key": secret})
+    assert invalid.status_code == 422 and secret not in invalid.text
+
+
+def test_ai_defaults_apply_without_enabling_paid_budget(client):
+    saved = client.put("/api/settings/", json={"default_ai_provider": "ollama", "max_tokens_per_request": 512})
+    assert saved.status_code == 200 and saved.json()["max_tokens_per_request"] == 512
+    assert client.get("/api/settings/").json()["max_tokens_per_request"] == 512
+    assert client.put("/api/settings/", json={"ai_daily_budget": 5}).status_code == 422
+    assert client.get("/api/settings/").json()["ai_daily_budget"] == 0

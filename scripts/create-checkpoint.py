@@ -37,7 +37,7 @@ def main() -> None:
             raise ValueError(f"Unsafe source selection: {name}")
         if rel.name.startswith(".env") and rel.name not in {".env.example", ".env.sample"}:
             raise ValueError(f"Environment file cannot enter source backup: {name}")
-        if rel.suffix.lower() in {".db", ".sqlite", ".sqlite3", ".pem", ".key", ".p12", ".keystore"}:
+        if rel.suffix.lower() in {".db", ".sqlite", ".sqlite3", ".pem", ".key", ".p12", ".keystore", ".enc", ".dpapi"}:
             raise ValueError(f"Private data cannot enter source backup: {name}")
         if not source.is_file():
             # Tracked deletions are represented by the working tree and patch.

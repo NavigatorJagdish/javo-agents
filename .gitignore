@@ -60,3 +60,9 @@ Thumbs.db
 # Local runtime control state (not source)
 runtime-control.json
 runtime-control.json.*.tmp
+
+# Encrypted local provider configuration and OS-wrapped keys
+provider-config.enc
+provider-config.enc.*
+*.enc
+*.dpapi
