@@ -40,6 +40,8 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Javo Agents
   uninstallDisplayName: Javo Agents
+  runAfterFinish: false
+  deleteAppDataOnUninstall: false
 portable:
   artifactName: "JavoAgents-Portable-${version}-${arch}.${ext}"
 publish: null

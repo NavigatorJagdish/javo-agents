@@ -8,13 +8,15 @@ const path = require('node:path');
 (async () => {
   const exe = path.resolve(process.argv[2] || 'apps/windows/release/win-unpacked/Javo Agents.exe');
   assert(fs.existsSync(exe), 'Packaged desktop executable is missing');
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'javo-packaged-'));
+  const suppliedProfile = process.env.JAVO_SMOKE_PROFILE;
+  const profile = suppliedProfile ? path.resolve(suppliedProfile)
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'javo-packaged-'));
+  fs.mkdirSync(profile, { recursive: true });
   const env = { ...process.env, JAVO_USER_DATA_DIR: profile,
     PATH: path.join(process.env.SystemRoot || 'C:/Windows', 'System32') };
   delete env.JAVO_DASHBOARD_URL;
   delete env.JAVO_PYTHON_PATH;
   let app;
-  const backendPids = [];
   try {
     for (const restart of [false, true]) {
       app = await _electron.launch({ executablePath: exe, env, timeout: 60000 });
@@ -22,7 +24,6 @@ const path = require('node:path');
       await page.getByRole('heading', { name: 'Local runtime', exact: true }).waitFor({ timeout: 30000 });
       const state = await page.evaluate(() => window.javoDesktop.getRuntimeStatus());
       assert.equal(state.running, true, state.lastError || 'Backend is not ready');
-      backendPids.push(state.pid);
       if (restart) {
         assert.equal(state.paused, true);
         assert.equal(state.emergencyStopped, true, 'Restart lost emergency-stop state');
@@ -48,9 +49,11 @@ const path = require('node:path');
   } finally {
     if (app) await app.close();
     // Only this script's fresh temporary profile is eligible for cleanup.
-    const resolved = path.resolve(profile);
-    assert.equal(path.dirname(resolved), path.resolve(os.tmpdir()));
-    assert(path.basename(resolved).startsWith('javo-packaged-'));
-    fs.rmSync(resolved, { recursive: true, force: true });
+    if (!suppliedProfile) {
+      const resolved = path.resolve(profile);
+      assert.equal(path.dirname(resolved), path.resolve(os.tmpdir()));
+      assert(path.basename(resolved).startsWith('javo-packaged-'));
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

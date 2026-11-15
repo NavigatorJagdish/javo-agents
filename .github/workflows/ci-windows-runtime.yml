@@ -66,3 +66,15 @@ jobs:
           npx electron-builder --win --dir --publish never --config electron-builder.yml
       - name: Verify packaged startup, controls, restart and quit
         run: node scripts/verify-packaged-desktop.cjs
+      - name: Build unsigned NSIS and portable development packages
+        working-directory: apps/windows
+        run: npm run dist:win
+      - name: Verify NSIS installation, uninstall and reinstallation
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath "apps/windows/release" -File -Filter "JavoAgents-*-x64.exe" | Where-Object Name -NotLike "*Portable*")
+          if ($setups.Count -ne 1) { throw "Expected exactly one NSIS setup package." }
+          ./scripts/verify-windows-installer.ps1 -Installer $setups[0].FullName
+      - name: Report development package hashes
+        shell: pwsh
+        run: Get-ChildItem -LiteralPath "apps/windows/release" -File -Filter "*.exe" | Get-FileHash -Algorithm SHA256 | Format-Table -AutoSize
