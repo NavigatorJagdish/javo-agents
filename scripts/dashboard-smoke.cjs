@@ -65,6 +65,7 @@ const assert = require('node:assert/strict');
     });
     assert.equal(response.status(), 200);
     assert(!(await response.text()).includes(fakeKey), 'Provider metadata leaked credential');
+    assert(!(await page.evaluate(() => JSON.stringify(localStorage))).includes(fakeKey), 'Browser persisted a plaintext key');
     const fs = require('node:fs');
     assert(!fs.readFileSync(process.env.JAVO_PROVIDER_CONFIG_PATH).includes(Buffer.from(fakeKey)));
     await page.reload();
