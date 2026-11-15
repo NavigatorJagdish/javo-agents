@@ -39,6 +39,13 @@ function resolveIconPath(): string {
   return candidates.find((p) => fs.existsSync(p)) ?? "";
 }
 
+// Explicit profiles permit isolated QA and portable user-owned data locations.
+if (process.env.JAVO_USER_DATA_DIR) {
+  const profileDir = path.resolve(process.env.JAVO_USER_DATA_DIR);
+  fs.mkdirSync(profileDir, { recursive: true });
+  app.setPath("userData", profileDir);
+}
+
 const runtimeManager = new LocalRuntimeManager(
   resolveRuntimeDir(), path.join(app.getPath("userData"), "runtime"),
   app.isPackaged ? path.join(process.resourcesPath, "runtime", "javo-runtime.exe") : undefined

@@ -1,0 +1,67 @@
+name: CI - Windows bundled runtime
+
+on:
+  pull_request:
+    paths:
+      - "services/local-runtime/**"
+      - "apps/windows/**"
+      - "apps/dashboard/**"
+      - "scripts/**"
+      - ".github/workflows/ci-windows-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundled-runtime-and-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/local-runtime/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install runtime build dependencies
+        run: python -m pip install -r services/local-runtime/requirements.txt "apscheduler<4" "pyinstaller>=6.11,<7" pillow
+      - name: Build standalone runtime and verify bundled imports
+        run: python scripts/build-desktop-runtime.py
+      - name: Install dashboard dependencies and build
+        working-directory: apps/dashboard
+        run: |
+          npm install --ignore-scripts --package-lock=false --no-audit --no-fund
+          npm run build
+      - name: Install desktop dependencies and verify lifecycle contracts
+        working-directory: apps/windows
+        run: |
+          npm install --ignore-scripts --package-lock=false --no-audit --no-fund
+          npm test
+      - name: Install browser test driver
+        shell: pwsh
+        run: |
+          $driverDir = Join-Path $env:RUNNER_TEMP "javo-test-driver"
+          npm install --prefix $driverDir playwright-core --ignore-scripts --no-audit --no-fund
+          "JAVO_PLAYWRIGHT_MODULE=$driverDir/node_modules/playwright-core" >> $env:GITHUB_ENV
+      - name: Verify content browser flow against the frozen backend
+        shell: pwsh
+        run: |
+          $env:JAVO_RUNTIME_EXE = (Resolve-Path "apps/windows/build/runtime/javo-runtime/javo-runtime.exe").Path
+          python scripts/verify-dashboard.py
+      - name: Download Electron and package unsigned development directory
+        working-directory: apps/windows
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_SKIP_BINARY_DOWNLOAD
+          node node_modules/electron/install.js
+          npm run verify:package
+          npx electron-builder --win --dir --publish never --config electron-builder.yml
+      - name: Verify packaged startup, controls, restart and quit
+        run: node scripts/verify-packaged-desktop.cjs

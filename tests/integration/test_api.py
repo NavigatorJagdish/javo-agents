@@ -209,3 +209,37 @@ def test_explicit_timer_approval_arm_and_cancel(client, tmp_path):
     assert client.get("/api/content/timers").json()[0]["simulation_only"] is True
     assert client.delete(prefix + "/timer").json()["state"] == "cancelled"
     assert client.get("/api/content/timers").json()[0]["state"] == "cancelled"
+
+
+def test_armed_timer_worker_produces_saved_receipt_at_due_time(client, tmp_path):
+    """Exercise the production async worker with a real wall-clock timer and HTTP."""
+    import time
+    from datetime import datetime, timedelta, timezone
+
+    assert client.post("/security/resume").status_code == 200
+    incoming = tmp_path / "clock-content"
+    incoming.mkdir()
+    (incoming / "clock.txt").write_text("Real worker simulation fixture", encoding="utf-8")
+    imported = client.post("/api/content/scan-folder", json={"folder_path": str(incoming)})
+    asset = imported.json()["imported_assets"][0]
+    account = client.post("/api/accounts/", json={"platform": "other", "username": "clock simulation"}).json()
+    due = datetime.now(timezone.utc) + timedelta(seconds=5)
+    schedule = client.post("/api/content/schedule", json={"asset_id": asset["id"],
+        "account_id": account["id"], "scheduled_at": due.isoformat()})
+    assert schedule.status_code == 201
+    prefix = "/api/content/schedule/" + schedule.json()["id"]
+    fp = client.get(prefix + "/preview").json()["fingerprint"]
+    assert client.post(prefix + "/approve", json={"mode": "mock", "fingerprint": fp}).status_code == 200
+    assert client.post(prefix + "/timer", json={"fingerprint": fp}).status_code == 200
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        result = client.get(prefix + "/receipt")
+        if result.status_code == 200:
+            assert datetime.now(timezone.utc) >= due
+            assert result.json()["status"] == "simulated"
+            assert client.get("/api/content/timers").json()[0]["state"] == "simulated"
+            assert client.get(prefix + "/receipt").json() == result.json()
+            return
+        assert result.status_code == 404
+        time.sleep(0.1)
+    pytest.fail("Production timed worker did not persist a simulation receipt by deadline")

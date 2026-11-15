@@ -32,7 +32,10 @@ with tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
     for key in ["CONTENT_ROOT", "UPLOAD_DIR", "BACKUP_DIR", "THUMBNAIL_DIR"]:
         env["JAVO_" + key] = str(data / key.lower())
     with (data / "runtime.log").open("w", encoding="utf-8") as log:
-        backend = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)], cwd=data, env=env, stdout=log, stderr=log)
+        bundled = os.environ.get("JAVO_RUNTIME_EXE")
+        command = ([str(Path(bundled).resolve()), "--port", str(port)] if bundled else
+                   [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)])
+        backend = subprocess.Popen(command, cwd=data, env=env, stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline:
