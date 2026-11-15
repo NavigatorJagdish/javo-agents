@@ -139,7 +139,7 @@ def update_ai_settings(patch: dict) -> dict:
     for name in ("ai_daily_budget", "ai_monthly_budget"):
         if name in patch and patch[name] != 0:
             raise ValueError(
-                "Paid budget changes require the durable spending ledger; keep budgets zero"
+                "Paid budget changes require verified prices and explicit spending authorization; keep budgets zero"
             )
     vault().update(lambda document: document["settings"].update(patch))
     return effective()["settings"]

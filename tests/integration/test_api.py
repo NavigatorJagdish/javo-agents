@@ -15,6 +15,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("JAVO_OWNER_ACCESS_TOKEN", token)
     monkeypatch.setenv("JAVO_CONTROL_STATE_PATH", str(tmp_path / "control.json"))
     monkeypatch.setenv("JAVO_PROVIDER_CONFIG_PATH", str(tmp_path / "providers.enc"))
+    monkeypatch.setenv("JAVO_USAGE_LEDGER_PATH", str(tmp_path / "usage.sqlite"))
     monkeypatch.setenv("JAVO_ENCRYPTION_KEY", "synthetic-owner-encryption-key-for-tests-" * 2)
     import app.core.resource_manager as resources
     resources._resource_manager = None

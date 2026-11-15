@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.database import get_session
 from app.services.backup_service import BackupService
 from app.core.provider_store import VaultUnavailable
+from app.core.usage_ledger import LedgerUnavailable
 from app.services import provider_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -157,6 +158,16 @@ async def list_ai_providers() -> list[AIProviderInfo]:
         return [AIProviderInfo(**cfg) for cfg in provider_settings.metadata()]
     except VaultUnavailable as error:
         raise HTTPException(503, str(error)) from None
+
+
+@router.get("/ai-usage")
+def ai_usage_summary() -> dict:
+    """Persisted counters only; reading this endpoint makes no provider calls."""
+    from app.core.ai_router import get_ai_router
+    try:
+        return get_ai_router().get_provider_status()["usage"]
+    except (VaultUnavailable, LedgerUnavailable):
+        raise HTTPException(503, "AI usage accounting is unavailable; no zero-usage result can be confirmed") from None
 
 
 @router.put("/ai-providers/{name}", response_model=AIProviderInfo)

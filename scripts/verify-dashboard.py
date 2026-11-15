@@ -16,7 +16,7 @@ import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--scenario', choices=['dashboard', 'goals'], default='dashboard')
+parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage'], default='dashboard')
 args = parser.parse_args()
 
 
@@ -68,6 +68,7 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
         "JAVO_DASHBOARD_DIST": str(repo / "apps/dashboard/dist"),
         "JAVO_CONTROL_STATE_PATH": str(data / "control.json"),
         "JAVO_PROVIDER_CONFIG_PATH": str(data / "providers.enc"),
+        "JAVO_USAGE_LEDGER_PATH": str(data / "usage.sqlite"),
         "JAVO_ENCRYPTION_KEY": secrets.token_urlsafe(48),
         "JAVO_OLLAMA_BASE_URL": endpoint,
         "JAVO_DATABASE_URL": "sqlite+aiosqlite:///" + str(data / "runtime.db"),
@@ -77,6 +78,16 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
     })
     for key in ["CONTENT_ROOT", "UPLOAD_DIR", "BACKUP_DIR", "THUMBNAIL_DIR"]:
         env["JAVO_" + key] = str(data / key.lower())
+    if args.scenario == 'usage':
+        # This UI scenario checks persisted counters with labelled synthetic
+        # records. Router/transport accounting is tested independently.
+        sys.path.insert(0, str(repo / 'services/local-runtime'))
+        from app.core.usage_ledger import UsageLedger
+        from uuid import uuid4
+        ledger = UsageLedger(data / 'usage.sqlite')
+        request_id = str(uuid4())
+        ledger.reserve(request_id, 'ollama', 'synthetic-ui-fixture')
+        ledger.settle(request_id, prompt_tokens=3, completion_tokens=5, cost_microusd=0)
     with (data / "runtime.log").open("w", encoding="utf-8") as log:
         bundled = os.environ.get("JAVO_RUNTIME_EXE")
         command = ([str(Path(bundled).resolve()), "--port", str(port)] if bundled else
@@ -95,7 +106,7 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            scenario = 'goals-smoke.cjs' if args.scenario == 'goals' else 'dashboard-smoke.cjs'
+            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
             result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)

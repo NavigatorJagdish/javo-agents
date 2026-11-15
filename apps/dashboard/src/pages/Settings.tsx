@@ -6,6 +6,20 @@ import { Sun, Moon, Database, Download, Info } from 'lucide-react';
 import { Card, Button } from '@javo/design-system';
 import { useAppStore } from '../store/useAppStore';
 
+interface SavedUsage {
+  total_attempts: number;
+  total_requests: number;
+  total_tokens: number;
+  failed_requests: number;
+  unresolved_requests: number;
+  requests_with_unknown_token_usage: number;
+  daily_spend_usd: number;
+  monthly_spend_usd: number;
+  unresolved_reserved_usd: number;
+  coverage_since: string;
+  period_timezone: string;
+}
+
 export const Settings: React.FC = () => {
   const { theme, setTheme, addToast } = useAppStore();
   const qc = useQueryClient();
@@ -14,8 +28,9 @@ export const Settings: React.FC = () => {
   const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: () => apiRequest<{ app_version: string; default_ai_provider: string; ai_daily_budget: number; ai_monthly_budget: number }>('/api/settings/'), retry: false });
   const providers = useQuery({ queryKey: ['runtime-providers'], queryFn: () => apiRequest<ProviderInfo[]>('/api/settings/ai-providers'), retry: false });
   const storage = useQuery({ queryKey: ['provider-storage'], queryFn: () => apiRequest<{ available: boolean; protection: string }>('/api/settings/provider-storage'), retry: false });
+  const usage = useQuery({ queryKey: ['saved-ai-usage'], queryFn: () => apiRequest<SavedUsage>('/api/settings/ai-usage'), retry: false, refetchInterval: 15000 });
   async function refreshProviders() { await qc.invalidateQueries({ queryKey: ['runtime-providers'] }); }
-  const budget = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? '$' + value.toFixed(2) : 'Unavailable';
+  const budget = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value) : 'Unavailable';
   const [backingUp, setBackingUp] = React.useState(false);
   async function snapshot() {
     setBackingUp(true);
@@ -84,7 +99,7 @@ export const Settings: React.FC = () => {
         {(settings.isError || providers.isError || storage.isError) && <p role="alert">Runtime settings unavailable. No example values are substituted.</p>}
         <p>Daily budget: {budget(settings.data?.ai_daily_budget)}</p>
         <p>Monthly budget: {budget(settings.data?.ai_monthly_budget)}</p>
-        <p>Saving provider settings does not make an AI request. Paid budget increases remain unavailable until durable spending controls are ready.</p>
+        <p>Saving provider settings does not make an AI request. Cloud execution stays disabled pending verified pricing and explicit spending authorization.</p>
         {!storage.data?.available && <p role="status">Encrypted provider storage is unavailable or locked. Configure a persistent encryption key on this runtime or recover its Windows user profile.</p>}
         <p>Storage protection: {storage.data?.protection ?? 'Unavailable'}</p>
         <label className="block">Default AI provider
@@ -104,6 +119,21 @@ export const Settings: React.FC = () => {
         {providers.data?.map(provider => <ProviderEditor key={provider.name} provider={provider} available={storage.data?.available === true} onSaved={refreshProviders} />)}
       </Card>
 
+      <Card>
+        <h2 className="text-base font-semibold mb-3">Saved AI usage</h2>
+        {usage.isPending && <p role="status">Loading saved usage…</p>}
+        {usage.isError && <p role="alert">Saved usage is unavailable. Totals cannot be confirmed. <Button variant="ghost" onClick={() => void usage.refetch()}>Retry usage</Button></p>}
+        {usage.data && <div className="space-y-2 text-sm">
+          <p>Completed AI requests: {usage.data.total_requests}</p>
+          <p>Reported tokens: {usage.data.total_tokens}</p>
+          <p>Requests with unknown token counts: {usage.data.requests_with_unknown_token_usage}</p>
+          <p>Attempts: {usage.data.total_attempts} · Failed: {usage.data.failed_requests} · Unresolved: {usage.data.unresolved_requests}</p>
+          <p>Recorded API charges today: {budget(usage.data.daily_spend_usd)} · This month: {budget(usage.data.monthly_spend_usd)}</p>
+          <p>Unresolved reserved charges: {budget(usage.data.unresolved_reserved_usd)}</p>
+          <p className="text-slate-500">Saved since {new Date(usage.data.coverage_since).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. Accounting periods use {usage.data.period_timezone}. Earlier process-only counters cannot be recovered. Local hardware and electricity costs are not included.</p>
+        </div>}
+      </Card>
+
       {/* Backup & About */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card variant="status">
@@ -114,7 +144,7 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-            Create an encrypted database snapshot on the runtime computer. A persistent backup encryption key must be configured and retained separately. Media folders and vault keys are not included.
+            Create an encrypted database snapshot on the runtime computer. A persistent backup encryption key must be configured and retained separately. Usage accounting, media folders and vault keys are not included.
           </p>
           <Button
             size="sm"

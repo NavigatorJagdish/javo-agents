@@ -23,6 +23,29 @@ a venv launcher otherwise leaves the interpreter/database open. The rerun
 completed successfully with temporary-directory cleanup. Added Goals coverage
 to Windows CI, but that new CI check has not yet run on this revision.
 
+At commit `25ab3154eb683a8e3d05649d91fe7d2ea4dd9a89`, all four GitHub
+workflows passed: backend 43717423145, frontend 43717423144, security
+43717423275 and Windows 43717423140. Windows job 132821858348 also passed
+the new frozen-backend Goals browser scenario, packaged controls/restart,
+unsigned package builds and NSIS uninstall/reinstall. The new CI pass supersedes
+the preceding pending-CI statement for that exact commit only.
+
+## Durable API accounting increment — local Windows evidence
+
+Replaced process-only router counters and approximate hard-coded prices with
+persisted usage, atomic reservation/settlement and explicit unknown token usage.
+Settings and Budget Guardian read the same ledger. Cloud adapters cannot be
+enabled by positive environment budgets; verified prices and explicit spending
+authorization remain required. See AI_USAGE.md for remaining quota, paid
+activation, recovery and account/task budget work.
+
+Local full backend run:165 passed, one platform skip, one dependency warning
+(134.37s), followed by23 targeted accounting/routing/safety passes including the
+final duplicate-dispatch regression. All backend/test Ruff and Bandit -ll
+checks passed. Dashboard build passed. Chrome usage scenario completed
+USAGE_SAVED_API_COUNTERS_RELOAD_OK against actual saved synthetic records.
+This is persistence/UI evidence, not a real cloud billing or model-quality test.
+
 Current source and CI: [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 Linux full-suite, Windows standalone/browser/packaged-app and NSIS QA-profile
 install/uninstall/reinstall checks have passed. Provider configuration now

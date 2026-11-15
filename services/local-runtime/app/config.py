@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # AI Budget (Zero-Cost Default per Budget Guardian)
     ai_daily_budget: float = 0.0  # USD
     ai_monthly_budget: float = 0.0
+    usage_ledger_path: Optional[str] = None  # Defaults beside the encrypted provider configuration.
     max_tokens_per_request: int = 4096
 
     # Scheduler

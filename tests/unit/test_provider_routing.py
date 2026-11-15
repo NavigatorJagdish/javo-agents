@@ -14,6 +14,7 @@ from app.services import provider_settings as providers
 def configured(tmp_path, monkeypatch):
     settings = Settings(
         provider_config_path=str(tmp_path / "providers.enc"),
+        usage_ledger_path=str(tmp_path / "usage.sqlite"),
         encryption_key="synthetic-routing-master-key-" * 2,
     )
     monkeypatch.setattr(providers, "get_settings", lambda: settings)
@@ -65,7 +66,12 @@ async def test_gemini_key_is_in_header_never_url(configured, monkeypatch):
         "app.core.ai_router.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=httpx.MockTransport(handle)),
     )
-    await AIRouter()._call_gemini("Hello", None, None, 0.7, 50)
+    router = AIRouter()
+    # This isolates header construction through MockTransport, with no real
+    # request. Production direct adapter calls retain the paid-execution gate.
+    monkeypatch.setattr(router, '_check_budget', lambda provider: None)
+    result = await router._call_gemini("Hello", None, None, 0.7, 50)
+    assert result.cost_usd is None
 
 
 @pytest.mark.asyncio

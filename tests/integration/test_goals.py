@@ -20,6 +20,7 @@ def goal_runtime(tmp_path, monkeypatch):
         "SCHEDULER_DB_URL": f"sqlite:///{tmp_path / 'schedule.db'}",
         "CONTROL_STATE_PATH": str(tmp_path / 'control.json'),
         "PROVIDER_CONFIG_PATH": str(tmp_path / 'provider.enc'),
+        "USAGE_LEDGER_PATH": str(tmp_path / 'usage.sqlite'),
         "ENCRYPTION_KEY": secrets.token_urlsafe(48),
     }
     for key in ("CONTENT_ROOT", "UPLOAD_DIR", "BACKUP_DIR", "THUMBNAIL_DIR"):
@@ -156,3 +157,22 @@ def test_decreasing_objective_and_validation(goal_runtime):
         assert client.post(prefix + '/milestones', json={"title": "Invalid", "target_value": 0}).status_code == 422
         assert client.put(prefix, json={"title": None}).status_code == 422
         assert client.put(prefix, json={"status": "completed"}).json()['status'] == 'completed'
+
+
+def test_usage_api_auth_persistence_and_unavailable_is_not_zero(goal_runtime):
+    from app.core.usage_ledger import UsageLedger
+    from uuid import uuid4
+    factory, path = goal_runtime
+    with factory() as client:
+        assert client.get('/api/settings/ai-usage', headers={'Authorization': ''}).status_code == 401
+        assert client.get('/api/settings/ai-usage').json()['total_requests'] == 0
+        ledger = UsageLedger(path.parent/'usage.sqlite')
+        request = str(uuid4())
+        ledger.reserve(request, 'ollama', 'synthetic-api-fixture')
+        ledger.settle(request, prompt_tokens=3, completion_tokens=5, cost_microusd=0)
+        assert client.get('/api/settings/ai-usage').json()['total_tokens'] == 8
+    with factory() as client:
+        result = client.get('/api/settings/ai-usage').json()
+        assert result['total_requests'] == 1 and result['persistent'] is True
+        (path.parent/'usage.sqlite').write_bytes(b'not-a-database')
+        assert client.get('/api/settings/ai-usage').status_code == 503
