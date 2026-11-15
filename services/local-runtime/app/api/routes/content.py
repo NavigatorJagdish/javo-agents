@@ -26,7 +26,8 @@ from app.models.content import (
     ScheduleStatus,
 )
 from app.models.user import User
-from app.models.publication import PublicationAttempt
+from app.models.publication import PublicationAttempt, PublicationTimer
+from app.services.timed_dispatch import arm_timer, cancel_timer, timer_receipt
 
 router = APIRouter(prefix="/content", tags=["content"])
 
@@ -86,6 +87,10 @@ class ScheduleCreate(BaseModel):
 
 class ApprovalRequest(BaseModel):
     mode: Literal["mock", "live"] = "live"
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class TimerRequest(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -322,6 +327,24 @@ async def list_schedules(
 async def preview_schedule(schedule_id: str, session: AsyncSession = Depends(get_session)) -> dict:
     schedule, snapshot = await load_snapshot(session, schedule_id)
     return {"schedule_id": schedule.id, "status": schedule.status, "snapshot": snapshot, "fingerprint": fingerprint_payload(snapshot)}
+
+
+@router.get("/timers")
+async def list_timers(session: AsyncSession = Depends(get_session)) -> list[dict]:
+    timers = (await session.execute(select(PublicationTimer).order_by(
+        PublicationTimer.due_at.desc()).limit(200))).scalars().all()
+    return [timer_receipt(timer) for timer in timers]
+
+
+@router.post("/schedule/{schedule_id}/timer")
+async def arm_content_timer(schedule_id: str, body: TimerRequest,
+                            session: AsyncSession = Depends(get_session)) -> dict:
+    return await arm_timer(session, schedule_id, body.fingerprint)
+
+
+@router.delete("/schedule/{schedule_id}/timer")
+async def cancel_content_timer(schedule_id: str, session: AsyncSession = Depends(get_session)) -> dict:
+    return await cancel_timer(session, schedule_id)
 
 
 @router.get("/schedule/{schedule_id}/receipt")

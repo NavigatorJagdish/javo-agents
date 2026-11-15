@@ -1,4 +1,5 @@
 """Async worker lifecycle coverage; requires a functioning asyncio environment."""
+
 import asyncio
 import pytest
 from app.core.resource_manager import ResourceManager
@@ -11,8 +12,13 @@ async def test_worker_survives_factory_exception(monkeypatch, tmp_path):
     manager.resume()
     manager._max_concurrent = 1
     monkeypatch.setattr(manager, "can_accept_work", lambda: (True, "OK"))
-    def broken(): raise ValueError("factory failed")
-    async def good(): return "done"
+
+    def broken():
+        raise ValueError("factory failed")
+
+    async def good():
+        return "done"
+
     try:
         with pytest.raises(ValueError, match="factory failed"):
             await asyncio.wait_for(manager.submit_task("bad", broken), 2)
@@ -32,10 +38,14 @@ async def test_emergency_stop_cancels_running_and_queued(monkeypatch, tmp_path):
     started = asyncio.Event()
     blocked = asyncio.Event()
     ran_second = []
+
     async def first():
         started.set()
         await blocked.wait()
-    async def second(): ran_second.append(True)
+
+    async def second():
+        ran_second.append(True)
+
     try:
         one = asyncio.create_task(manager.submit_task("one", first))
         await asyncio.wait_for(started.wait(), 2)
@@ -59,13 +69,18 @@ async def test_fixed_workers_limit_active_work(monkeypatch, tmp_path):
     two_running = asyncio.Event()
     active = 0
     peak = 0
+
     async def work():
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
-        if active == 2: two_running.set()
-        try: await release.wait()
-        finally: active -= 1
+        if active == 2:
+            two_running.set()
+        try:
+            await release.wait()
+        finally:
+            active -= 1
+
     try:
         tasks = [asyncio.create_task(manager.submit_task(str(i), work)) for i in range(8)]
         await asyncio.wait_for(two_running.wait(), 2)

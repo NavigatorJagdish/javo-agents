@@ -16,6 +16,9 @@ const dist = path.resolve(__dirname, '../apps/dashboard/dist');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     const resources = [];
+    let timerState = null;
+    let approved = false;
+    const fingerprint = 'a'.repeat(64);
     await page.route('http://javo.test/**', async route => {
       const url = new URL(route.request().url());
       const file = path.resolve(dist, '.' + (url.pathname === '/' ? '/index.html' : url.pathname));
@@ -27,6 +30,25 @@ const dist = path.resolve(__dirname, '../apps/dashboard/dist');
     await page.route('http://127.0.0.1:8000/**', async route => {
       const url = new URL(route.request().url());
       let body = [];
+      const schedulePath = '/api/content/schedule/timer-fixture';
+      if (url.pathname === '/api/content/schedule') body = [{ id: 'timer-fixture', asset_id: 'asset',
+        account_id: 'account', caption: 'Explicit timer fixture', status: 'approved', scheduled_at: '2030-01-01T12:00:00' }];
+      if (url.pathname === schedulePath + '/preview') body = { schedule_id: 'timer-fixture', fingerprint,
+        snapshot: { caption: 'Explicit timer fixture' } };
+      if (url.pathname === schedulePath + '/approve') {
+        assert.equal(route.request().postDataJSON().fingerprint, fingerprint);
+        approved = true; body = { status: 'approved' };
+      }
+      if (url.pathname === schedulePath + '/timer') {
+        if (route.request().method() === 'POST') {
+          assert(approved, 'UI timer fixture expects explicit approval before arming');
+          assert.equal(route.request().postDataJSON().fingerprint, fingerprint);
+          timerState = 'armed';
+        } else if (route.request().method() === 'DELETE') timerState = 'cancelled';
+        body = { schedule_id: 'timer-fixture', state: timerState };
+      }
+      if (url.pathname === '/api/content/timers') body = timerState ? [{ schedule_id: 'timer-fixture',
+        state: timerState, due_at: '2030-01-01T12:00:00Z', reason: null }] : [];
       if (url.pathname === '/api/health/') body = { status: 'healthy', database: 'fixture' };
       if (url.pathname === '/api/health/system') body = { cpu_percent: 1, ram_percent: 20,
         ram_total_mb: 8192, resource_profile: { name: 'fixture', max_concurrent_agents: 1,
@@ -46,6 +68,14 @@ const dist = path.resolve(__dirname, '../apps/dashboard/dist');
     assert(await page.getByRole('button', { name: 'Emergency Stop', exact: true }).isVisible());
     release();
     await page.getByRole('heading', { name: 'Content workflow', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Review preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Approve this snapshot for simulation', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'This exact snapshot is approved' }).waitFor();
+    await page.getByRole('button', { name: 'Arm timed simulation', exact: true }).click();
+    await page.getByText('Timed simulation: armed.', { exact: false }).waitFor();
+    await page.getByRole('button', { name: 'Cancel timer', exact: true }).click();
+    await page.getByText('Timed simulation: cancelled.', { exact: false }).waitFor();
+    assert.equal(timerState, 'cancelled');
     await page.evaluate(() => { location.hash = '/workflows'; });
     await page.getByRole('textbox', { name: 'Workflow name', exact: true }).waitFor();
     await page.evaluate(() => { location.hash = '/analytics'; });

@@ -24,6 +24,7 @@ from app import database as db
 from app.database import close_db, create_tables, init_engine
 from app.models.agent import AgentDefinition, AgentStatus
 from app.services.content_watcher import get_content_watcher
+from app.services.timed_dispatch import timed_worker
 
 settings = get_settings()
 logging.basicConfig(
@@ -141,6 +142,9 @@ async def lifespan(app: FastAPI):
         watcher = get_content_watcher()
         cleanup.callback(watcher.stop)
         watcher.start_watching(settings.content_root)
+
+        cleanup.push_async_callback(timed_worker.stop)
+        await timed_worker.start()
 
         try:
             yield

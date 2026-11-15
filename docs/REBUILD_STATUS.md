@@ -133,3 +133,30 @@ extra payload files absent from the manifest. Build rejects source changing
 during bundling. Fifteen isolated desktop contract tests passed; this still
 does not verify a frozen executable or an installed desktop app. Cache cleanup
 was repeatedly interrupted and is deferred; no reclaimed-space claim.
+
+## Timed simulation and backup hardening — 15 November 2026
+
+Explicitly approved mock schedules can now be armed for timed simulation and
+cancelled from the Content page. Durable timer claims, exact snapshot checks,
+pause/stop holds, 30-second late holds and startup recovery avoid automatic
+catch-up. Timers and receipts are distinct persisted records. Live publishing
+is still unavailable. See CONTENT_TIMERS.md for API and execution limits.
+
+Settings backup now uses a real SQLite online snapshot and encryption with a
+configured persistent key; missing key/database cannot produce empty success.
+Unsafe live database overwrite is disabled. Archive restore stages into an
+empty directory with member/path checks, and recovery agent no longer reports
+fake restoration. See BACKUP_RECOVERY.md; complete OS key storage, full-data
+backup and automatic offline installation remain unfinished.
+
+Latest local evidence: 77 targeted synchronous tests passed (5.71 seconds),
+14 existing skill tests passed, dashboard TypeScript/Vite build passed and
+Chrome fixture-based route plus approval/arm/cancel checks passed. Full Ruff
+check across backend, skills and tests passed after cleaning earlier lint
+errors. Bandit -ll static scan returned no findings; this is not a complete
+security audit. Compile and diff checks passed.
+
+The independent asyncio probe still hangs in Windows socketpair before Javo
+imports. New HTTP timer test is present but not passed locally; full async
+polling/HTTP/installer verification remains outstanding. Historical full-suite
+results are not a new verification of these changes.

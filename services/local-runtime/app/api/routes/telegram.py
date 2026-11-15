@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.resource_manager import get_resource_manager
-from app.core.scheduler import scheduler
 from app.database import get_session
 from app.models.account import SocialAccount
 from app.models.agent import AgentDefinition

@@ -6,6 +6,7 @@ type Account = { id: string; username: string; platform: string; user_id: string
 type Schedule = { id: string; asset_id: string; account_id: string; status: string; caption: string | null; scheduled_at: string };
 type Preview = { schedule_id: string; fingerprint: string; snapshot: Record<string, unknown> };
 type Receipt = { status: string; message: string; platform_post_id: string | null };
+type Timer = { schedule_id: string; state: string; due_at: string; reason: string | null };
 const inputStyle = 'w-full rounded border border-slate-400 bg-white dark:bg-slate-900 p-2';
 const buttonStyle = 'rounded bg-cyan-700 text-white px-4 py-2 disabled:opacity-40';
 export function Content() {
@@ -23,6 +24,7 @@ export function Content() {
   const assets = useQuery({ queryKey: ['content'], queryFn: () => apiRequest<Asset[]>('/api/content/'), retry: false });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => apiRequest<Account[]>('/api/accounts/'), retry: false });
   const schedules = useQuery({ queryKey: ['schedules'], queryFn: () => apiRequest<Schedule[]>('/api/content/schedule'), retry: false });
+  const timers = useQuery({ queryKey: ['content-timers'], queryFn: () => apiRequest<Timer[]>('/api/content/timers'), retry: false, refetchInterval: 5000 });
   async function act(work: () => Promise<void>) {
     setBusy(true); setError(''); setNotice('');
     try { await work(); }
@@ -46,7 +48,7 @@ export function Content() {
       if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) throw new Error('Choose a future date and time in India Standard Time.');
       await apiRequest('/api/content/schedule', { method: 'POST', body: { asset_id: asset, account_id: account, caption, scheduled_at: date.toISOString() } });
       await qc.invalidateQueries({ queryKey: ['schedules'] });
-      setNotice('Schedule saved. Review and approve separately. Automatic timed dispatch is not enabled yet.');
+      setNotice('Schedule saved. Review and approve separately, then explicitly arm timed simulation or simulate now.');
     });
   }
   return <section className="space-y-6 text-slate-900 dark:text-slate-100">
@@ -54,7 +56,7 @@ export function Content() {
     <p>Import local files, prepare a schedule and review the exact content before simulating dispatch. No social post will be sent.</p>
     {error && <p role="alert" className="border border-red-500 rounded p-3">{error}</p>}
     {notice && <p role="status" className="border border-cyan-600 rounded p-3">{notice}</p>}
-    {(assets.isError || accounts.isError || schedules.isError) && <p role="alert">Runtime data unavailable. Reconnect and refresh; no demo records are substituted.</p>}
+    {(assets.isError || accounts.isError || schedules.isError || timers.isError) && <p role="alert">Runtime data unavailable. Reconnect and refresh; no demo records are substituted.</p>}
     <form onSubmit={scan} className="space-y-3 rounded-xl border border-slate-400 p-5">
       <h2 className="text-xl font-semibold">1. Import</h2>
       <label className="block">Local folder path<input className={inputStyle} value={folder} onChange={e => setFolder(e.target.value)} required /></label>
@@ -81,6 +83,14 @@ export function Content() {
       {schedules.data?.map(item => <article key={item.id} className="border-b border-slate-500 py-3 space-y-2">
         <p className="break-all">{item.id} · {item.status}</p><p>{item.caption || '(No caption)'}</p>
         <p>Planned UTC: {item.scheduled_at}</p>
+        {timers.data?.filter(timer => timer.schedule_id === item.id).map(timer => <div key={timer.schedule_id}>
+          <p>Timed simulation: {timer.state}. {timer.reason}</p>
+          {['armed', 'held'].includes(timer.state) && <button disabled={busy} className={buttonStyle} onClick={() => act(async () => {
+            await apiRequest('/api/content/schedule/' + item.id + '/timer', { method: 'DELETE' });
+            await qc.invalidateQueries({ queryKey: ['content-timers'] });
+            setNotice('Timer cancelled. Content and approval remain saved.');
+          })}>Cancel timer</button>}
+        </div>)}
         <div className="flex flex-wrap gap-2">
           <button disabled={busy} className={buttonStyle} onClick={() => act(async () => { setReceipt(null); setPreview(await apiRequest<Preview>('/api/content/schedule/' + item.id + '/preview')); })}>Review preview</button>
           <button disabled={busy} className={buttonStyle} onClick={() => act(async () => { setReceipt(await apiRequest<Receipt>('/api/content/schedule/' + item.id + '/receipt')); })}>Load saved receipt</button>
@@ -91,13 +101,19 @@ export function Content() {
         <pre className="whitespace-pre-wrap break-all text-sm">{JSON.stringify(preview.snapshot, null, 2)}</pre>
         <button disabled={busy} className={buttonStyle} onClick={() => act(async () => {
           await apiRequest('/api/content/schedule/' + preview.schedule_id + '/approve', { method: 'POST', body: { mode: 'mock', fingerprint: preview.fingerprint } });
-          await qc.invalidateQueries({ queryKey: ['schedules'] }); setNotice('This exact snapshot is approved for simulation. Use Simulate now to dispatch.');
+          await qc.invalidateQueries({ queryKey: ['schedules'] }); setNotice('This exact snapshot is approved for simulation. Arm its timer or simulate now.');
         })}>Approve this snapshot for simulation</button>
         <button disabled={busy} className={buttonStyle} onClick={() => act(async () => {
           setReceipt(await apiRequest<Receipt>('/api/content/schedule/' + preview.schedule_id + '/publish', { method: 'POST' }));
           await qc.invalidateQueries({ queryKey: ['schedules'] });
         })}>Simulate now</button>
+        <button disabled={busy} className={buttonStyle} onClick={() => act(async () => {
+          await apiRequest('/api/content/schedule/' + preview.schedule_id + '/timer', { method: 'POST', body: { fingerprint: preview.fingerprint } });
+          await qc.invalidateQueries({ queryKey: ['content-timers'] });
+          setNotice('Timed simulation armed. Keep the runtime running and resumed. No real social post will be sent.');
+        })}>Arm timed simulation</button>
         <p className="text-sm">Manual simulation runs now, regardless of planned time. Approval is checked again by the runtime.</p>
+        <p className="text-sm">Timers run only while the runtime is available and resumed. Missed, paused or changed work is held for review. Create a new future schedule for held work. No automatic catch-up or live posting.</p>
       </article>}
       {receipt && <article role="status" className="rounded border border-cyan-600 p-4"><h3>Receipt: {receipt.status}</h3><p>{receipt.message}</p><p className="break-all">{receipt.platform_post_id}</p></article>}
     </section>

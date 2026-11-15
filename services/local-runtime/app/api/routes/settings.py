@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_session
+from app.services.backup_service import BackupService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -74,6 +74,7 @@ class BackupInfo(BaseModel):
     path: str
     size_bytes: int
     created_at: str
+    encrypted: bool = False
 
 
 class RestoreRequest(BaseModel):
@@ -191,55 +192,30 @@ async def update_ai_provider(name: str, body: AIProviderUpdate) -> AIProviderInf
 
 
 @router.post("/backup", response_model=BackupInfo, status_code=status.HTTP_201_CREATED)
-async def create_backup(session: AsyncSession = Depends(get_session)) -> BackupInfo:
-    """Create a database backup file in the configured backup directory."""
+def create_backup(session: AsyncSession = Depends(get_session)) -> BackupInfo:
+    """Create an encrypted online SQLite snapshot with a configured persistent key."""
     del session  # ensures DB initialization before backup
     settings = get_settings()
-    backup_dir = Path(settings.backup_dir).resolve()
-    backup_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"javo_backup_{timestamp}.db"
-    dest = backup_dir / filename
-
+    if not settings.encryption_key or len(settings.encryption_key) < 32:
+        raise HTTPException(503, "Configure and securely retain a persistent backup encryption key first")
     db_path = _resolve_sqlite_path()
-    if db_path and db_path.exists():
-        shutil.copy2(db_path, dest)
-    else:
-        dest.write_bytes(b"")
-
+    if db_path is None or not db_path.is_file():
+        raise HTTPException(409, "Local SQLite database is unavailable; no backup created")
+    service = BackupService(backup_dir=settings.backup_dir, encryption_key=settings.encryption_key)
+    try:
+        result = service.create_sqlite_backup(db_path)
+    except Exception:
+        raise HTTPException(503, "Database snapshot failed; no verified backup available") from None
     return BackupInfo(
-        filename=filename,
-        path=str(dest),
-        size_bytes=dest.stat().st_size,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        filename=result["backup_file"], path=result["path"], size_bytes=result["size_bytes"],
+        created_at=result["created_at"], encrypted=True,
     )
 
 
 @router.post("/restore", response_model=RestoreResponse)
 async def restore_backup(body: RestoreRequest) -> RestoreResponse:
-    """Restore the SQLite database from a previously created backup file."""
-    settings = get_settings()
-    backup_dir = Path(settings.backup_dir).resolve()
-    safe_name = Path(body.filename).name
-    src = (backup_dir / safe_name).resolve()
-
-    if not src.exists() or src.parent != backup_dir:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backup file not found")
-
-    db_path = _resolve_sqlite_path()
-    if not db_path:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Restore is only supported for local SQLite databases",
-        )
-
-    shutil.copy2(src, db_path)
-    return RestoreResponse(
-        restored_from=safe_name,
-        status="restored",
-        message="Database restored from backup. Restart or reconnect active sessions if needed.",
-    )
+    """Never overwrite a database while runtime services hold active connections."""
+    raise HTTPException(409, "Live restore is disabled. Stop runtime, verify/decrypt into empty staging, then perform an offline restore.")
 
 
 @router.get("/backups", response_model=list[BackupInfo])
@@ -250,7 +226,8 @@ async def list_backups() -> list[BackupInfo]:
         return []
 
     backups: list[BackupInfo] = []
-    for entry in sorted(backup_dir.glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True):
+    entries = list(backup_dir.glob("*.db")) + list(backup_dir.glob("*.jbackup"))
+    for entry in sorted(entries, key=lambda p: p.stat().st_mtime, reverse=True):
         stat = entry.stat()
         backups.append(
             BackupInfo(
@@ -258,6 +235,7 @@ async def list_backups() -> list[BackupInfo]:
                 path=str(entry),
                 size_bytes=stat.st_size,
                 created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                encrypted=entry.suffix == ".jbackup",
             )
         )
     return backups

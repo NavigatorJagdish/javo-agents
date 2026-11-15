@@ -189,3 +189,23 @@ def test_emergency_stop_cancels_pending_task(client):
     response = client.post("/security/emergency-stop")
     assert response.status_code == 200
     assert response.json()["stopped_tasks"] >= 1
+
+
+def test_explicit_timer_approval_arm_and_cancel(client, tmp_path):
+    from datetime import datetime, timedelta, timezone
+    (tmp_path / "timer.txt").write_text("Timed simulation", encoding="utf-8")
+    imported = client.post("/api/content/scan-folder", json={"folder_path": str(tmp_path), "recursive": False})
+    asset = imported.json()["imported_assets"][0]
+    account = client.post("/api/accounts/", json={"platform": "other", "username": "timer destination"}).json()
+    schedule = client.post("/api/content/schedule", json={"asset_id": asset["id"], "account_id": account["id"],
+        "scheduled_at": (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()}).json()
+    prefix = "/api/content/schedule/" + schedule["id"]
+    fp = client.get(prefix + "/preview").json()["fingerprint"]
+    assert client.post(prefix + "/timer", json={"fingerprint": fp}).status_code == 409
+    assert client.post(prefix + "/approve", json={"mode": "mock", "fingerprint": fp}).status_code == 200
+    assert client.post(prefix + "/timer", json={"fingerprint": "0"*64}).status_code == 409
+    armed = client.post(prefix + "/timer", json={"fingerprint": fp})
+    assert armed.status_code == 200 and armed.json()["state"] == "armed"
+    assert client.get("/api/content/timers").json()[0]["simulation_only"] is True
+    assert client.delete(prefix + "/timer").json()["state"] == "cancelled"
+    assert client.get("/api/content/timers").json()[0]["state"] == "cancelled"
