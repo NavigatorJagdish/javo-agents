@@ -73,3 +73,9 @@ detection (https://github.com/electron-userland/electron-builder/pull/9564).
 A reproduced 0xC0000005 remains a failed check until the new installer passes.
 The QA script uses `_?=` for synchronous uninstall, preserves encrypted provider
 configuration and its wrapped key, and checks decryption after reinstall.
+
+Desktop dependencies use `pnpm@11.25.0` and its frozen lockfile (Node >=22.13).
+The Windows job installs this package manager explicitly: builder 26.9 detects
+the pnpm lockfile and invokes pnpm while collecting packaged production modules.
+Mixing an npm-only dependency install with an unavailable pnpm binary fails the
+package build. Install the same pnpm version before running desktop packaging.

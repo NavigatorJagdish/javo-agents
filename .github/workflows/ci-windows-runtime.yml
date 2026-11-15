@@ -30,6 +30,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install locked desktop package manager
+        run: npm install --global pnpm@11.25.0 --ignore-scripts --no-audit --no-fund
       - name: Install runtime build dependencies
         run: python -m pip install -r services/local-runtime/requirements.txt "apscheduler<4" "pyinstaller>=6.11,<7" pillow
       - name: Build standalone runtime and verify bundled imports
@@ -46,7 +48,7 @@ jobs:
       - name: Install desktop dependencies and verify lifecycle contracts
         working-directory: apps/windows
         run: |
-          npm install --ignore-scripts --package-lock=false --no-audit --no-fund
+          pnpm install --frozen-lockfile --ignore-scripts
           npm test
       - name: Install browser test driver
         shell: pwsh
