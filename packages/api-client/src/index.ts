@@ -10,6 +10,9 @@ import type {
   ContentSchedule,
   DevicePairing,
   Goal,
+  GoalCreateRequest,
+  GoalUpdateRequest,
+  GoalMeasurement,
   HealthResponse,
   Milestone,
   SecurityStatus,
@@ -209,14 +212,42 @@ export class JavoApiClient {
     return this.request<Goal[]>("GET", "/goals/", { query: { status } });
   }
 
-  public createGoal(payload: Partial<Goal> & { title: string }): Promise<Goal> {
+  public createGoal(payload: GoalCreateRequest): Promise<Goal> {
     return this.request<Goal>("POST", "/goals/", { body: payload });
   }
 
-  public addMilestone(goalId: string, payload: Partial<Milestone> & { title: string }): Promise<Milestone> {
+  public getGoal(goalId: string): Promise<Goal> {
+    return this.request<Goal>("GET", `/goals/${encodeURIComponent(goalId)}`);
+  }
+
+  public updateGoal(goalId: string, payload: GoalUpdateRequest): Promise<Goal> {
+    return this.request<Goal>("PUT", `/goals/${encodeURIComponent(goalId)}`, { body: payload });
+  }
+
+  public deleteGoal(goalId: string): Promise<void> {
+    return this.request<void>("DELETE", `/goals/${encodeURIComponent(goalId)}`);
+  }
+
+  public recordGoalMeasurement(goalId: string, payload: GoalMeasurement): Promise<Goal> {
+    return this.request<Goal>("POST", `/goals/${encodeURIComponent(goalId)}/measurements`, { body: payload });
+  }
+
+  public listMilestones(goalId: string): Promise<Milestone[]> {
+    return this.request<Milestone[]>("GET", `/goals/${encodeURIComponent(goalId)}/milestones`);
+  }
+
+  public addMilestone(goalId: string, payload: Pick<Milestone, 'title'> & Partial<Pick<Milestone, 'target_value' | 'current_value' | 'due_date'>>): Promise<Milestone> {
     return this.request<Milestone>("POST", `/goals/${encodeURIComponent(goalId)}/milestones`, {
       body: payload,
     });
+  }
+
+  public updateMilestone(goalId: string, milestoneId: string, payload: Partial<Pick<Milestone, 'title' | 'target_value' | 'current_value' | 'due_date'>>): Promise<Milestone> {
+    return this.request<Milestone>("PUT", `/goals/${encodeURIComponent(goalId)}/milestones/${encodeURIComponent(milestoneId)}`, { body: payload });
+  }
+
+  public deleteMilestone(goalId: string, milestoneId: string): Promise<void> {
+    return this.request<void>("DELETE", `/goals/${encodeURIComponent(goalId)}/milestones/${encodeURIComponent(milestoneId)}`);
   }
 
   // -------------------------------------------------------------------------

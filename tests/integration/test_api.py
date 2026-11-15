@@ -18,6 +18,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("JAVO_ENCRYPTION_KEY", "synthetic-owner-encryption-key-for-tests-" * 2)
     import app.core.resource_manager as resources
     resources._resource_manager = None
+    # Synthetic model/control tests must not depend on other apps using RAM.
+    # Admission itself and pause/stop remain real and independently tested.
+    monkeypatch.setattr(resources.ResourceManager, 'get_metrics', lambda self: resources.SystemMetrics(
+        0, 25, 8192, 16384, 10, 100, len(self._active_tasks), 0))
     db_path = tmp_path / "integration_test.db"
     sched_path = tmp_path / "integration_sched.db"
     monkeypatch.setenv("JAVO_DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")

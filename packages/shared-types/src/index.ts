@@ -98,12 +98,47 @@ export interface Goal {
   description: string | null;
   owner_id: UUID;
   target_metrics: Record<string, unknown> | null;
+  objective?: GoalObjective | null;
+  measurement?: GoalMeasurement | null;
   progress: number;
+  progress_basis?: 'measurement' | 'milestones' | 'legacy_manual' | 'unmeasured';
+  total_milestones?: number;
+  completed_milestones?: number;
   status: GoalStatus;
   deadline: ISODateTime | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
   milestones?: Milestone[];
+}
+
+export interface GoalObjective {
+  metric: string;
+  unit: string;
+  baseline: number;
+  baseline_source: string;
+  target: number;
+  constraints?: string;
+  stopping_conditions?: string;
+  uncertainty?: string;
+}
+
+export interface GoalMeasurement {
+  value: number;
+  source: string;
+  observed_at: ISODateTime;
+}
+
+export interface GoalCreateRequest {
+  title: string;
+  description?: string | null;
+  target_metrics?: Record<string, unknown> | null;
+  objective?: GoalObjective | null;
+  deadline?: ISODateTime | null;
+}
+
+export interface GoalUpdateRequest extends Partial<GoalCreateRequest> {
+  status?: GoalStatus;
+  progress?: number;
 }
 
 export interface Milestone {

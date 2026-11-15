@@ -1,5 +1,6 @@
 """Start an isolated real runtime and exercise the built dashboard in Chrome."""
 from contextlib import contextmanager
+import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -14,6 +15,9 @@ import threading
 import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser()
+parser.add_argument('--scenario', choices=['dashboard', 'goals'], default='dashboard')
+args = parser.parse_args()
 
 
 @contextmanager
@@ -91,13 +95,24 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            result = subprocess.run(["node", str(repo / "scripts/dashboard-smoke.cjs")], env=env, timeout=90)
+            scenario = 'goals-smoke.cjs' if args.scenario == 'goals' else 'dashboard-smoke.cjs'
+            result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)
             failed = False
         finally:
             if backend.poll() is None:
-                backend.terminate()
+                if os.name == 'nt':
+                    # A venv Python launcher can own the real interpreter as a
+                    # child. Terminating only the launcher leaks the HTTP server
+                    # and its SQLite handles on Windows. This exact PID belongs
+                    # to the temporary process created by this harness.
+                    stopped = subprocess.run(['taskkill', '/PID', str(backend.pid), '/T', '/F'],
+                                             capture_output=True, text=True, timeout=15)
+                    if stopped.returncode and backend.poll() is None:
+                        raise RuntimeError('Could not stop the isolated runtime process tree')
+                else:
+                    backend.terminate()
             try:
                 backend.wait(timeout=10)
             except subprocess.TimeoutExpired:

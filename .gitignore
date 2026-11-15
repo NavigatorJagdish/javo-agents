@@ -47,6 +47,7 @@ node_modules/
 .next/
 out/
 .vite/
+output/playwright/
 dist-electron/
 apps/windows/release/
 apps/windows/dist/

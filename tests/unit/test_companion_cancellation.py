@@ -6,7 +6,15 @@ from fastapi import HTTPException
 
 from app.api.routes.voice import _await_connected
 from app.core.control_state import ControlStateStore
-from app.core.resource_manager import ResourceManager
+from app.core.resource_manager import ResourceManager, SystemMetrics
+
+
+@pytest.fixture(autouse=True)
+def fixture_capacity(monkeypatch):
+    # These exercise cooperative cancellation with a tiny coroutine, not host
+    # capacity. Keep production admission rules intact and test them separately.
+    monkeypatch.setattr(ResourceManager, 'get_metrics', lambda self: SystemMetrics(
+        0, 25, 8192, 16384, 10, 100, len(self._active_tasks), 0))
 
 
 @pytest.mark.asyncio

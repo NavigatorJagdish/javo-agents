@@ -103,16 +103,56 @@ export interface AgentDto {
   last_run?: string;
 }
 
-export interface GoalDto {
+export interface GoalObjective {
+  metric: string;
+  unit: string;
+  baseline: number;
+  baseline_source: string;
+  target: number;
+  constraints: string;
+  stopping_conditions: string;
+  uncertainty: string;
+}
+
+export interface GoalMeasurement {
+  value: number;
+  source: string;
+  observed_at: string;
+}
+
+export interface MilestoneDto {
   id: string;
+  goal_id: string;
   title: string;
-  description: string;
-  progress: number;
   target_value: number;
   current_value: number;
-  unit: string;
-  status: 'on_track' | 'at_risk' | 'completed' | 'paused';
-  deadline: string;
+  is_completed: boolean;
+  due_date: string | null;
+}
+
+export interface GoalDto {
+  goal_id: string;
+  title: string;
+  description: string | null;
+  owner_id: string;
+  target_metrics: Record<string, unknown> | null;
+  objective: GoalObjective | null;
+  measurement: GoalMeasurement | null;
+  progress: number;
+  progress_basis: 'measurement' | 'milestones' | 'legacy_manual' | 'unmeasured';
+  total_milestones: number;
+  completed_milestones: number;
+  status: 'active' | 'paused' | 'completed' | 'cancelled';
+  deadline: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoalCreateDto {
+  title: string;
+  description?: string | null;
+  objective?: GoalObjective;
+  deadline?: string | null;
 }
 
 export interface ContentAssetDto {
@@ -153,11 +193,22 @@ export const apiClient = {
       }),
   },
   goals: {
-    list: () => apiRequest<GoalDto[]>('/api/goals'),
-    create: (payload: Partial<GoalDto>) =>
-      apiRequest<GoalDto>('/api/goals', { method: 'POST', body: payload }),
-    update: (id: string, payload: Partial<GoalDto>) =>
-      apiRequest<GoalDto>(`/api/goals/${id}`, { method: 'PUT', body: payload }),
+    list: (offset = 0) => apiRequest<GoalDto[]>('/api/goals/', { params: { limit: 50, offset } }),
+    create: (payload: GoalCreateDto) =>
+      apiRequest<GoalDto>('/api/goals/', { method: 'POST', body: payload }),
+    update: (id: string, payload: Partial<GoalCreateDto> & { status?: GoalDto['status'] }) =>
+      apiRequest<GoalDto>(`/api/goals/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+    remove: (id: string) => apiRequest<void>(`/api/goals/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    measure: (id: string, payload: GoalMeasurement) =>
+      apiRequest<GoalDto>(`/api/goals/${encodeURIComponent(id)}/measurements`, { method: 'POST', body: payload }),
+    measurements: (id: string) => apiRequest<(GoalMeasurement & { id: string })[]>(`/api/goals/${encodeURIComponent(id)}/measurements`),
+    milestones: (id: string) => apiRequest<MilestoneDto[]>(`/api/goals/${encodeURIComponent(id)}/milestones`),
+    addMilestone: (id: string, payload: { title: string; target_value: number; current_value?: number; due_date?: string | null }) =>
+      apiRequest<MilestoneDto>(`/api/goals/${encodeURIComponent(id)}/milestones`, { method: 'POST', body: payload }),
+    updateMilestone: (id: string, milestoneId: string, payload: { current_value: number }) =>
+      apiRequest<MilestoneDto>(`/api/goals/${encodeURIComponent(id)}/milestones/${encodeURIComponent(milestoneId)}`, { method: 'PUT', body: payload }),
+    removeMilestone: (id: string, milestoneId: string) =>
+      apiRequest<void>(`/api/goals/${encodeURIComponent(id)}/milestones/${encodeURIComponent(milestoneId)}`, { method: 'DELETE' }),
   },
   content: {
     list: () => apiRequest<ContentAssetDto[]>('/api/content'),

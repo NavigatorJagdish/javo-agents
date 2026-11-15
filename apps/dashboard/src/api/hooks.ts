@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type GoalDto, type WorkflowDto } from './client';
+import { apiClient, type GoalCreateDto, type WorkflowDto } from './client';
 
 // Errors must reach callers; a failed command is never replaced with demo success.
 export function useHealthQuery() {
@@ -20,12 +20,12 @@ export function useRunAgentMutation() {
   return useMutation({ mutationFn: (id: string) => apiClient.agents.run(id),
     onSettled: () => { qc.invalidateQueries({ queryKey: ['agents'] }); } });
 }
-export function useGoalsQuery() {
-  return useQuery({ queryKey: ['goals'], queryFn: apiClient.goals.list, retry: false });
+export function useGoalsQuery(offset = 0) {
+  return useQuery({ queryKey: ['goals', offset], queryFn: () => apiClient.goals.list(offset), retry: false });
 }
 export function useCreateGoalMutation() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (payload: Partial<GoalDto> & { title: string }) => apiClient.goals.create(payload),
+  return useMutation({ mutationFn: (payload: GoalCreateDto) => apiClient.goals.create(payload),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['goals'] }); } });
 }
 export function useContentQuery() {

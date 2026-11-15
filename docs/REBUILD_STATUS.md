@@ -2,6 +2,27 @@
 
 Current review: 15 November 2026. This is an unfinished rebuild, not a production release.
 
+## Saved Goals increment — local Windows evidence
+
+The Goals screen now uses real owner-scoped persistence, manual measurement
+sources/history, milestones and consistent progress. Goal deletion preserves
+task execution history. See GOALS.md for ownership, migration and evidence
+boundaries. It does not generate automatic experiments or claim live analytics.
+
+Current local backend checks: 154 passed, one platform skip and one upstream
+TestClient deprecation warning (125.13s). Added 11 real HTTP/SQLite goal cases
+and an explicit resource-pressure rejection regression. Synthetic companion
+tests now use deterministic capacity measurements; actual production resource
+safeguards are unchanged. Dashboard and shared-client TypeScript builds passed.
+Chrome completed GOALS_REAL_DATABASE_CREATE_MEASURE_MILESTONE_RELOAD_EDIT_REMOVE_OK
+with temporary real backend/data and a 390px overflow check. Visually inspected
+the mobile screenshot. This is not full accessibility or design-reference QA.
+
+Fixed test harness cleanup on Windows to terminate its owned process tree;
+a venv launcher otherwise leaves the interpreter/database open. The rerun
+completed successfully with temporary-directory cleanup. Added Goals coverage
+to Windows CI, but that new CI check has not yet run on this revision.
+
 Current source and CI: [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 Linux full-suite, Windows standalone/browser/packaged-app and NSIS QA-profile
 install/uninstall/reinstall checks have passed. Provider configuration now
