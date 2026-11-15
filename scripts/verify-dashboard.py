@@ -1,4 +1,7 @@
 """Start an isolated real runtime and exercise the built dashboard in Chrome."""
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import secrets
@@ -7,10 +10,46 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
-with tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
+
+
+@contextmanager
+def fixture_provider():
+    """Synthetic model responses behind the real router; never contact a cloud API."""
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            if self.path != "/api/chat" or not 0 < length < 65536:
+                self.send_error(400)
+                return
+            payload = json.loads(self.rfile.read(length))
+            conversation = json.loads(payload["messages"][-1]["content"])
+            reply = {"message": {"content": "Fixture assistant reply; previous turns: " + str(len(conversation["previous_turns"]))},
+                     "prompt_eval_count": 10, "eval_count": 10}
+            encoded = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, *_):
+            pass  # Never log conversation text or headers.
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}"
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+
+
+with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
     data = Path(folder)
     incoming = data / "incoming"
     incoming.mkdir()
@@ -26,6 +65,7 @@ with tempfile.TemporaryDirectory(prefix="javo-ui-") as folder:
         "JAVO_CONTROL_STATE_PATH": str(data / "control.json"),
         "JAVO_PROVIDER_CONFIG_PATH": str(data / "providers.enc"),
         "JAVO_ENCRYPTION_KEY": secrets.token_urlsafe(48),
+        "JAVO_OLLAMA_BASE_URL": endpoint,
         "JAVO_DATABASE_URL": "sqlite+aiosqlite:///" + str(data / "runtime.db"),
         "JAVO_SCHEDULER_DB_URL": "sqlite:///" + str(data / "scheduler.db"),
         "JAVO_SMOKE_CONTENT": str(incoming),

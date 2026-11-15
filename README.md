@@ -14,7 +14,9 @@ This is an unfinished development build. [Draft PR #5](https://github.com/Naviga
 contains authenticated controls, durable pause/stop, reviewed content approval,
 timed simulation receipts and encrypted snapshots. Live social posting remains
 disabled. Windows CI has verified the standalone runtime, packaged app and
-NSIS install/uninstall/reinstall using an isolated QA profile; this is not a
+NSIS install/uninstall/reinstall using an isolated QA profile at earlier checkpoints.
+A fresh-install crash reproduced in the latest extension; the builder is updated
+to 26.9.0 and the full Windows checks must pass again. This is not a
 signed release or certification of every machine and feature.
 
 Provider models, enabled state, defaults and credentials now share encrypted
@@ -22,7 +24,9 @@ persistence between Settings and the AI router. Windows uses current-user
 key protection; other platforms require a retained encryption secret. See
 [provider configuration and recovery boundaries](docs/PROVIDER_CONFIGURATION.md).
 Positive budget increases remain blocked pending durable spending controls.
-Android, voice, full workflows/analytics, official live connectors and complete
+The [text companion](docs/COMPANION.md) now uses real runtime controls and configured AI
+with bounded context and cancellation. Audio engines remain unavailable.
+Android, full workflows/analytics, official live connectors and complete
 specialist functionality remain under development. See [evidence](docs/REBUILD_STATUS.md).
 
 ## Architecture

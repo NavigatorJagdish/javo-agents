@@ -40,9 +40,16 @@ const path = require('node:path');
         assert.equal(state.emergencyStopped, true, 'Restart lost emergency-stop state');
         assert.equal(await page.getByLabel('gemini model', { exact: true }).inputValue(), 'packaged-owner-model');
         assert.equal(await page.getByLabel('gemini replacement API key', { exact: true }).inputValue(), '');
-        await page.getByRole('button', { name: 'Remove gemini credentials', exact: true }).click();
-        await page.getByRole('status').filter({ hasText: 'Saved credentials removed' }).waitFor();
+        if (!(suppliedProfile && process.env.JAVO_SMOKE_PRESERVE_PROVIDER === '1')) {
+          await page.getByRole('button', { name: 'Remove gemini credentials', exact: true }).click();
+          await page.getByRole('status').filter({ hasText: 'Saved credentials removed' }).waitFor();
+        }
       } else {
+        if (suppliedProfile && process.env.JAVO_SMOKE_EXPECT_PROVIDER === '1') {
+          assert.equal(await page.getByLabel('gemini model', { exact: true }).inputValue(), 'packaged-owner-model');
+          await page.getByRole('button', { name: 'Remove gemini credentials', exact: true }).waitFor();
+          console.log('REINSTALLED_PROVIDER_DECRYPTION_OK');
+        }
         await page.getByLabel('gemini model', { exact: true }).fill('packaged-owner-model');
         const fakeKey = 'synthetic-packaged-value-not-a-live-key';
         await page.getByLabel('gemini replacement API key', { exact: true }).fill(fakeKey);

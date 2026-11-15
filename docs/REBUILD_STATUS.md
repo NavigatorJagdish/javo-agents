@@ -13,6 +13,33 @@ spending controls. See PROVIDER_CONFIGURATION.md and WINDOWS_PACKAGING.md.
 The initial matrix and early blockers below are historical; later dated
 evidence supersedes them. No live posting, signing or final release is claimed.
 
+## Text companion and fresh-install regression — 15 November 2026
+
+The Voice screen and API now perform real audited runtime controls and bounded
+text inference through the configured AI router, without tools. Resume requires
+confirmation; local AI is default, cloud selection clears prior context, and
+zero-cost budgets apply. Cancel/disconnect and emergency-stop cancellation use
+the actual worker pool. Fake sample messages, Whisper readiness, silent WAV and
+transcription success were removed; audio endpoints return 501.
+
+Focused API/cancellation tests: 18 passed. Full backend suite: 142 passed, one
+platform skip. Skill tests: 14 passed. Desktop tests: 17 passed with the updated
+builder dependency and frozen lockfile installation. Ruff and Bandit passed.
+Dashboard TypeScript/Vite build passed.
+Browser flow uses a temporary loopback model fixture, not a real model; fresh
+Windows packaged verification is required for this increment.
+
+Current-head cffa5a5 Windows CI twice passed frozen browser and packaged DPAPI
+save/restart but failed NSIS installation with 0xC0000005 (first attempt during
+reinstall; retry during fresh install). Earlier successful installers do not
+certify this head. Electron-builder is pinned to 26.9.0, containing upstream
+Windows-version gating for the known per-user installer crash (PR #9564). Full
+install/uninstall/reinstall must pass again. The QA extension preserves encrypted
+provider data and the DPAPI-wrapped key across uninstall/reinstall, then verifies
+real UI decryption. Uninstall uses the documented synchronous `_?=` option.
+
+See COMPANION.md for capabilities and remaining audio work.
+
 ## Initial baseline — historical
 
 Source: NavigatorJagdish/javo-agents at 133be3a085a6460b28e1b76f50cde9c68062766d.

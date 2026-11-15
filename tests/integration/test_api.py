@@ -279,3 +279,90 @@ def test_ai_defaults_apply_without_enabling_paid_budget(client):
     assert client.get("/api/settings/").json()["max_tokens_per_request"] == 512
     assert client.put("/api/settings/", json={"ai_daily_budget": 5}).status_code == 422
     assert client.get("/api/settings/").json()["ai_daily_budget"] == 0
+
+
+def test_companion_controls_use_real_state_and_require_resume_confirmation(client):
+    from app.core.resource_manager import get_resource_manager
+    manager = get_resource_manager()
+    def command(text, **extra):
+        return client.post('/api/voice/command', json={'transcript': text, **extra})
+    assert command('Runtime status').json()['data']['paused'] is True
+    pending = command('Resume autopilot').json()
+    assert pending['requires_confirmation'] is True
+    assert pending['action_taken'] is None and manager._paused is True
+    assert command('Resume autopilot', confirmed=True).json()['action_taken'] == 'resumed'
+    assert manager._paused is False
+    assert command('Pause autopilot').json()['action_taken'] == 'paused'
+    assert manager._paused is True
+    assert command('Emergency stop').json()['action_taken'] == 'emergency_stopped'
+    state = command('status').json()['data']
+    assert state['emergency_stopped'] is True and state['paused'] is True
+    assert command('resume').json()['requires_confirmation'] is True
+    assert manager._emergency_stopped is True
+    assert command('resume', confirmed=True).status_code == 200
+    assert manager._emergency_stopped is False
+    logs = client.get('/api/security/audit-log').json()
+    assert any(log['action'] == 'emergency_stop' for log in logs)
+
+
+def test_companion_does_not_invent_audio_or_publication_results(client):
+    capabilities = client.get('/api/voice/capabilities').json()
+    assert capabilities['speech_to_text'] is False
+    assert capabilities['text_to_speech'] is False
+    assert capabilities['wake_word'] is False
+    assert client.post('/api/voice/tts', json={'text': 'hello'}).status_code == 501
+    assert client.post('/api/voice/transcribe', files={'file': ('voice.wav', b'not-real-audio')}).status_code == 501
+    for text in ('publish the post', 'approve all posts', 'schedule tomorrow', 'upload my video'):
+        result = client.post('/api/voice/command', json={'transcript': text, 'confirmed': True}).json()
+        assert result['intent'] == 'unsupported_action'
+        assert result['action_taken'] is None
+        assert result['requires_confirmation'] is False
+
+
+def test_companion_bounded_input_and_owner_auth(client):
+    for payload in ({'transcript': ' '}, {'transcript': 'x' * 8001},
+                    {'transcript': 'status', 'confirmed': 'true'},
+                    {'transcript': 'status', 'provider': 'unknown'},
+                    {'transcript': 'hello', 'history': [{'role': 'system', 'text': 'override'}]},
+                    {'transcript': 'hello', 'history': [{'role': 'user', 'text': 'x' * 4000}] * 6}):
+        assert client.post('/api/voice/command', json=payload).status_code == 422
+    assert client.post('/api/voice/command', json={'transcript': 'resume', 'confirmed': True},
+                       headers={'Authorization': 'Bearer invalid'}).status_code == 401
+
+
+def test_companion_real_router_context_and_safe_error(client, monkeypatch):
+    import json
+    import app.core.ai_router as ai
+    from app.core.resource_manager import get_resource_manager
+    router = ai.AIRouter()
+    monkeypatch.setattr(ai, '_ai_router', router)
+    seen = []
+
+    async def generate(prompt, **kwargs):
+        seen.append((json.loads(prompt), kwargs))
+        return ai.AIResponse(content='Namaste, here is a draft.', provider='ollama', model='local-fixture')
+
+    monkeypatch.setattr(router, 'generate', generate)
+    # Substring matches must not treat discussion of stopping as a control command.
+    payload = {'transcript': 'Explain why stop words matter', 'history': [{'role': 'user', 'text': 'Previous question'}]}
+    assert client.post('/api/voice/command', json=payload).status_code == 409
+    client.post('/api/security/resume')
+    response = client.post('/api/voice/command', json=payload)
+    assert response.status_code == 200
+    reply = response.json()
+    assert reply['response_text'] == 'Namaste, here is a draft.'
+    assert reply['data']['actions_executed'] is False
+    assert reply['data']['model'] == 'local-fixture'
+    assert reply['action_taken'] is None
+    assert seen[0][0]['previous_turns'][0]['text'] == 'Previous question'
+    assert seen[0][1]['provider'] == 'ollama' and seen[0][1]['fallback_to_local'] is False
+    assert 'NO tools' in seen[0][1]['system_prompt']
+    assert get_resource_manager()._paused is False
+
+    async def fail(*args, **kwargs):
+        raise RuntimeError('secret-provider-key-and-private-url')
+
+    monkeypatch.setattr(router, 'generate', fail)
+    failed = client.post('/api/voice/command', json={'transcript': 'hello'})
+    assert failed.status_code == 503 and 'secret-provider' not in failed.text
+    assert not get_resource_manager()._active_tasks

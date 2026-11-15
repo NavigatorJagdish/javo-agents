@@ -45,6 +45,38 @@ const assert = require('node:assert/strict');
     assert(await page.getByRole('heading', { name: 'Content workflow' }).isVisible());
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, 'Mobile page overflows horizontally');
     await page.setViewportSize({ width: 1360, height: 900 });
+    // Actual authenticated command route, real worker and router, synthetic local model.
+    await page.evaluate(() => { location.hash = '/voice'; });
+    await page.getByRole('heading', { name: 'Javo companion', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Start push to talk' }).count(), 0);
+    const conversation = page.getByRole('log', { name: 'Companion conversation' });
+    await page.getByLabel('Companion message', { exact: true }).fill('Write a short test caption');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await conversation.getByText('Fixture assistant reply; previous turns: 0', { exact: true }).waitFor();
+    await conversation.getByText(/AI advice · ollama/).waitFor();
+    await page.getByLabel('Companion message', { exact: true }).fill('Make the draft shorter');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await conversation.getByText('Fixture assistant reply; previous turns: 2', { exact: true }).waitFor();
+    assert(!(await page.evaluate(() => JSON.stringify(localStorage))).includes('short test caption'));
+    await page.getByRole('button', { name: 'Emergency stop', exact: true }).click();
+    await conversation.getByText('Runtime result · emergency_stopped', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Resume autopilot', exact: true }).click();
+    await page.getByRole('button', { name: 'Confirm resume', exact: true }).waitFor();
+    const paused = await page.request.get(new URL('/api/security/autopilot-status', process.env.JAVO_SMOKE_URL).href, {
+      headers: { Authorization: 'Bearer ' + process.env.JAVO_OWNER_ACCESS_TOKEN },
+    });
+    assert.equal((await paused.json()).emergency_stopped, true, 'Resume ran before confirmation');
+    await page.getByRole('button', { name: 'Confirm resume', exact: true }).click();
+    await conversation.getByText('Runtime result · resumed', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Clear conversation', exact: true }).click();
+    assert.equal(await conversation.getByText(/Fixture assistant reply/).count(), 0);
+    await page.getByLabel('Companion message', { exact: true }).fill('Start a fresh test draft');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await conversation.getByText('Fixture assistant reply; previous turns: 0', { exact: true }).waitFor();
+    await page.getByLabel('Companion provider', { exact: true }).selectOption('gemini');
+    assert.equal(await conversation.getByText(/Fixture assistant reply/).count(), 0, 'Provider change retained local context');
+    await page.getByText(/Sending a message sends its conversation context/).waitFor();
+    console.log('COMPANION_REAL_CONTROL_AND_FIXTURE_MODEL_FLOW_OK');
     // Exercise loading of separate JS/CSS chunks without reloading the owner session.
     await page.evaluate(() => { location.hash = '/workflows'; });
     await page.getByRole('textbox', { name: 'Workflow name', exact: true }).waitFor();

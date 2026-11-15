@@ -88,35 +88,28 @@ def test_telegram_fail_closed_and_all_commands(client: TestClient):
         assert "synthetic-bot-token" not in body["reply_text"]
 
 
-def test_voice_hinglish_and_confirmation_gate(client: TestClient):
-    # Sensitive Hinglish scheduling command must require confirmation first
-    r1 = client.post(
-        "/voice/command",
-        json={
-            "transcript": "Hey Javo, mere Facebook ke liye aaj ki posts schedule karo",
-            "language": "hi-IN",
-            "confirmed": False,
-        },
-    )
-    assert r1.status_code == 200
-    d1 = r1.json()
-    assert d1["intent"] == "content_schedule"
-    assert d1["requires_confirmation"] is True
-    assert d1["action_taken"] == "awaiting_confirmation"
-
-    # Confirmed execution proceeds
-    r2 = client.post(
-        "/voice/command",
-        json={
-            "transcript": "Hey Javo, mere Facebook ke liye aaj ki posts schedule karo",
-            "language": "hi-IN",
-            "confirmed": True,
-        },
-    )
-    assert r2.status_code == 200
-    d2 = r2.json()
-    assert d2["requires_confirmation"] is False
-    assert d2["action_taken"] == "schedule_queued"
+def test_voice_hinglish_controls_and_no_fake_scheduling(client: TestClient):
+    from app.core.resource_manager import get_resource_manager
+    manager = get_resource_manager()
+    pending = client.post('/voice/command', json={
+        'transcript': 'chalu karo', 'language': 'hi-IN', 'confirmed': False,
+    })
+    assert pending.status_code == 200
+    assert pending.json()['requires_confirmation'] is True
+    assert manager._paused is True
+    confirmed = client.post('/voice/command', json={
+        'transcript': 'chalu karo', 'language': 'hi-IN', 'confirmed': True,
+    })
+    assert confirmed.status_code == 200
+    assert confirmed.json()['action_taken'] == 'resumed'
+    assert manager._paused is False
+    for confirmation in (False, True):
+        unsupported = client.post('/voice/command', json={
+            'transcript': 'schedule my Facebook posts', 'language': 'hi-IN', 'confirmed': confirmation,
+        })
+        assert unsupported.status_code == 200
+        assert unsupported.json()['action_taken'] is None
+        assert unsupported.json()['intent'] == 'unsupported_action'
 
 
 def test_dashboard_static_mount_served_locally(tmp_path: Path, monkeypatch):

@@ -65,3 +65,11 @@ does not prove all default-profile migrations or every clean-PC installation.
 Portable wrapper execution, signing/SmartScreen, upgrade rollback and complete
 feature/release acceptance remain pending. Build outputs are unsigned
 development packages. This workflow does not publish or retain binaries.
+
+
+Fresh-install regression: electron-builder is pinned to 26.9.0 rather than 25.1.8
+to include the upstream Windows-version guard around legacy per-user path
+detection (https://github.com/electron-userland/electron-builder/pull/9564).
+A reproduced 0xC0000005 remains a failed check until the new installer passes.
+The QA script uses `_?=` for synchronous uninstall, preserves encrypted provider
+configuration and its wrapped key, and checks decryption after reinstall.
