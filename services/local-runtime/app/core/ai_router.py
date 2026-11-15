@@ -133,7 +133,9 @@ class AIRouter:
         if chosen_provider not in provider_settings.PROVIDERS:
             raise ValueError("Unsupported AI provider")
         chosen_model = model
-        max_tok = max_tokens or settings["max_tokens_per_request"]
+        if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1):
+            raise ValueError("Requested max tokens must be a positive integer")
+        max_tok = min(max_tokens or settings["max_tokens_per_request"], settings["max_tokens_per_request"])
 
         # Enforce privacy firewall before egress
         firewall = get_privacy_firewall()

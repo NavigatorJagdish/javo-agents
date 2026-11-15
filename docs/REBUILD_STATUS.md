@@ -1,6 +1,19 @@
 # Rebuild evidence and remaining scope
 
-Checkpoint: 14 November 2026. This is an implementation increment, not a production release.
+Current review: 15 November 2026. This is an unfinished rebuild, not a production release.
+
+Current source and CI: [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
+Linux full-suite, Windows standalone/browser/packaged-app and NSIS QA-profile
+install/uninstall/reinstall checks have passed. Provider configuration now
+uses authenticated encrypted persistence, OS/user-backed Windows keys, shared
+router configuration, safe metadata and explicit credential removal. The UI
+performs actual saves; cloud budget increases remain blocked pending durable
+spending controls. See PROVIDER_CONFIGURATION.md and WINDOWS_PACKAGING.md.
+
+The initial matrix and early blockers below are historical; later dated
+evidence supersedes them. No live posting, signing or final release is claimed.
+
+## Initial baseline — historical
 
 Source: NavigatorJagdish/javo-agents at 133be3a085a6460b28e1b76f50cde9c68062766d.
 368 source files were retrieved through the connected repository service and matched against Git blob hashes after shell clone failed DNS. Local baseline af32fce has snapshot history, not upstream ancestry. Branch rebuild/runtime-foundation is local only; do not force-push it. Remote was public, whereas the owner requested private development.
