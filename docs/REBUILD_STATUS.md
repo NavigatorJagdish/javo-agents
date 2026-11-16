@@ -73,6 +73,15 @@ Added the frozen agent scenario to Windows CI; its result on this increment
 must be checked separately. This is not complete specialist, social integration,
 minimum-hardware, signing or full product release acceptance.
 
+At execution commit `0b981ee31a13f6056b5bde56b91ada42a1c7958f`, all four
+workflows passed: Windows43721312228, backend43721312171,
+frontend43721312266 and security43721312146. Further local review then caught
+and fixed an emergency-stop classification race, with a forced timing regression.
+Goals also gained consistent read snapshots and versioned/legacy evidence
+handling. The combined Goals/job integration checks passed23 cases (85.00s).
+Those follow-up fixes require their own CI result; the preceding success is for
+the exact execution commit only.
+
 Current source and CI: [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 Linux full-suite, Windows standalone/browser/packaged-app and NSIS QA-profile
 install/uninstall/reinstall checks have passed. Provider configuration now

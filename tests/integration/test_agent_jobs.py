@@ -188,6 +188,34 @@ def test_running_cancellation_cannot_be_overwritten_by_success(owner_runtime, mo
                 == 204
             )
         else:
+            # Force the worker to persist its cancellation outcome before the
+            # emergency endpoint queries active database rows. This used to
+            # turn an actual cancellation into FAILED and escape the DB update.
+            from app import database
+            from app.database import get_session
+
+            class SlowControlSession:
+                def __init__(self, session):
+                    self.session = session
+
+                def __getattr__(self, name):
+                    return getattr(self.session, name)
+
+                async def execute(self, statement, *args, **kwargs):
+                    if "FROM tasks" in str(statement):
+                        await asyncio.sleep(0.2)
+                    return await self.session.execute(statement, *args, **kwargs)
+
+            async def delayed_control_session():
+                async with database.async_session_factory() as session:
+                    try:
+                        yield SlowControlSession(session)
+                        await session.commit()
+                    except Exception:
+                        await session.rollback()
+                        raise
+
+            client.app.dependency_overrides[get_session] = delayed_control_session
             assert client.post("/api/security/emergency-stop").status_code == 200
         assert cancelled.wait(3)
         assert wait_result(client, "budget_guardian", execution_id, "cancelled")["outputs"] is None

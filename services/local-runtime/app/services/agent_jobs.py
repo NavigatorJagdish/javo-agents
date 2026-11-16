@@ -356,6 +356,12 @@ class AgentJobWorker:
 
     async def _finish(self, execution_id, agent_id, state, result=None, error=None, duration=None):
         async with db.async_session_factory() as session:
+            if get_resource_manager()._emergency_stopped:
+                state, result, error = (
+                    ExecutionStatus.CANCELLED,
+                    None,
+                    "Cancelled by emergency stop",
+                )
             execution = await session.get(AgentExecution, execution_id)
             if execution and execution.status == ExecutionStatus.RUNNING:
                 # Never overwrite an owner/emergency cancellation with success.
@@ -427,10 +433,15 @@ class AgentJobWorker:
             if self._closing:
                 raise
         except Exception:
+            state = (
+                ExecutionStatus.CANCELLED
+                if get_resource_manager()._emergency_stopped
+                else ExecutionStatus.FAILED
+            )
             await self._finish(
                 execution_id,
                 agent_id,
-                ExecutionStatus.FAILED,
+                state,
                 error="Execution failed or was interrupted; inspect runtime controls and saved inputs",
             )
         finally:

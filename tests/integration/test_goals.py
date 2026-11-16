@@ -149,3 +149,64 @@ def test_usage_api_auth_persistence_and_unavailable_is_not_zero(goal_runtime):
         assert result['total_requests'] == 1 and result['persistent'] is True
         (path.parent/'usage.sqlite').write_bytes(b'not-a-database')
         assert client.get('/api/settings/ai-usage').status_code == 503
+
+
+def test_opaque_legacy_metrics_remain_readable_and_corrupt_versioned_evidence_is_unavailable(goal_runtime):
+    import json
+    factory, path = goal_runtime
+    with factory() as client:
+        legacy = create(client, objective=None)
+        prefix = '/api/goals/'+legacy['goal_id']
+        with sqlite3.connect(path) as db:
+            db.execute('UPDATE goals SET target_metrics=? WHERE goal_id=?', (json.dumps({'objective': 'Old free-form note', 'measurement': 'Old note'}), legacy['goal_id']))
+        saved = client.get(prefix)
+        assert saved.status_code == 200 and saved.json()['objective'] is None
+        assert saved.json()['target_metrics']['objective'] == 'Old free-form note'
+        assert client.put(prefix, json={'objective': objective()}).status_code == 409
+        assert client.post(prefix+'/measurements', json={'value': 5, 'source': 'Report', 'observed_at': datetime.now(timezone.utc).isoformat()}).status_code == 409
+        current = create(client)
+        with sqlite3.connect(path) as db:
+            db.execute('UPDATE goals SET target_metrics=? WHERE goal_id=?', (json.dumps({'_javo_goal_schema': 1, 'objective': {'metric': 'Corrupt'}}), current['goal_id']))
+        assert client.get('/api/goals/'+current['goal_id']).status_code == 503
+
+
+def test_goal_and_milestone_reads_share_one_snapshot_during_concurrent_update(goal_runtime, monkeypatch):
+    import asyncio
+    import threading
+    from app.api.routes import goals
+    factory, path = goal_runtime
+    with factory() as client:
+        goal = create(client, objective=None, title='Before atomic edit')
+        prefix = '/api/goals/'+goal['goal_id']
+        client.post(prefix+'/milestones', json={'title': 'Stage', 'target_value': 10})
+        written = threading.Event()
+        errors = []
+
+        def edit():
+            try:
+                with sqlite3.connect(path, timeout=5) as db:
+                    db.execute('UPDATE goals SET title=? WHERE goal_id=?', ('After atomic edit', goal['goal_id']))
+                    db.execute('UPDATE milestones SET current_value=10,is_completed=1 WHERE goal_id=?', (goal['goal_id'],))
+                    written.set()
+            except Exception as error:
+                errors.append(error)
+
+        writer = threading.Thread(target=edit)
+        original = goals._milestones
+        first_read = True
+
+        async def during_read(goal_id, session):
+            nonlocal first_read
+            if first_read:
+                first_read = False
+                writer.start()
+                assert await asyncio.to_thread(written.wait, 2)
+            return await original(goal_id, session)
+
+        monkeypatch.setattr(goals, '_milestones', during_read)
+        snapshot = client.get(prefix).json()
+        writer.join(timeout=5)
+        assert not writer.is_alive() and not errors
+        assert snapshot['title'] == 'Before atomic edit' and snapshot['progress'] == 0
+        after = client.get(prefix).json()
+        assert after['title'] == 'After atomic edit' and after['progress'] == 100

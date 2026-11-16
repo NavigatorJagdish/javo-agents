@@ -42,6 +42,9 @@ detail endpoint returns saved input/authorization/output, timestamps and state.
 `POST .../executions/{execution-id}/cancel` persists cancellation and requests
 cooperative interruption. Emergency stop uses the existing shared controls.
 Conditional completion prevents a late result from overwriting cancellation.
+The worker also classifies emergency-stop interruption as cancelled before the
+control endpoint finishes its database updates. A forced delayed-control test
+covers that race, including when the worker finishes recording first.
 The UI presents readable goal/budget results and explicit unavailable/error
 states. It does not replace failed calls with prototype data.
 

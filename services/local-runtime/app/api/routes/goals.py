@@ -7,7 +7,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select, text
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/goals", tags=["goals"])
 LOCAL_OWNER = "local-owner"
 # Only the old synthetic fallback is an alias for this token-authenticated owner.
 OWNER_IDS = (LOCAL_OWNER, "default-user")
+SCHEMA_KEY = '_javo_goal_schema'
 
 
 class Input(BaseModel):
@@ -59,7 +60,7 @@ class Measurement(Input):
 
 def legacy_metrics(value):
     if value is not None:
-        if {"objective", "measurement"} & value.keys():
+        if {"objective", "measurement", SCHEMA_KEY} & value.keys():
             raise ValueError("Use objective and measurement endpoints for structured evidence")
         try:
             encoded = json.dumps(value, allow_nan=False)
@@ -202,8 +203,7 @@ async def _milestones(goal_id, session):
 def _response(goal: Goal, milestones: list[Milestone]) -> GoalResponse:
     result = GoalResponse.model_validate(goal)
     metrics = goal.target_metrics or {}
-    result.objective = Objective.model_validate(metrics["objective"]) if metrics.get("objective") else None
-    result.measurement = Measurement.model_validate(metrics["measurement"]) if metrics.get("measurement") else None
+    result.objective, result.measurement = _structured(metrics)
     result.total_milestones = len(milestones)
     result.completed_milestones = sum(m.is_completed for m in milestones)
     if result.objective:
@@ -219,9 +219,30 @@ def _response(goal: Goal, milestones: list[Milestone]) -> GoalResponse:
     return result
 
 
+def _structured(metrics):
+    """Keep opaque legacy metrics readable; validate versioned evidence strictly."""
+    if SCHEMA_KEY in metrics and (type(metrics[SCHEMA_KEY]) is not int or metrics[SCHEMA_KEY] != 1):
+        raise HTTPException(503, 'Saved goal evidence format is unsupported')
+    try:
+        if SCHEMA_KEY in metrics and not metrics.get('objective'):
+            raise ValueError('Versioned evidence requires an objective')
+        objective = Objective.model_validate(metrics['objective']) if metrics.get('objective') else None
+        measurement = Measurement.model_validate(metrics['measurement']) if metrics.get('measurement') else None
+        if measurement is not None and objective is None:
+            raise ValueError('Measurement without an objective')
+        return objective, measurement
+    except (ValidationError, ValueError, TypeError):
+        if SCHEMA_KEY in metrics:
+            raise HTTPException(503, 'Saved goal evidence is invalid; recover a verified copy') from None
+        # Before structured evidence existed this JSON column accepted arbitrary
+        # keys. They cannot be reinterpreted as trustworthy typed observations.
+        return None, None
+
+
 async def _saved(goal, session):
     goal.updated_at = datetime.now(timezone.utc)
     await session.commit()
+    await session.execute(text('BEGIN'))
     await session.refresh(goal)
     return _response(goal, await _milestones(goal.goal_id, session))
 
@@ -230,6 +251,7 @@ async def _saved(goal, session):
 async def list_goals(status_filter: GoalStatus | None = Query(default=None, alias="status"),
                      limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
                      session: AsyncSession = Depends(get_session)):
+    await session.execute(text('BEGIN'))
     stmt = select(Goal).where(Goal.owner_id.in_(OWNER_IDS))
     if status_filter is not None:
         stmt = stmt.where(Goal.status == status_filter)
@@ -253,6 +275,7 @@ async def create_goal(body: GoalCreate, session: AsyncSession = Depends(get_sess
     metrics = dict(body.target_metrics or {})
     if body.objective:
         metrics["objective"] = body.objective.model_dump(mode="json")
+        metrics[SCHEMA_KEY] = 1
     goal = Goal(goal_id=str(uuid4()), title=body.title, description=body.description,
                 owner_id=LOCAL_OWNER, target_metrics=metrics or None, deadline=_utc(body.deadline),
                 status=GoalStatus.ACTIVE, progress=0)
@@ -263,6 +286,7 @@ async def create_goal(body: GoalCreate, session: AsyncSession = Depends(get_sess
 
 @router.get("/{goal_id}", response_model=GoalResponse)
 async def get_goal(goal_id: str, session: AsyncSession = Depends(get_session)):
+    await session.execute(text('BEGIN'))
     return _response(await _get_goal_or_404(goal_id, session), await _milestones(goal_id, session))
 
 
@@ -273,16 +297,21 @@ async def update_goal(goal_id: str, body: GoalUpdate, session: AsyncSession = De
     milestones = await _milestones(goal_id, session)
     changes = body.model_dump(exclude_unset=True)
     metrics = dict(goal.target_metrics or {})
-    if "progress" in changes and (metrics.get("objective") or milestones or body.objective):
+    objective, measurement = _structured(metrics)
+    if "progress" in changes and (objective or milestones or body.objective):
         raise HTTPException(409, "Progress is derived from measurements or milestones")
     if "objective" in changes:
-        if metrics.get("measurement"):
+        if measurement:
             raise HTTPException(409, "A measured objective is fixed; create a new goal to change its baseline or target")
+        if objective is None and {'objective', 'measurement'} & metrics.keys():
+            raise HTTPException(409, 'Legacy free-form evidence is retained; create a new goal for structured measurements')
         metrics["objective"] = body.objective.model_dump(mode="json")
+        metrics[SCHEMA_KEY] = 1
         changes.pop("objective")
     if "target_metrics" in changes:
         legacy = changes.pop("target_metrics") or {}
-        metrics = {**legacy, **{k: v for k, v in metrics.items() if k in {"objective", "measurement"}}}
+        protected = {'objective', 'measurement', SCHEMA_KEY} if objective or body.objective else set()
+        metrics = {**legacy, **{k: v for k, v in metrics.items() if k in protected}}
     goal.target_metrics = metrics or None
     for key, value in changes.items():
         setattr(goal, key, _utc(value))
@@ -312,12 +341,13 @@ async def record_measurement(goal_id: str, body: Measurement, session: AsyncSess
     await session.execute(text("BEGIN IMMEDIATE"))
     goal = await _get_goal_or_404(goal_id, session)
     metrics = dict(goal.target_metrics or {})
-    if not metrics.get("objective"):
+    objective, previous = _structured(metrics)
+    if not objective:
         raise HTTPException(409, "Set an objective before recording a measurement")
-    previous = metrics.get("measurement")
-    if previous and body.observed_at < datetime.fromisoformat(previous["observed_at"]):
+    if previous and body.observed_at < previous.observed_at:
         raise HTTPException(409, "Observation is older than the latest saved measurement")
     metrics["measurement"] = body.model_dump(mode="json")
+    metrics[SCHEMA_KEY] = 1
     goal.target_metrics = metrics
     await _audit(session, goal_id, AuditAction.UPDATE, "Manual goal measurement recorded",
                  {"kind": "manual_measurement", **body.model_dump(mode="json"), "independently_verified": False})
@@ -327,6 +357,7 @@ async def record_measurement(goal_id: str, body: Measurement, session: AsyncSess
 @router.get("/{goal_id}/measurements")
 async def list_measurements(goal_id: str, limit: int = Query(50, ge=1, le=200),
                             offset: int = Query(0, ge=0), session: AsyncSession = Depends(get_session)):
+    await session.execute(text('BEGIN'))
     await _get_goal_or_404(goal_id, session)
     rows = (await session.execute(select(AuditLog).where(
         AuditLog.resource_type == "goal", AuditLog.resource_id == goal_id,
@@ -337,6 +368,7 @@ async def list_measurements(goal_id: str, limit: int = Query(50, ge=1, le=200),
 
 @router.get("/{goal_id}/milestones", response_model=list[MilestoneResponse])
 async def list_milestones(goal_id: str, session: AsyncSession = Depends(get_session)):
+    await session.execute(text('BEGIN'))
     await _get_goal_or_404(goal_id, session)
     return await _milestones(goal_id, session)
 

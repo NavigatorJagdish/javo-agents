@@ -33,6 +33,10 @@ arbitrary database users are not. There is no multi-user login/pairing claim.
 Objectives/evidence use the existing JSON column, so no destructive migration
 is required. All mutation read/modify/write operations take a SQLite immediate
 transaction to prevent lost measurements during simultaneous metadata edits.
+Goal and milestone reads share an explicit SQLite snapshot so concurrent edits
+cannot combine an old goal title with new milestone progress. New structured
+evidence is versioned; opaque legacy metadata remains readable, and damaged
+versioned evidence reports unavailable rather than silently becoming zero use.
 Goal removal detaches associated tasks and retains their execution history;
 milestones belonging to the goal are removed. Audit entries are retained.
 
