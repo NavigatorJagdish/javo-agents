@@ -2,6 +2,40 @@
 
 Current review: 16 November 2026. This is an unfinished rebuild, not a production release.
 
+## Final follow-up verification — 16 November 2026
+
+At application-code checkpoint35111bdb622251b66eadb585693f3c94345f6a72,
+all workflows succeeded: backend43902703058, frontend43902702966,
+security43902703061 and Windows43902702923/job133423267609. Windows passed
+credential/DPAPI checks, every frozen-browser scenario including Accounts/setup,
+packaged controls/restart/quit, unsigned builds and NSIS uninstall/reinstall.
+
+The preceding setup head's Windows run43900294444 failed an existing
+concurrent-vault initialization test. Fixed the actual Windows mandatory-lock
+race by acquiring the empty file's byte lock before its first write. A new
+real Windows ordering regression and200-write fresh-vault stress passed;
+combined provider/account checks23 passed, two skips (10.40s). Independent
+Windows checks then passed at the checkpoint above. No safeguard was disabled
+or flaky test removed. API integration16 passed (72.03s) after rejecting phantom
+workflow runs: the old route created a running record without a connected
+worker. Graph animation is now explicitly visual only; full graph/editor/worker
+integration remains unfinished.
+
+Installed a verified official standalone local Ollama and small Qwen model
+outside Git. An actual model request through Javo's companion/resource manager/
+router/ledger succeeded in3.000seconds, with142 reported tokens retained across
+an isolated runtime restart. Production capacity admission remained unchanged;
+no model fixture or capacity override was used. The server binds loopback with
+cloud features disabled and unloaded the model after its idle period. This is
+one synthetic smoke prompt, not broad model quality or full8GB acceptance.
+See LOCAL_MODEL_ACCEPTANCE.md for vendor hashes, boundaries and repeat command.
+
+The [current delivery review](CURRENT_DELIVERY_REVIEW.md) distinguishes verified
+increments, unfinished implementation, external setup and suggested improvements.
+No main merge, live post, paid activation, public binary release or signing is
+claimed. Final documentation/verification-script changes after the checkpoint
+above do not replace the need to check their own CI where triggered.
+
 ## Measured setup and local model inventory — 16 November 2026
 
 The guide reads actual hardware/service measurements and uses the real saved

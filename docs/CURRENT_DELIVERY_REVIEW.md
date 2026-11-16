@@ -18,6 +18,7 @@ in [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 | AI settings | Shared encrypted credentials/models/defaults, explicit key removal, durable usage ledger and zero-spend guards | Verified pricing, quotas, account/task budgets, paid activation and reconciliation remain incomplete |
 | Accounts | Real owner-scoped records, saved per-account brands, account-bound encrypted legacy credential migration, redaction and separate removal | Official OAuth, capability verification, token refresh/revocation and live results are unavailable |
 | Companion | Typed English/Hindi/Hinglish controls and bounded configured-model text path | Speech recognition, synthesis and wake word are unavailable; model quality needs actual evaluation |
+| Local model smoke | Real small Qwen model through companion/router/worker/usage ledger, with saved counts after restart | One synthetic prompt on this host; not multilingual quality, sustained load or full hardware acceptance |
 | Setup | Measured hardware/service data, real provider saves, explicit bounded loopback model-list check, honest capability guidance | A guide finish or listed model is not a product/model performance certificate |
 | Recovery | Authenticated encrypted database snapshots and tested offline staging | Separate credentials/keys, usage ledger, media and complete profile recovery are not covered |
 | Skills | Two built-in deterministic skills and permission/timeout/trust checks | AST/subprocess checks are not a hardened OS sandbox for arbitrary downloaded code |
@@ -88,3 +89,5 @@ unconnected. Historic execution rows are not new proof of working jobs.
 Detailed exact-revision evidence lives in [REBUILD_STATUS.md](REBUILD_STATUS.md),
 [SOCIAL_ACCOUNTS.md](SOCIAL_ACCOUNTS.md), [SETUP_GUIDE.md](SETUP_GUIDE.md) and
 the source tests/CI. A passing local test suite is not full ecosystem acceptance.
+See [LOCAL_MODEL_ACCEPTANCE.md](LOCAL_MODEL_ACCEPTANCE.md) for the actual
+small-model smoke, vendor hashes, local-only configuration and repeat command.
