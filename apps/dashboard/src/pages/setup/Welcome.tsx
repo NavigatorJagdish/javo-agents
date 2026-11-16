@@ -6,7 +6,7 @@ import { SetupStepCard } from './SetupStepCard';
 export const Welcome: React.FC = () => (
   <SetupStepCard
     title="Welcome to Javo Agents"
-    subtitle="Your local-first autonomous studio with 29 coordinated specialist AI agents."
+    subtitle="Explore the available controls in this unfinished local-first build."
     icon={<Sparkles className="h-6 w-6" />}
     nextPath="/setup/hardware"
     nextLabel="Start Setup"
@@ -16,11 +16,10 @@ export const Welcome: React.FC = () => (
       <div className="space-y-2 text-center sm:text-left">
         <div className="flex flex-wrap justify-center sm:justify-start gap-2">
           <Badge status="info">Windows Desktop</Badge>
-          <Badge status="violet">29 AI Specialists</Badge>
-          <Badge status="active">Zero Lock-In</Badge>
+          <Badge status="warning">Development guide</Badge>
         </div>
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          This 2-minute wizard verifies your hardware, configures Ollama & Gemini routing, connects your content folders, and secures your privacy firewall.
+          Read current system measurements, save local AI settings and find the working content and account forms. Each step explains what remains unavailable. Finishing the guide does not certify the whole product.
         </p>
       </div>
     </div>
@@ -29,17 +28,17 @@ export const Welcome: React.FC = () => (
       <div className="p-3.5 rounded-xl bg-white/70 dark:bg-[#131C40] border border-slate-200 dark:border-white/10">
         <Cpu className="h-4 w-4 text-[#00E5FF] mb-2" />
         <p className="font-semibold">Local AI First</p>
-        <p className="text-slate-400 mt-0.5">Runs Qwen & Whisper on your workstation.</p>
+        <p className="text-slate-400 mt-0.5">Check your configured Ollama model separately.</p>
       </div>
       <div className="p-3.5 rounded-xl bg-white/70 dark:bg-[#131C40] border border-slate-200 dark:border-white/10">
         <Bot className="h-4 w-4 text-[#8B5CF6] mb-2" />
         <p className="font-semibold">Human-in-the-Loop</p>
-        <p className="text-slate-400 mt-0.5">Approve sensitive actions via Telegram or Inbox.</p>
+        <p className="text-slate-400 mt-0.5">Review exact content before local simulation.</p>
       </div>
       <div className="p-3.5 rounded-xl bg-white/70 dark:bg-[#131C40] border border-slate-200 dark:border-white/10">
         <Shield className="h-4 w-4 text-emerald-400 mb-2" />
         <p className="font-semibold">Encrypted Vault</p>
-        <p className="text-slate-400 mt-0.5">All tokens stay encrypted on your machine.</p>
+        <p className="text-slate-400 mt-0.5">Protected credentials; full profile recovery remains unfinished.</p>
       </div>
     </div>
   </SetupStepCard>

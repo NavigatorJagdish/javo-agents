@@ -35,6 +35,9 @@ explicitly unavailable for execution until their paths are completed.
 The [Accounts screen](docs/SOCIAL_ACCOUNTS.md) saves real account/brand records
 and protects legacy credentials using account-bound encrypted storage. Stored
 credentials remain unverified; official platform sign-in is unavailable.
+The [setup guide](docs/SETUP_GUIDE.md) uses measured hardware/service status,
+saved provider forms and an explicit loopback model-list check. It no longer
+certifies unavailable audio, Telegram or platform connections.
 Android, full workflows/analytics, official live connectors and complete
 specialist functionality remain under development. See [evidence](docs/REBUILD_STATUS.md).
 

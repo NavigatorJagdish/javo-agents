@@ -200,6 +200,13 @@ def remove_provider_credentials(name: str) -> AIProviderInfo:
         raise HTTPException(503, str(error)) from None
 
 
+@router.post("/ai-providers/ollama/check")
+async def check_local_provider() -> dict:
+    from app.services.model_readiness import check_local_model
+
+    return await check_local_model()
+
+
 @router.get("/provider-storage")
 def provider_storage_status() -> dict:
     storage = provider_settings.vault()

@@ -1,29 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Zap } from 'lucide-react';
-import { Chip } from '@javo/design-system';
+import { apiRequest } from '../../api/client';
 import { SetupStepCard } from './SetupStepCard';
 
 export const AutopilotConfig: React.FC = () => {
-  const [level, setLevel] = useState<'assisted' | 'balanced' | 'autonomous'>('balanced');
-
-  return (
-    <SetupStepCard
-      title="Autopilot Guardrails"
-      subtitle="Control which actions execute automatically vs waiting for human sign-off."
-      icon={<Zap className="h-6 w-6" />}
-      prevPath="/setup/brand"
-      nextPath="/setup/telegram"
-    >
-      <div className="flex flex-wrap gap-2">
-        <Chip label="Assisted (All Approvals)" selected={level === 'assisted'} onClick={() => setLevel('assisted')} />
-        <Chip label="Balanced (Recommended)" selected={level === 'balanced'} onClick={() => setLevel('balanced')} />
-        <Chip label="Full Autopilot" selected={level === 'autonomous'} variant="violet" onClick={() => setLevel('autonomous')} />
-      </div>
-      <div className="p-4 rounded-xl bg-slate-100 dark:bg-[#0B1026]/80 border border-slate-200 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300">
-        {level === 'assisted' && 'Every publish, comment reply, and skill update requires manual approval.'}
-        {level === 'balanced' && 'Low-risk FAQ replies and content drafts run automatically; publishing & skill installs require approval.'}
-        {level === 'autonomous' && 'All QA-passing (>=85) workflows publish automatically within Budget & Account Guardian caps.'}
-      </div>
-    </SetupStepCard>
-  );
+  const control = useQuery({ queryKey: ['setup-control'], queryFn: () => apiRequest<{ paused: boolean; emergency_stopped: boolean }>('/api/security/autopilot-status'), retry: false });
+  return <SetupStepCard title="Runtime controls and approval" subtitle="Review the saved pause state; sensitive actions need separate review." icon={<Zap className="h-6 w-6" />} prevPath="/setup/brand" nextPath="/setup/telegram">
+    {control.isPending && <p>Reading runtime state…</p>}
+    {control.isError && <p role="alert">Runtime control state is unavailable.</p>}
+    {control.data && <p>Runtime state: {control.data.emergency_stopped ? 'Emergency stopped' : control.data.paused ? 'Paused' : 'Resumed'}.</p>}
+    <p className="text-sm">Use the dashboard's pause, resume and emergency-stop controls. Resuming permits supported local jobs; it does not approve content, activate paid AI or enable live publishing. Review each content snapshot separately.</p>
+    <p className="text-sm text-slate-500">Automatic community replies and unrestricted workflow execution are not implemented. Continuing this guide does not change permissions or resume the runtime.</p>
+    <Link to="/" className="text-cyan-600 dark:text-cyan-300 underline">Open runtime controls</Link>
+  </SetupStepCard>;
 };

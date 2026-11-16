@@ -1,5 +1,12 @@
 # Javo Agents — Project Status
 
+> Historical report below, retained for traceability. These 12 November claims
+> are not current acceptance evidence. The project remains unfinished; consult
+> [current verification and limitations](REBUILD_STATUS.md),
+> [saved account boundaries](SOCIAL_ACCOUNTS.md) and
+> [measured setup](SETUP_GUIDE.md). A prototype screen or registered specialist
+> does not establish working production functionality.
+
 **Last Updated:** 2026-11-12  
 **Overall Phase:** Multi-Agent Monorepo Implementation, Packaging & Verification
 

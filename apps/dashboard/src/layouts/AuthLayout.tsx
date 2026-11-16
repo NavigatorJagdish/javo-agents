@@ -71,7 +71,7 @@ export const AuthLayout: React.FC = () => {
             <span className="font-semibold text-[#008CA8] dark:text-[#00E5FF]">
               Step {currentIdx + 1} of {SETUP_STEPS.length}: {SETUP_STEPS[currentIdx]?.label}
             </span>
-            <span className="text-slate-500 dark:text-slate-400">{pct}% complete</span>
+            <span className="text-slate-500 dark:text-slate-400">Guide position: {pct}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
             <div

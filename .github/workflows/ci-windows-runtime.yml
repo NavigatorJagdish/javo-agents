@@ -81,6 +81,11 @@ jobs:
         run: |
           $env:JAVO_RUNTIME_EXE = (Resolve-Path "apps/windows/build/runtime/javo-runtime/javo-runtime.exe").Path
           python scripts/verify-dashboard.py --scenario accounts
+      - name: Verify measured setup and saved model checks against the frozen backend
+        shell: pwsh
+        run: |
+          $env:JAVO_RUNTIME_EXE = (Resolve-Path "apps/windows/build/runtime/javo-runtime/javo-runtime.exe").Path
+          python scripts/verify-dashboard.py --scenario setup
       - name: Download Electron and package unsigned development directory
         working-directory: apps/windows
         shell: pwsh

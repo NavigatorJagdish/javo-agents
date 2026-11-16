@@ -16,7 +16,7 @@ import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts'], default='dashboard')
+parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts', 'setup'], default='dashboard')
 args = parser.parse_args()
 
 
@@ -24,6 +24,17 @@ args = parser.parse_args()
 def fixture_provider():
     """Synthetic model responses behind the real router; never contact a cloud API."""
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != '/api/tags':
+                self.send_error(404)
+                return
+            encoded = json.dumps({'models': [{'name': 'synthetic-loopback-fixture:latest'}]}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
         def do_POST(self):
             length = int(self.headers.get("Content-Length", "0"))
             if self.path != "/api/chat" or not 0 < length < 65536:
@@ -72,6 +83,7 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
         "JAVO_ACCOUNT_CREDENTIALS_DIR": str(data / 'account-credentials'),
         "JAVO_ENCRYPTION_KEY": secrets.token_urlsafe(48),
         "JAVO_OLLAMA_BASE_URL": endpoint,
+        "JAVO_OLLAMA_DEFAULT_MODEL": 'synthetic-loopback-fixture',
         "JAVO_DATABASE_URL": "sqlite+aiosqlite:///" + str(data / "runtime.db"),
         "JAVO_SCHEDULER_DB_URL": "sqlite:///" + str(data / "scheduler.db"),
         "JAVO_SMOKE_CONTENT": str(incoming),
@@ -138,7 +150,7 @@ engine.dispose()
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
+            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'setup': 'setup-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
             result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)

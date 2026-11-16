@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ProviderEditor, type ProviderInfo } from '../components/ProviderEditor';
+import { LocalModelCheck } from '../components/LocalModelCheck';
 import { apiRequest, ApiError } from '../api/client';
 import { Sun, Moon, Database, Download, Info } from 'lucide-react';
 import { Card, Button } from '@javo/design-system';
@@ -117,6 +118,7 @@ export const Settings: React.FC = () => {
           finally { setSavingDefaults(false); }
         }}>Save AI default</Button>
         {providers.data?.map(provider => <ProviderEditor key={provider.name} provider={provider} available={storage.data?.available === true} onSaved={refreshProviders} />)}
+        <LocalModelCheck key={JSON.stringify(providers.data?.find(provider => provider.name === 'ollama'))} />
       </Card>
 
       <Card>

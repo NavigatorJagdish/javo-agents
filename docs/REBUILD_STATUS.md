@@ -2,6 +2,26 @@
 
 Current review: 16 November 2026. This is an unfinished rebuild, not a production release.
 
+## Measured setup and local model inventory — 16 November 2026
+
+The guide reads actual hardware/service measurements and uses the real saved
+provider editor. Fake GPU/RAM specifications, pass marks, bot-token fields,
+microphone tests, unsaved folder/privacy/autopilot selections and completion
+certification have been replaced with working controls or accurate guidance.
+Settings and the guide can explicitly query the saved loopback Ollama model
+list, with bounded/redacted errors and no generation/download/cloud request.
+A listed model is not proof of successful local inference. See SETUP_GUIDE.md.
+
+Local full backend run210 passed, two platform skips and one dependency warning
+(207.98s), followed by14 final inventory tests including deadline/cancellation
+and compressed-response refusal. Dashboard build, Ruff and Bandit -ll passed.
+Chrome completed SETUP_REAL_MEASUREMENTS_SAVED_CONFIG_LOCAL_INVENTORY_NO_FAKE_CAPABILITIES_OK
+through every guide step, actual config save/authenticated reload, model-present
+and model-missing fixture results, and a390px layout. Inspected the screenshot.
+Actual default host Ollama probe returned unavailable; no real-model quality
+claim follows from the synthetic browser inventory. CI for this new increment
+must be checked separately after saving it.
+
 ## Saved accounts and encrypted legacy credentials — 16 November 2026
 
 Accounts now saves owner-scoped account records and individual brand profiles.
@@ -32,6 +52,12 @@ The preceding consistency/emergency fixes at1a34e46c22eefaf3645ac38f4079fb6b170f
 passed backend43890811809, frontend43890812368, security43890811935 and
 Windows43890811849. These results supersede the pending-CI statement below
 for that exact commit only.
+
+At account commit17cd8600cb189c5e5819ef52b01b3ba569046b40 all workflows
+succeeded: backend43897806997, frontend43897806885, security43897806598 and
+Windows43897806981. The Windows run passed the new frozen-runtime account
+scenario plus packaged/installer checks. This supersedes the pending statement
+for that exact account checkpoint.
 
 ## Saved Goals increment — local Windows evidence
 

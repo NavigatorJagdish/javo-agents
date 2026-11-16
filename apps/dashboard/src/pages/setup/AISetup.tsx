@@ -1,57 +1,23 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { BrainCircuit } from 'lucide-react';
-import { Chip } from '@javo/design-system';
+import { apiRequest } from '../../api/client';
+import { ProviderEditor, type ProviderInfo } from '../../components/ProviderEditor';
+import { LocalModelCheck } from '../../components/LocalModelCheck';
 import { SetupStepCard } from './SetupStepCard';
 
 export const AISetup: React.FC = () => {
-  const [mode, setMode] = useState<'hybrid' | 'local'>('hybrid');
-  const [localModel, setLocalModel] = useState('qwen2.5:14b');
-
-  return (
-    <SetupStepCard
-      title="AI Provider Routing"
-      subtitle="Choose between 100% offline local inference or hybrid local + Gemini fallback."
-      icon={<BrainCircuit className="h-6 w-6" />}
-      prevPath="/setup/hardware"
-      nextPath="/setup/folder"
-    >
-      <div className="flex gap-2">
-        <Chip
-          label="Hybrid (Local + Gemini)"
-          selected={mode === 'hybrid'}
-          onClick={() => setMode('hybrid')}
-        />
-        <Chip
-          label="100% Local Ollama"
-          selected={mode === 'local'}
-          variant="violet"
-          onClick={() => setMode('local')}
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium mb-1">Primary Local Model</label>
-        <select
-          value={localModel}
-          onChange={(e) => setLocalModel(e.target.value)}
-          className="w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15 text-sm"
-        >
-          <option value="qwen2.5:14b">qwen2.5:14b (Recommended for 12GB VRAM)</option>
-          <option value="llama3.2:8b">llama3.2:8b (Fastest)</option>
-          <option value="mistral-nemo:12b">mistral-nemo:12b</option>
-        </select>
-      </div>
-
-      {mode === 'hybrid' && (
-        <div>
-          <label className="block text-xs font-medium mb-1">Gemini API Key (Optional)</label>
-          <input
-            type="password"
-            placeholder="AIzaSy..."
-            className="w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15 text-sm font-mono"
-          />
-        </div>
-      )}
-    </SetupStepCard>
-  );
+  const providers = useQuery({ queryKey: ['runtime-providers'], queryFn: () => apiRequest<ProviderInfo[]>('/api/settings/ai-providers'), retry: false });
+  const storage = useQuery({ queryKey: ['provider-storage'], queryFn: () => apiRequest<{ available: boolean }>('/api/settings/provider-storage'), retry: false });
+  const local = providers.data?.find(provider => provider.name === 'ollama');
+  return <SetupStepCard title="AI provider setup" subtitle="Save the local provider configuration, then check its model list." icon={<BrainCircuit className="h-6 w-6" />} prevPath="/setup/hardware" nextPath="/setup/folder">
+    {providers.isPending && <p>Loading saved configuration…</p>}
+    {(providers.isError || storage.isError) && <p role="alert">Saved configuration is unavailable. Check the runtime or recover its original encryption key.</p>}
+    {storage.data?.available === false && <p role="alert">Encrypted storage is locked or unavailable. Configuration changes are disabled.</p>}
+    {local && <ProviderEditor key={local.name} provider={local} available={storage.data?.available === true} onSaved={async () => { await providers.refetch(); }} />}
+    <LocalModelCheck key={JSON.stringify(local)} />
+    <p className="text-sm">Models must be installed separately. Cloud execution remains disabled; no automatic paid fallback is enabled.</p>
+    <Link to="/settings" className="text-cyan-600 dark:text-cyan-300 underline">Open all provider settings</Link>
+  </SetupStepCard>;
 };

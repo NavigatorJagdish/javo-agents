@@ -107,8 +107,8 @@ async def diagnostics(session: AsyncSession = Depends(get_session)) -> Diagnosti
     try:
         await session.execute(text("SELECT 1"))
         checks.append(ServiceCheck(name="database", status="ok"))
-    except Exception as exc:
-        checks.append(ServiceCheck(name="database", status="error", message=str(exc)))
+    except Exception:
+        checks.append(ServiceCheck(name="database", status="error", message="Database query unavailable"))
 
     # Scheduler (best-effort import)
     try:
@@ -129,7 +129,7 @@ async def diagnostics(session: AsyncSession = Depends(get_session)) -> Diagnosti
     try:
         from app.core.ai_router import AIRouter  # noqa: F401
 
-        checks.append(ServiceCheck(name="ai_router", status="ok"))
+        checks.append(ServiceCheck(name="ai_router", status="ok", message="Module imports; model availability and generation are not tested by this check"))
     except Exception:
         checks.append(ServiceCheck(name="ai_router", status="warning", message="ai_router module not loaded"))
 

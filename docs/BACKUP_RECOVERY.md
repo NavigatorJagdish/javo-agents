@@ -12,12 +12,16 @@ secret in the owner's password manager/recovery storage. The key is not
 included in the archive or settings response. The current service derives its
 Fernet encryption key from that configured high-entropy secret; this is not a
 password-stretching scheme and should not be used with a human-chosen password.
-Windows OS-backed key storage and a complete recovery wizard remain pending.
+Windows current-user key protection exists for provider/social credential
+documents. A complete profile recovery wizard and portable backup-key handling
+remain pending.
 
 GET `/api/settings/backups` labels encrypted archives and preserved legacy
 plaintext `.db` backups distinctly. Older files are not deleted or converted
 automatically. The archive currently covers the runtime SQLite database, not
 an atomic backup of every media folder, scheduler store, model or OS key.
+Separate provider/social credential documents and the AI usage ledger are also
+excluded; this is not a complete recoverable profile export.
 
 Live POST `/api/settings/restore` returns 409: copying a backup over a database
 with active service connections is unsafe. The recovery agent similarly
