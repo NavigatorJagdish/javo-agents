@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -311,31 +311,12 @@ async def execute_workflow(
     body: ExecuteWorkflowRequest = ExecuteWorkflowRequest(),
     session: AsyncSession = Depends(get_session),
 ) -> WorkflowExecutionResponse:
-    """Trigger execution of a workflow."""
-    wf = await _get_workflow_or_404(workflow_id, session)
-    entry_node = next((n for n in wf.nodes if n.is_entry_point), wf.nodes[0] if wf.nodes else None)
-
-    now = datetime.now(timezone.utc)
-    execution = WorkflowExecution(
-        id=str(uuid4()),
-        workflow_id=wf.id,
-        status=WorkflowExecutionStatus.RUNNING,
-        trigger_data=body.trigger_data,
-        current_node_id=entry_node.id if entry_node else None,
-        execution_log=[
-            {
-                "timestamp": now.isoformat(),
-                "event": "started",
-                "node_id": entry_node.id if entry_node else None,
-            }
-        ],
+    """Do not create a phantom running receipt without a connected worker."""
+    await _get_workflow_or_404(workflow_id, session)
+    raise HTTPException(
+        501,
+        "Saved workflow graphs do not yet have a durable execution path; no run was started",
     )
-    wf.run_count += 1
-    wf.last_run_at = now
-    session.add(execution)
-    await session.commit()
-    await session.refresh(execution)
-    return WorkflowExecutionResponse.model_validate(execution)
 
 
 @router.get("/{workflow_id}/executions", response_model=list[WorkflowExecutionResponse])

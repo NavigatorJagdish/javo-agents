@@ -126,9 +126,6 @@ class ProviderVault:
             raise VaultUnavailable("Provider storage lock is unsafe")
         fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         with os.fdopen(fd, "r+b") as handle:
-            if os.fstat(handle.fileno()).st_size == 0:
-                handle.write(b"0")
-                handle.flush()
             deadline = time.monotonic() + 5
             while True:
                 try:
@@ -149,6 +146,12 @@ class ProviderVault:
                         ) from None
                     time.sleep(0.05)
             try:
+                # LockFile/msvcrt can lock beyond EOF. Initialize only after
+                # acquisition: Windows mandatory byte locks can otherwise reject
+                # a competing writer's unlocked initialization of an empty file.
+                if os.fstat(handle.fileno()).st_size == 0:
+                    handle.write(b"0")
+                    handle.flush()
                 yield
             finally:
                 handle.seek(0)

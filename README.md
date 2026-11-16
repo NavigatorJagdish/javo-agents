@@ -32,6 +32,8 @@ The [Goals screen](docs/GOALS.md) uses saved measurements and milestones;
 [AI Team execution queue](docs/AGENT_EXECUTION.md) supports real saved-goal and
 budget summaries with cancellation and receipts. Remaining specialists are
 explicitly unavailable for execution until their paths are completed.
+See the [current delivery review, remaining work and improvements](docs/CURRENT_DELIVERY_REVIEW.md)
+for the complete acceptance boundaries and prioritized next work.
 The [Accounts screen](docs/SOCIAL_ACCOUNTS.md) saves real account/brand records
 and protects legacy credentials using account-bound encrypted storage. Stored
 credentials remain unverified; official platform sign-in is unavailable.

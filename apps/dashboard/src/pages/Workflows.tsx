@@ -389,19 +389,23 @@ export const Workflows: React.FC = () => {
   };
 
   const handleSave = async () => {
+    try {
     await saveWorkflow.mutateAsync({
       name: workflowName,
       nodes,
       edges,
       active: true,
     });
-    addToast('Workflow Saved', `"${workflowName}" (${nodes.length} nodes) synced to DAG runner.`, 'success');
+    addToast('Workflow record saved', 'The runtime saved this record. No execution was started.', 'success');
+    } catch {
+      addToast('Workflow not saved', 'The editor graph format is not fully connected to saved workflow definitions. No save was confirmed.', 'error');
+    }
   };
 
   const handleSimulate = () => {
     if (simulating || nodes.length === 0) return;
     setSimulating(true);
-    addToast('Simulation Started', `Stepping through ${nodes.length} workflow nodes...`, 'info');
+    addToast('Graph animation started', 'Visual preview only. No nodes are executed or validated.', 'info');
     nodes.forEach((node, index) => {
       setTimeout(() => {
         setNodes((nds) =>
@@ -416,7 +420,7 @@ export const Workflows: React.FC = () => {
               nds.map((n) => ({ ...n, data: { ...n.data, simulating: false } }))
             );
             setSimulating(false);
-            addToast('Simulation Complete', 'All workflow branches verified with 0 errors.', 'success');
+            addToast('Graph animation finished', 'No workflow branches were executed or verified.', 'info');
           }, 550);
         }
       }, index * 480);
@@ -431,6 +435,7 @@ export const Workflows: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <p className="rounded border border-amber-500/40 p-3 text-sm">Prototype graph editor. Graph animation does not run tasks. Saved graph editing and durable workflow execution still need integration.</p>
       {/* Top toolbar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-wrap">
@@ -453,7 +458,7 @@ export const Workflows: React.FC = () => {
             onClick={handleSimulate}
             isLoading={simulating}
           >
-            Test Run
+            Animate graph preview
           </Button>
           <Button
             size="sm"

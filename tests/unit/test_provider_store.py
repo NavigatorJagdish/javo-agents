@@ -80,6 +80,42 @@ def test_concurrent_writers_merge_without_lost_fields(tmp_path):
     assert ProviderVault(path, SECRET).read()["settings"] == {str(i): i for i in range(20)}
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows mandatory byte locking")
+def test_empty_lock_is_acquired_before_its_first_write(tmp_path, monkeypatch):
+    import msvcrt
+
+    original = msvcrt.locking
+    sizes = []
+
+    def observe(fd, mode, count):
+        if mode == msvcrt.LK_NBLCK:
+            sizes.append(os.fstat(fd).st_size)
+        return original(fd, mode, count)
+
+    monkeypatch.setattr(msvcrt, "locking", observe)
+    ProviderVault(tmp_path / "new-vault.enc", SECRET).update(
+        lambda document: document["settings"].update({"verified": True})
+    )
+    assert sizes == [0]
+    assert (tmp_path / "new-vault.enc.lock").read_bytes() == b"0"
+
+
+def test_fresh_concurrent_vault_initialization_stress(tmp_path):
+    for attempt in range(10):
+        path = tmp_path / f"fresh-{attempt}.enc"
+
+        def save(index):
+            ProviderVault(path, SECRET).update(
+                lambda document: document["settings"].update({str(index): index})
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(save, range(20)))
+        assert ProviderVault(path, SECRET).read()["settings"] == {
+            str(index): index for index in range(20)
+        }
+
+
 def test_independent_process_reads_ciphertext(tmp_path):
     path = tmp_path / "provider.enc"
     ProviderVault(path, SECRET).update(lambda data: data["settings"].update({"value": 42}))

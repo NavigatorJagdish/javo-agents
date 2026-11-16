@@ -118,9 +118,10 @@ def test_workflow_crud_and_execution(client: TestClient):
         f"/workflows/{wf['id']}/execute",
         json={"trigger_data": {"folder": "Ready"}},
     )
-    assert r_exec.status_code == 202
-    assert r_exec.json()["workflow_id"] == wf["id"]
-    assert r_exec.json()["status"] == "running"
+    assert r_exec.status_code == 501
+    assert client.get(f"/workflows/{wf['id']}/executions").json() == []
+    saved = client.get(f"/workflows/{wf['id']}").json()
+    assert saved['run_count'] == 0 and saved['last_run_at'] is None
 
 
 def test_goal_and_security_pause_resume_emergency_stop(client: TestClient):
