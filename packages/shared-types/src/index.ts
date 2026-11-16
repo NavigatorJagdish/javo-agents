@@ -257,6 +257,13 @@ export interface SocialAccount {
   username: string;
   display_name: string | null;
   status: AccountStatus;
+  reported_status: AccountStatus;
+  connection_verified: boolean;
+  credential_state: "none" | "saved_unverified" | "legacy_unprotected" | "unavailable";
+  has_saved_credentials: boolean | null;
+  credentials_protection: string;
+  has_refresh_token: boolean | null;
+  credential_expires_at: ISODateTime | null;
   token_expires_at: ISODateTime | null;
   metadata: Record<string, unknown> | null;
   created_at: ISODateTime;
@@ -274,8 +281,6 @@ export interface BrandProfile {
   color_palette: string[] | null;
   logo_url: string | null;
   guidelines: Record<string, unknown> | null;
-  created_at: ISODateTime;
-  updated_at: ISODateTime;
 }
 
 // ---------------------------------------------------------------------------

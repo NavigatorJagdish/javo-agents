@@ -44,7 +44,7 @@ class SocialAccount(Base):
     access_token: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     refresh_token: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(sa.DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(sa.Enum(AccountStatus), default=AccountStatus.CONNECTED, nullable=False)
+    status: Mapped[str] = mapped_column(sa.Enum(AccountStatus), default=AccountStatus.DISCONNECTED, nullable=False)
     metadata_: Mapped[Optional[Dict[str, Any]]] = mapped_column("metadata", sa.JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

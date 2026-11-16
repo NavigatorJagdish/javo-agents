@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.local_identity import LOCAL_OWNER, OWNER_IDS, ensure_local_owner
 from app.database import get_session
 from app.models.account import SocialAccount
 from app.services.publishing import approve_schedule, dispatch_schedule, load_snapshot, receipt, fingerprint_payload
@@ -25,7 +26,6 @@ from app.models.content import (
     MediaMetadata,
     ScheduleStatus,
 )
-from app.models.user import User
 from app.models.publication import PublicationAttempt, PublicationTimer
 from app.services.timed_dispatch import arm_timer, cancel_timer, timer_receipt
 
@@ -145,10 +145,10 @@ def _infer_asset_type(filename: str) -> AssetType:
 
 
 async def _resolve_user_id(requested_user_id: Optional[str], session: AsyncSession) -> str:
-    if requested_user_id:
-        return requested_user_id
-    res = await session.execute(select(User.id).limit(1))
-    return res.scalar_one_or_none() or "default-user"
+    if requested_user_id is not None and requested_user_id not in OWNER_IDS:
+        raise HTTPException(403, "Cannot assign another content owner")
+    await ensure_local_owner(session)
+    return LOCAL_OWNER
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +185,7 @@ async def upload_content(
     session: AsyncSession = Depends(get_session),
 ) -> ContentAssetResponse:
     """Upload a media or document file into the content library."""
+    resolved_user = await _resolve_user_id(user_id, session)
     settings = get_settings()
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -195,7 +196,6 @@ async def upload_content(
     contents = await file.read()
     dest_path.write_bytes(contents)
 
-    resolved_user = await _resolve_user_id(user_id, session)
     asset = ContentAsset(
         id=asset_id,
         user_id=resolved_user,
@@ -288,7 +288,9 @@ async def create_schedule(
     account = await session.get(SocialAccount, body.account_id)
     if account is None:
         raise HTTPException(404, "Destination account not found")
-    if account.user_id != asset.user_id:
+    if account.user_id != asset.user_id and not (
+        account.user_id in OWNER_IDS and asset.user_id in OWNER_IDS
+    ):
         raise HTTPException(403, "Content and destination have different owners")
 
     schedule = ContentSchedule(

@@ -28,6 +28,8 @@ const path = require('node:path');
     await page.getByRole('button',{name:'Inspect Budget Guardian',exact:true}).waitFor();
     await page.getByRole('button',{name:'Goals',exact:true}).click();
     await page.getByText('No saved goals on this page. Create a goal to begin tracking.').waitFor();
+    await page.getByRole('button',{name:'Accounts',exact:true}).click();
+    await page.getByText('No saved accounts on this page. Add a record to save your brand rules.').waitFor();
     await page.getByRole('button',{name:'Settings',exact:true}).click();
     await page.getByText('Completed AI requests: 0',{exact:true}).waitFor();
     await app.close();

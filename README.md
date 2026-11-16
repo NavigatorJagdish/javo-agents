@@ -15,15 +15,16 @@ contains authenticated controls, durable pause/stop, reviewed content approval,
 timed simulation receipts and encrypted snapshots. Live social posting remains
 disabled. Windows CI has verified the standalone runtime, packaged app and
 NSIS install/uninstall/reinstall using an isolated QA profile at earlier checkpoints.
-A fresh-install crash reproduced in the latest extension; the builder is updated
-to 26.9.0 and the full Windows checks must pass again. This is not a
+A fresh-install crash was corrected by updating the builder to 26.9.0; later
+Windows checks passed the full install/uninstall/reinstall cycle. This is not a
 signed release or certification of every machine and feature.
 
 Provider models, enabled state, defaults and credentials now share encrypted
 persistence between Settings and the AI router. Windows uses current-user
 key protection; other platforms require a retained encryption secret. See
 [provider configuration and recovery boundaries](docs/PROVIDER_CONFIGURATION.md).
-Positive budget increases remain blocked pending durable spending controls.
+Positive budget increases remain blocked pending verified pricing and explicit
+paid activation; saved usage accounting alone does not authorize spending.
 The [text companion](docs/COMPANION.md) now uses real runtime controls and configured AI
 with bounded context and cancellation. Audio engines remain unavailable.
 The [Goals screen](docs/GOALS.md) uses saved measurements and milestones;
@@ -31,6 +32,9 @@ The [Goals screen](docs/GOALS.md) uses saved measurements and milestones;
 [AI Team execution queue](docs/AGENT_EXECUTION.md) supports real saved-goal and
 budget summaries with cancellation and receipts. Remaining specialists are
 explicitly unavailable for execution until their paths are completed.
+The [Accounts screen](docs/SOCIAL_ACCOUNTS.md) saves real account/brand records
+and protects legacy credentials using account-bound encrypted storage. Stored
+credentials remain unverified; official platform sign-in is unavailable.
 Android, full workflows/analytics, official live connectors and complete
 specialist functionality remain under development. See [evidence](docs/REBUILD_STATUS.md).
 

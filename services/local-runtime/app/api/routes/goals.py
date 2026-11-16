@@ -9,18 +9,14 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select, text
-from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models.security import AuditAction, AuditLog
 from app.models.task import Goal, GoalStatus, Milestone
-from app.models.user import User, UserRole
+from app.core.local_identity import LOCAL_OWNER, OWNER_IDS, ensure_local_owner as _ensure_owner
 
 router = APIRouter(prefix="/goals", tags=["goals"])
-LOCAL_OWNER = "local-owner"
-# Only the old synthetic fallback is an alias for this token-authenticated owner.
-OWNER_IDS = (LOCAL_OWNER, "default-user")
 SCHEMA_KEY = '_javo_goal_schema'
 
 
@@ -174,14 +170,6 @@ async def _get_goal_or_404(goal_id: str, session: AsyncSession) -> Goal:
     if goal is None:
         raise HTTPException(404, "Goal not found")
     return goal
-
-
-async def _ensure_owner(session: AsyncSession) -> None:
-    # Disabled login placeholder. Existing local-token authentication is unchanged.
-    await session.execute(insert(User).values(
-        id=LOCAL_OWNER, username=LOCAL_OWNER, email="local-owner@localhost.invalid",
-        password_hash="!disabled-local-token-auth", role=UserRole.ADMIN, is_active=True,
-    ).on_conflict_do_nothing(index_elements=[User.id]))
 
 
 async def _audit(session, goal_id, action, event, details=None):

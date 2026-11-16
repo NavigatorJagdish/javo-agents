@@ -57,9 +57,13 @@ def _dpapi(data: bytes, *, decrypt: bool = False) -> bytes:
 class ProviderVault:
     """One encrypted document; atomic writes and a cross-process mutation lock."""
 
-    def __init__(self, path: str | Path, encryption_secret: str | None = None):
+    def __init__(self, path: str | Path, encryption_secret: str | None = None,
+                 *, key_domain: bytes = b"javo-provider-v1\0"):
         self.path = Path(path)
         self.secret = encryption_secret
+        if not isinstance(key_domain, bytes) or not 1 <= len(key_domain) <= 128:
+            raise ValueError('Invalid encryption key domain')
+        self.key_domain = key_domain
         self.key_path = self.path.with_suffix(".key.dpapi")
 
     @property
@@ -70,7 +74,7 @@ class ProviderVault:
 
     def _key(self) -> bytes:
         if self.secret and len(self.secret) >= 32:
-            digest = hashlib.sha256(b"javo-provider-v1\0" + self.secret.encode()).digest()
+            digest = hashlib.sha256(self.key_domain + self.secret.encode()).digest()
             return base64.urlsafe_b64encode(digest)
         if sys.platform != "win32":
             raise VaultUnavailable(

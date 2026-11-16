@@ -25,6 +25,7 @@ def owner_runtime(tmp_path, monkeypatch):
         'CONTROL_STATE_PATH': str(tmp_path/'control.json'),
         'PROVIDER_CONFIG_PATH': str(tmp_path/'providers.enc'),
         'USAGE_LEDGER_PATH': str(tmp_path/'usage.sqlite'),
+        'ACCOUNT_CREDENTIALS_DIR': str(tmp_path/'account-credentials'),
         'ENCRYPTION_KEY': secrets.token_urlsafe(48),
     }
     for key in ('CONTENT_ROOT', 'UPLOAD_DIR', 'BACKUP_DIR', 'THUMBNAIL_DIR'):

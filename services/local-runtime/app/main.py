@@ -28,6 +28,7 @@ from app.models.agent import AgentDefinition, AgentStatus
 from app.services.content_watcher import get_content_watcher
 from app.services.timed_dispatch import timed_worker
 from app.services.agent_jobs import agent_worker
+from app.services.social_credentials import migrate_legacy_credentials
 
 settings = get_settings()
 logging.basicConfig(
@@ -142,6 +143,7 @@ async def lifespan(app: FastAPI):
         cleanup.push_async_callback(close_db)
         init_engine()
         await create_tables()
+        await migrate_legacy_credentials()
         await _seed_agents()
 
         resource_mgr = get_resource_manager()

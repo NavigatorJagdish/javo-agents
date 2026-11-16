@@ -270,8 +270,8 @@ export class JavoApiClient {
   // Social Accounts & Brand Profiles
   // -------------------------------------------------------------------------
 
-  public listAccounts(): Promise<SocialAccount[]> {
-    return this.request<SocialAccount[]>("GET", "/accounts/");
+  public listAccounts(params?: { limit?: number; offset?: number }): Promise<SocialAccount[]> {
+    return this.request<SocialAccount[]>("GET", "/accounts/", { query: params });
   }
 
   public createAccount(payload: {
@@ -286,7 +286,23 @@ export class JavoApiClient {
     return this.request<BrandProfile>("GET", `/accounts/${encodeURIComponent(accountId)}/brand-profile`);
   }
 
-  public upsertBrandProfile(accountId: string, profile: Partial<BrandProfile>): Promise<BrandProfile> {
+  public updateAccount(accountId: string, payload: { username?: string; display_name?: string | null }): Promise<SocialAccount> {
+    return this.request<SocialAccount>("PUT", `/accounts/${encodeURIComponent(accountId)}`, { body: payload });
+  }
+
+  public protectLegacyCredentials(accountId: string): Promise<SocialAccount> {
+    return this.request<SocialAccount>("POST", `/accounts/${encodeURIComponent(accountId)}/credentials/migrate`);
+  }
+
+  public removeAccountCredentials(accountId: string): Promise<SocialAccount> {
+    return this.request<SocialAccount>("DELETE", `/accounts/${encodeURIComponent(accountId)}/credentials`);
+  }
+
+  public deleteAccount(accountId: string): Promise<void> {
+    return this.request<void>("DELETE", `/accounts/${encodeURIComponent(accountId)}`);
+  }
+
+  public upsertBrandProfile(accountId: string, profile: Partial<Omit<BrandProfile, "id" | "account_id">>): Promise<BrandProfile> {
     return this.request<BrandProfile>("PUT", `/accounts/${encodeURIComponent(accountId)}/brand-profile`, {
       body: profile,
     });

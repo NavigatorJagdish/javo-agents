@@ -20,6 +20,7 @@ def complete(coro):
     [
         ("db_start", ["db_close"]),
         ("tables", ["db_close"]),
+        ("credential_migration", ["db_close"]),
         ("worker_start", ["worker_stop", "db_close"]),
         ("scheduler_start", ["scheduler_stop", "worker_stop", "db_close"]),
         ("watcher_start", ["watcher_stop", "scheduler_stop", "worker_stop", "db_close"]),
@@ -59,6 +60,7 @@ def test_partial_start_and_cleanup_failures_release_resources(monkeypatch, failu
     monkeypatch.setattr(main, "_ensure_directories", lambda: None)
     monkeypatch.setattr(main, "init_engine", sync("db_start"))
     monkeypatch.setattr(main, "create_tables", asynchronous("tables"))
+    monkeypatch.setattr(main, 'migrate_legacy_credentials', asynchronous('credential_migration'))
     monkeypatch.setattr(main, "_seed_agents", asynchronous("seed"))
     monkeypatch.setattr(main, "close_db", asynchronous("db_close"))
     monkeypatch.setattr(

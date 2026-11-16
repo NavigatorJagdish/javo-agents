@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.connectors.base import PostPayload
 from app.connectors.mock import MockConnector
 from app.core.resource_manager import get_resource_manager
+from app.core.local_identity import OWNER_IDS
 from app.models.account import SocialAccount
 from app.models.content import ContentAsset, ContentSchedule, ScheduleStatus
 from app.models.publication import PublicationApproval, PublicationAttempt
@@ -37,7 +38,9 @@ async def load_snapshot(session: AsyncSession, schedule_id: str):
     account = await session.get(SocialAccount, schedule.account_id)
     if asset is None or account is None:
         raise HTTPException(409, "Content or destination account is missing")
-    if asset.user_id != account.user_id:
+    if asset.user_id != account.user_id and not (
+        asset.user_id in OWNER_IDS and account.user_id in OWNER_IDS
+    ):
         raise HTTPException(403, "Content and destination account have different owners")
     digest = None
     if asset.file_path:

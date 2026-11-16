@@ -1,6 +1,37 @@
 # Rebuild evidence and remaining scope
 
-Current review: 15 November 2026. This is an unfinished rebuild, not a production release.
+Current review: 16 November 2026. This is an unfinished rebuild, not a production release.
+
+## Saved accounts and encrypted legacy credentials — 16 November 2026
+
+Accounts now saves owner-scoped account records and individual brand profiles.
+Account-bound authenticated encryption protects old SQL tokens and recognized
+nested credential metadata before clearing their source fields. Failed/conflicting
+migrations preserve the source; locked keys are never replaced silently. API
+responses expose availability flags, not tokens. Stored credentials never imply
+a verified platform connection; official OAuth/live publishing remain unavailable.
+Unused-record removal and credential removal require confirmation; linked work
+and execution history are preserved. See SOCIAL_ACCOUNTS.md for recovery limits.
+
+Local backend suite:197 passed, two platform skips, one dependency warning
+(198.90s); account-specific tests15 passed, one platform skip. Skill unittest
+collection14 passed. Ruff, Bandit -ll, dashboard/shared-client builds passed.
+Chrome completed ACCOUNTS_ENCRYPTED_LEGACY_MIGRATION_RECORD_BRAND_RELOAD_EDIT_REMOVE_OK
+against a real temporary runtime/database, including synthetic old-record
+migration, redaction, unavailable OAuth, credential removal, brand save/reload,
+edits and removal. Inspected the 390px screenshot. Development Electron with
+the actual venv backend started/navigated/quit with no leftover backend listener.
+CI for this increment must be checked separately after saving its source.
+The final Content compatibility rerun completed COMPANION_REAL_CONTROL_AND_FIXTURE_MODEL_FLOW_OK,
+PROVIDER_ENCRYPTED_SAVE_RELOAD_REDACTION_REMOVE_OK and DASHBOARD_BROWSER_FLOW_OK.
+Source browser tests use deterministic capacity for their synthetic model/worker
+operations; production resource-pressure checks are unchanged. An added legacy
+owner-alias scheduling/preview regression also passed after the full-suite run.
+
+The preceding consistency/emergency fixes at1a34e46c22eefaf3645ac38f4079fb6b170f5e4f
+passed backend43890811809, frontend43890812368, security43890811935 and
+Windows43890811849. These results supersede the pending-CI statement below
+for that exact commit only.
 
 ## Saved Goals increment — local Windows evidence
 

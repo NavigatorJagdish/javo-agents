@@ -22,7 +22,7 @@ export function Content() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const assets = useQuery({ queryKey: ['content'], queryFn: () => apiRequest<Asset[]>('/api/content/'), retry: false });
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => apiRequest<Account[]>('/api/accounts/'), retry: false });
+  const accounts = useQuery({ queryKey: ['saved-accounts', 0], queryFn: () => apiRequest<Account[]>('/api/accounts/'), retry: false });
   const schedules = useQuery({ queryKey: ['schedules'], queryFn: () => apiRequest<Schedule[]>('/api/content/schedule'), retry: false });
   const timers = useQuery({ queryKey: ['content-timers'], queryFn: () => apiRequest<Timer[]>('/api/content/timers'), retry: false, refetchInterval: 5000 });
   async function act(work: () => Promise<void>) {
@@ -70,8 +70,8 @@ export function Content() {
       <label className="block" htmlFor="content-destination">Destination</label>
       <select id="content-destination" className={inputStyle} required value={account} onChange={e => setAccount(e.target.value)}><option value="">Choose destination</option>{accounts.data?.map(a => <option key={a.id} value={a.id}>{a.username} ({a.platform})</option>)}</select>
       <button type="button" disabled={busy} className={buttonStyle} onClick={() => act(async () => {
-        const created = await apiRequest<Account>('/api/accounts/', { method: 'POST', body: { platform: 'other', username: 'Local simulation', metadata: { simulation_only: true } } });
-        await qc.invalidateQueries({ queryKey: ['accounts'] }); setAccount(created.id); setNotice('Disconnected simulation destination created. No OAuth or remote account connected.');
+        const created = await apiRequest<Account>('/api/accounts/', { method: 'POST', body: { platform: 'other', username: 'Local simulation', metadata: { account_type: 'simulation' } } });
+        await qc.invalidateQueries({ queryKey: ['saved-accounts'] }); setAccount(created.id); setNotice('Disconnected simulation destination created. No OAuth or remote account connected.');
       })}>Add local simulation destination</button>
       <label className="block">Caption<textarea className={inputStyle} value={caption} onChange={e => setCaption(e.target.value)} /></label>
       <label className="block">Planned time — IST (UTC+05:30)<input className={inputStyle} type="datetime-local" required value={when} onChange={e => setWhen(e.target.value)} /></label>

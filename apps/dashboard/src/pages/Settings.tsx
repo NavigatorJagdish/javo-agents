@@ -144,7 +144,7 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-            Create an encrypted database snapshot on the runtime computer. A persistent backup encryption key must be configured and retained separately. Usage accounting, media folders and vault keys are not included.
+            Create an encrypted database snapshot on the runtime computer. A persistent backup encryption key must be configured and retained separately. Usage accounting, media folders, AI/social credential vaults and their keys are not included.
           </p>
           <Button
             size="sm"

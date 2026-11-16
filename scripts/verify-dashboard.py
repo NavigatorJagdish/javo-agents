@@ -16,7 +16,7 @@ import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents'], default='dashboard')
+parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts'], default='dashboard')
 args = parser.parse_args()
 
 
@@ -69,6 +69,7 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
         "JAVO_CONTROL_STATE_PATH": str(data / "control.json"),
         "JAVO_PROVIDER_CONFIG_PATH": str(data / "providers.enc"),
         "JAVO_USAGE_LEDGER_PATH": str(data / "usage.sqlite"),
+        "JAVO_ACCOUNT_CREDENTIALS_DIR": str(data / 'account-credentials'),
         "JAVO_ENCRYPTION_KEY": secrets.token_urlsafe(48),
         "JAVO_OLLAMA_BASE_URL": endpoint,
         "JAVO_DATABASE_URL": "sqlite+aiosqlite:///" + str(data / "runtime.db"),
@@ -78,6 +79,26 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
     })
     for key in ["CONTENT_ROOT", "UPLOAD_DIR", "BACKUP_DIR", "THUMBNAIL_DIR"]:
         env["JAVO_" + key] = str(data / key.lower())
+    if args.scenario == 'accounts':
+        # Seed only synthetic old-version rows before startup. The real source
+        # or frozen runtime must protect them; no migration is mocked here.
+        seed = '''
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from app.database import Base
+import app.models  # Register the real schema before creating synthetic rows.
+from app.models.account import SocialAccount, Platform, AccountStatus
+from app.models.user import User, UserRole
+import os
+engine = create_engine(os.environ['JAVO_DATABASE_URL'].replace('sqlite+aiosqlite:', 'sqlite:'))
+Base.metadata.create_all(engine)
+with Session(engine) as session:
+    session.add(User(id='default-user', username='synthetic-ui-owner', email='synthetic@localhost.invalid', password_hash='!disabled', role=UserRole.ADMIN))
+    session.add(SocialAccount(id='synthetic-legacy-account', user_id='default-user', platform=Platform.YOUTUBE, username='@synthetic-legacy', display_name='Synthetic legacy migration', access_token='synthetic-ui-legacy-access', refresh_token='synthetic-ui-legacy-refresh', status=AccountStatus.CONNECTED, metadata_={'credentials': {'token': 'synthetic-ui-metadata-secret'}}))
+    session.commit()
+engine.dispose()
+'''
+        subprocess.run([sys.executable, '-c', seed], cwd=data, env=env, check=True, timeout=20)
     if args.scenario == 'usage':
         # This UI scenario checks persisted counters with labelled synthetic
         # records. Router/transport accounting is tested independently.
@@ -91,9 +112,10 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
     with (data / "runtime.log").open("w", encoding="utf-8") as log:
         bundled = os.environ.get("JAVO_RUNTIME_EXE")
         module = 'app.main:app'
-        if args.scenario == 'agents' and not bundled:
-            # Small deterministic read operations exercise the real worker with
+        if args.scenario in ('agents', 'dashboard') and not bundled:
+            # Synthetic model/read operations exercise the real worker with
             # fixture capacity, independently of other apps using the host RAM.
+            # This does not benchmark a real model or change production limits.
             (data / 'scenario_runtime.py').write_text(
                 'from app.core.resource_manager import ResourceManager, SystemMetrics\n'
                 'ResourceManager.get_metrics = lambda self: SystemMetrics(0,25,8192,16384,10,100,len(self._active_tasks),0)\n'
@@ -116,7 +138,7 @@ with fixture_provider() as endpoint, tempfile.TemporaryDirectory(prefix="javo-ui
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
+            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
             result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)

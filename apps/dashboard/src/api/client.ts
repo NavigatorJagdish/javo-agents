@@ -29,6 +29,27 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
   params?: Record<string, string | number | boolean | undefined>;
 }
 
+export type AccountPlatform = 'youtube' | 'instagram' | 'facebook' | 'twitter' | 'tiktok' | 'linkedin' | 'pinterest' | 'threads' | 'telegram' | 'other';
+export interface AccountDto {
+  id: string;
+  platform: AccountPlatform;
+  username: string;
+  display_name: string | null;
+  status: 'disconnected';
+  connection_verified: false;
+  credential_state: 'none' | 'saved_unverified' | 'legacy_unprotected' | 'unavailable';
+  has_saved_credentials: boolean | null;
+  credentials_protection: string;
+  has_refresh_token: boolean | null;
+  credential_expires_at: string | null;
+}
+export interface BrandDto {
+  brand_name: string;
+  brand_voice: string | null;
+  target_audience: string | null;
+  content_pillars: string[] | null;
+}
+
 function buildUrl(path: string, params?: RequestOptions['params']): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   const url = new URL(`${API_BASE_URL}${normalized}`);
