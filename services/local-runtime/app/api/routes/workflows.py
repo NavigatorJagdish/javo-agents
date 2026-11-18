@@ -1,337 +1,365 @@
-"""Visual workflow CRUD and execution routes."""
+"""Owner-scoped saved workflow graphs, revision checks and actual local runs."""
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Optional
+from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import Field, ValidationError
+from sqlalchemy import delete, func, select, text
 
+from app.core.local_identity import LOCAL_OWNER, OWNER_IDS, ensure_local_owner
 from app.database import get_session
-from app.models.user import User
+from app.models.security import AuditAction, AuditLog
 from app.models.workflow import (
-    NodeType,
     Workflow,
-    WorkflowEdge,
-    WorkflowExecution,
-    WorkflowExecutionStatus,
     WorkflowNode,
+    WorkflowEdge,
+    WorkflowRevision,
+    WorkflowExecution,
     WorkflowStatus,
+)
+from app.services.workflow_graphs import (
+    Definition,
+    Input,
+    bounded_json,
+    execution_plan,
+    fingerprint,
+    owned_workflow,
+    revision_number,
+    snapshot,
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
 
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-class WorkflowNodeInput(BaseModel):
-    id: Optional[str] = None
-    node_type: NodeType
-    label: str = Field(..., min_length=1, max_length=128)
-    position_x: float = 0.0
-    position_y: float = 0.0
-    config: Optional[dict[str, Any]] = None
-    is_entry_point: bool = False
+def utc_date(value):
+    return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
 
 
-class WorkflowNodeResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    workflow_id: str
-    node_type: NodeType
-    label: str
-    position_x: float
-    position_y: float
-    config: Optional[dict[str, Any]] = None
-    is_entry_point: bool
+class Create(Definition):
+    user_id: str | None = None
 
 
-class WorkflowEdgeInput(BaseModel):
-    id: Optional[str] = None
-    source_node_id: str
-    target_node_id: str
-    condition: Optional[str] = None
-    label: Optional[str] = None
+class Update(Definition):
+    expected_revision: int = Field(ge=0, strict=True)
 
 
-class WorkflowEdgeResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    workflow_id: str
-    source_node_id: str
-    target_node_id: str
-    condition: Optional[str] = None
-    label: Optional[str] = None
+class Restore(Input):
+    expected_revision: int = Field(ge=0, strict=True)
+    revision: int = Field(ge=1, strict=True)
 
 
-class WorkflowCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=256)
-    description: Optional[str] = None
-    user_id: Optional[str] = None
-    status: WorkflowStatus = WorkflowStatus.DRAFT
-    trigger_config: Optional[dict[str, Any]] = None
-    viewport: Optional[dict[str, Any]] = None
-    nodes: list[WorkflowNodeInput] = Field(default_factory=list)
-    edges: list[WorkflowEdgeInput] = Field(default_factory=list)
+class Execute(Input):
+    expected_revision: int | None = Field(default=None, ge=0, strict=True)
+    fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    trigger_data: dict = Field(default_factory=dict)
 
 
-class WorkflowUpdate(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=256)
-    description: Optional[str] = None
-    status: Optional[WorkflowStatus] = None
-    trigger_config: Optional[dict[str, Any]] = None
-    viewport: Optional[dict[str, Any]] = None
-    nodes: Optional[list[WorkflowNodeInput]] = None
-    edges: Optional[list[WorkflowEdgeInput]] = None
-
-
-class WorkflowResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    user_id: str
-    name: str
-    description: Optional[str] = None
-    status: WorkflowStatus
-    trigger_config: Optional[dict[str, Any]] = None
-    viewport: Optional[dict[str, Any]] = None
-    run_count: int = 0
-    last_run_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-    nodes: list[WorkflowNodeResponse] = Field(default_factory=list)
-    edges: list[WorkflowEdgeResponse] = Field(default_factory=list)
-
-
-class ExecuteWorkflowRequest(BaseModel):
-    trigger_data: dict[str, Any] = Field(default_factory=dict)
-
-
-class WorkflowExecutionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    workflow_id: str
-    status: WorkflowExecutionStatus
-    trigger_data: Optional[dict[str, Any]] = None
-    current_node_id: Optional[str] = None
-    execution_log: Optional[list[dict[str, Any]]] = None
-    error: Optional[str] = None
-    started_at: datetime
-    completed_at: Optional[datetime] = None
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-async def _get_workflow_or_404(workflow_id: str, session: AsyncSession) -> Workflow:
-    stmt = (
-        select(Workflow)
-        .where(Workflow.id == workflow_id)
-        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+def audit(session, workflow_id, description):
+    session.add(
+        AuditLog(
+            user_id=LOCAL_OWNER,
+            action=AuditAction.UPDATE,
+            resource_type="workflow",
+            resource_id=workflow_id,
+            description=description,
+        )
     )
-    result = await session.execute(stmt)
-    wf = result.scalar_one_or_none()
-    if not wf:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
-    return wf
 
 
-async def _resolve_user_id(requested_user_id: Optional[str], session: AsyncSession) -> str:
-    if requested_user_id:
-        return requested_user_id
-    res = await session.execute(select(User.id).limit(1))
-    return res.scalar_one_or_none() or "default-user"
+async def response(session, workflow):
+    definition = snapshot(workflow)
+    errors = []
+    try:
+        execution_plan(definition)
+    except (ValueError, ValidationError):
+        # Do not return raw validation input: graph config may contain private text.
+        try:
+            Definition.model_validate(definition)
+            try:
+                execution_plan(definition)
+            except ValidationError:
+                errors = ["Saved graph needs repair before running"]
+            except ValueError as error:
+                errors = [str(error)]  # Only fixed messages from our graph validator.
+        except (ValueError, ValidationError):
+            errors = ["Saved legacy graph needs repair before running"]
+    return {
+        **definition,
+        "id": workflow.id,
+        "user_id": workflow.user_id,
+        "revision": await revision_number(session, workflow.id),
+        "fingerprint": fingerprint(definition),
+        "execution_available": not errors,
+        "validation_errors": errors,
+        "run_count": await session.scalar(
+            select(func.count())
+            .select_from(WorkflowExecution)
+            .where(
+                WorkflowExecution.workflow_id == workflow.id,
+                WorkflowExecution.status == "COMPLETED",
+                WorkflowExecution.trigger_data["_javo_workflow_run"].as_integer() == 1,
+            )
+        ),
+        "reported_run_count": workflow.run_count,
+        "last_run_at": utc_date(workflow.last_run_at),
+        "created_at": utc_date(workflow.created_at),
+        "updated_at": utc_date(workflow.updated_at),
+    }
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-@router.get("/", response_model=list[WorkflowResponse])
+async def replace_graph(session, workflow, definition):
+    node_ids, edge_ids = [n.id for n in definition.nodes], [e.id for e in definition.edges]
+    for model, ids in ((WorkflowNode, node_ids), (WorkflowEdge, edge_ids)):
+        if ids and await session.scalar(
+            select(model.id).where(model.id.in_(ids), model.workflow_id != workflow.id).limit(1)
+        ):
+            raise HTTPException(
+                409,
+                "Graph identifiers belong to another workflow; make a copy with new identifiers",
+            )
+    workflow.edges.clear()
+    await session.flush()
+    workflow.nodes.clear()
+    await session.flush()
+    for node in definition.nodes:
+        workflow.nodes.append(WorkflowNode(workflow_id=workflow.id, **node.model_dump()))
+    await session.flush()
+    for edge in definition.edges:
+        workflow.edges.append(WorkflowEdge(workflow_id=workflow.id, **edge.model_dump()))
+    for key in ("name", "description", "trigger_config", "viewport"):
+        setattr(workflow, key, getattr(definition, key))
+    workflow.status = WorkflowStatus(definition.status)
+    workflow.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+    number = await revision_number(session, workflow.id) + 1
+    saved = snapshot(workflow)
+    session.add(
+        WorkflowRevision(
+            id=str(uuid4()),
+            workflow_id=workflow.id,
+            revision=number,
+            definition=saved,
+            fingerprint=fingerprint(saved),
+        )
+    )
+    await session.flush()
+
+
+async def check_revision(session, workflow_id, expected):
+    if expected != await revision_number(session, workflow_id):
+        raise HTTPException(
+            409, "This workflow changed elsewhere. Reload the saved version before overwriting it."
+        )
+
+
+@router.get("/")
 async def list_workflows(
-    status_filter: Optional[WorkflowStatus] = Query(default=None, alias="status"),
-    session: AsyncSession = Depends(get_session),
-) -> list[WorkflowResponse]:
-    """List all workflows with their nodes and edges."""
-    stmt = select(Workflow).options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
-    if status_filter is not None:
-        stmt = stmt.where(Workflow.status == status_filter)
-    result = await session.execute(stmt.order_by(Workflow.created_at.desc()))
-    return [WorkflowResponse.model_validate(w) for w in result.scalars().all()]
+    limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), session=Depends(get_session)
+):
+    await session.execute(text("BEGIN"))
+    ids = (
+        await session.scalars(
+            select(Workflow.id)
+            .where(Workflow.user_id.in_(OWNER_IDS))
+            .order_by(Workflow.updated_at.desc(), Workflow.id)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    return [await response(session, await owned_workflow(session, key)) for key in ids]
 
 
-@router.post("/", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
-async def create_workflow(
-    body: WorkflowCreate,
-    session: AsyncSession = Depends(get_session),
-) -> WorkflowResponse:
-    """Create a workflow with optional initial nodes and edges."""
-    wf_id = str(uuid4())
-    user_id = await _resolve_user_id(body.user_id, session)
-    wf = Workflow(
-        id=wf_id,
-        user_id=user_id,
+@router.post("/", status_code=201)
+async def create_workflow(body: Create, session=Depends(get_session)):
+    if body.user_id is not None and body.user_id != LOCAL_OWNER:
+        raise HTTPException(403, "Cannot assign another workflow owner")
+    await session.execute(text("BEGIN IMMEDIATE"))
+    await ensure_local_owner(session)
+    workflow = Workflow(
+        id=str(uuid4()),
+        user_id=LOCAL_OWNER,
         name=body.name,
-        description=body.description,
-        status=body.status,
-        trigger_config=body.trigger_config,
-        viewport=body.viewport,
+        status=WorkflowStatus.DRAFT,
+        nodes=[],
+        edges=[],
     )
-    session.add(wf)
+    session.add(workflow)
+    await session.flush()
+    await replace_graph(session, workflow, body)
+    audit(
+        session,
+        workflow.id,
+        "Workflow definition saved as a new revision; no automatic trigger enabled",
+    )
+    result = await response(session, workflow)
+    await session.commit()
+    return result
 
-    for node_in in body.nodes:
-        session.add(
-            WorkflowNode(
-                id=node_in.id or str(uuid4()),
-                workflow_id=wf_id,
-                node_type=node_in.node_type,
-                label=node_in.label,
-                position_x=node_in.position_x,
-                position_y=node_in.position_y,
-                config=node_in.config,
-                is_entry_point=node_in.is_entry_point,
-            )
+
+@router.get("/executions/{exec_id}")
+async def get_execution(exec_id: str, session=Depends(get_session)):
+    from app.services.workflow_jobs import run_response
+
+    execution = await session.get(WorkflowExecution, exec_id)
+    if execution is None:
+        raise HTTPException(404, "Workflow execution not found")
+    await owned_workflow(session, execution.workflow_id)
+    return run_response(execution)
+
+
+@router.get("/{workflow_id}")
+async def get_workflow(workflow_id: str, session=Depends(get_session)):
+    await session.execute(text("BEGIN"))
+    return await response(session, await owned_workflow(session, workflow_id))
+
+
+@router.put("/{workflow_id}")
+async def update_workflow(workflow_id: str, body: Update, session=Depends(get_session)):
+    await session.execute(text("BEGIN IMMEDIATE"))
+    workflow = await owned_workflow(session, workflow_id)
+    await check_revision(session, workflow_id, body.expected_revision)
+    await replace_graph(session, workflow, body)
+    audit(session, workflow_id, "Workflow definition updated; previous revisions retained")
+    result = await response(session, workflow)
+    await session.commit()
+    return result
+
+
+@router.get("/{workflow_id}/revisions")
+async def revisions(
+    workflow_id: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    session=Depends(get_session),
+):
+    await owned_workflow(session, workflow_id)
+    rows = (
+        await session.scalars(
+            select(WorkflowRevision)
+            .where(WorkflowRevision.workflow_id == workflow_id)
+            .order_by(WorkflowRevision.revision.desc())
+            .offset(offset)
+            .limit(limit)
         )
+    ).all()
+    return [
+        {
+            "revision": row.revision,
+            "fingerprint": row.fingerprint,
+            "name": row.definition.get("name"),
+            "created_at": utc_date(row.created_at),
+        }
+        for row in rows
+    ]
 
-    for edge_in in body.edges:
-        session.add(
-            WorkflowEdge(
-                id=edge_in.id or str(uuid4()),
-                workflow_id=wf_id,
-                source_node_id=edge_in.source_node_id,
-                target_node_id=edge_in.target_node_id,
-                condition=edge_in.condition,
-                label=edge_in.label,
-            )
+
+@router.post("/{workflow_id}/restore")
+async def restore_revision(workflow_id: str, body: Restore, session=Depends(get_session)):
+    await session.execute(text("BEGIN IMMEDIATE"))
+    workflow = await owned_workflow(session, workflow_id)
+    await check_revision(session, workflow_id, body.expected_revision)
+    revision = await session.scalar(
+        select(WorkflowRevision).where(
+            WorkflowRevision.workflow_id == workflow_id, WorkflowRevision.revision == body.revision
         )
-
+    )
+    if revision is None:
+        raise HTTPException(404, "Workflow revision not found")
+    try:
+        definition = Definition.model_validate(revision.definition)
+    except (ValueError, ValidationError):
+        raise HTTPException(
+            503, "Saved revision is invalid; original definition was retained"
+        ) from None
+    if revision.fingerprint != fingerprint(revision.definition):
+        raise HTTPException(
+            503, "Saved revision integrity check failed; original definition was retained"
+        )
+    await replace_graph(session, workflow, definition)
+    audit(session, workflow_id, "Earlier workflow definition restored as a new revision")
+    result = await response(session, workflow)
     await session.commit()
-    wf = await _get_workflow_or_404(wf_id, session)
-    return WorkflowResponse.model_validate(wf)
+    return result
 
 
-@router.get("/executions/{exec_id}", response_model=WorkflowExecutionResponse)
-async def get_execution(
-    exec_id: str,
-    session: AsyncSession = Depends(get_session),
-) -> WorkflowExecutionResponse:
-    """Get status and log of a specific workflow execution."""
-    res = await session.execute(select(WorkflowExecution).where(WorkflowExecution.id == exec_id))
-    execution = res.scalar_one_or_none()
-    if not execution:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow execution not found")
-    return WorkflowExecutionResponse.model_validate(execution)
-
-
-@router.get("/{workflow_id}", response_model=WorkflowResponse)
-async def get_workflow(
-    workflow_id: str,
-    session: AsyncSession = Depends(get_session),
-) -> WorkflowResponse:
-    """Retrieve a workflow by ID."""
-    wf = await _get_workflow_or_404(workflow_id, session)
-    return WorkflowResponse.model_validate(wf)
-
-
-@router.put("/{workflow_id}", response_model=WorkflowResponse)
-async def update_workflow(
-    workflow_id: str,
-    body: WorkflowUpdate,
-    session: AsyncSession = Depends(get_session),
-) -> WorkflowResponse:
-    """Update workflow metadata and optionally replace its graph (nodes/edges)."""
-    wf = await _get_workflow_or_404(workflow_id, session)
-    data = body.model_dump(exclude_unset=True)
-
-    nodes_in = data.pop("nodes", None)
-    edges_in = data.pop("edges", None)
-    for key, value in data.items():
-        setattr(wf, key, value)
-
-    if nodes_in is not None:
-        wf.nodes.clear()
-        await session.flush()
-        for n in body.nodes or []:
-            wf.nodes.append(
-                WorkflowNode(
-                    id=n.id or str(uuid4()),
-                    workflow_id=workflow_id,
-                    node_type=n.node_type,
-                    label=n.label,
-                    position_x=n.position_x,
-                    position_y=n.position_y,
-                    config=n.config,
-                    is_entry_point=n.is_entry_point,
-                )
-            )
-
-    if edges_in is not None:
-        wf.edges.clear()
-        await session.flush()
-        for e in body.edges or []:
-            wf.edges.append(
-                WorkflowEdge(
-                    id=e.id or str(uuid4()),
-                    workflow_id=workflow_id,
-                    source_node_id=e.source_node_id,
-                    target_node_id=e.target_node_id,
-                    condition=e.condition,
-                    label=e.label,
-                )
-            )
-
-    await session.commit()
-    wf = await _get_workflow_or_404(workflow_id, session)
-    return WorkflowResponse.model_validate(wf)
-
-
-@router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_workflow(workflow_id: str, session: AsyncSession = Depends(get_session)) -> None:
-    """Delete a workflow."""
-    wf = await _get_workflow_or_404(workflow_id, session)
-    await session.delete(wf)
+@router.delete("/{workflow_id}", status_code=204)
+async def delete_workflow(
+    workflow_id: str, expected_revision: int = Query(ge=0), session=Depends(get_session)
+):
+    await session.execute(text("BEGIN IMMEDIATE"))
+    workflow = await owned_workflow(session, workflow_id)
+    await check_revision(session, workflow_id, expected_revision)
+    if await session.scalar(
+        select(WorkflowExecution.id).where(WorkflowExecution.workflow_id == workflow_id).limit(1)
+    ):
+        raise HTTPException(
+            409, "This workflow has execution history. Archive it to preserve the receipts."
+        )
+    await session.execute(
+        delete(WorkflowRevision).where(WorkflowRevision.workflow_id == workflow_id)
+    )
+    audit(session, workflow_id, "Unused workflow and definition revisions removed")
+    await session.delete(workflow)
     await session.commit()
 
 
-@router.post(
-    "/{workflow_id}/execute",
-    response_model=WorkflowExecutionResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def execute_workflow(
-    workflow_id: str,
-    body: ExecuteWorkflowRequest = ExecuteWorkflowRequest(),
-    session: AsyncSession = Depends(get_session),
-) -> WorkflowExecutionResponse:
-    """Do not create a phantom running receipt without a connected worker."""
-    await _get_workflow_or_404(workflow_id, session)
-    raise HTTPException(
-        501,
-        "Saved workflow graphs do not yet have a durable execution path; no run was started",
+@router.post("/{workflow_id}/execute", status_code=202)
+async def execute_workflow(workflow_id: str, body: Execute, session=Depends(get_session)):
+    from app.services.workflow_jobs import enqueue, run_response
+
+    await session.execute(text("BEGIN IMMEDIATE"))
+    workflow = await owned_workflow(session, workflow_id)
+    definition = snapshot(workflow)
+    try:
+        execution_plan(definition)
+    except (ValueError, ValidationError):
+        raise HTTPException(
+            501,
+            "This graph is not executable by the supported local executor; inspect its validation messages",
+        ) from None
+    if body.expected_revision is None or body.fingerprint is None:
+        raise HTTPException(422, "Review a saved revision and fingerprint before running")
+    await check_revision(session, workflow_id, body.expected_revision)
+    if body.fingerprint != fingerprint(definition):
+        raise HTTPException(409, "The saved graph changed; reload and review before running")
+    try:
+        bounded_json(body.trigger_data, 8192)
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Trigger data exceeds its supported limit") from None
+    return run_response(
+        await enqueue(session, workflow, definition, body.expected_revision, body.trigger_data)
     )
 
 
-@router.get("/{workflow_id}/executions", response_model=list[WorkflowExecutionResponse])
-async def list_workflow_executions(
-    workflow_id: str,
-    limit: int = Query(50, ge=1, le=200),
-    session: AsyncSession = Depends(get_session),
-) -> list[WorkflowExecutionResponse]:
-    """List past and running executions of a workflow."""
-    await _get_workflow_or_404(workflow_id, session)
-    stmt = (
-        select(WorkflowExecution)
-        .where(WorkflowExecution.workflow_id == workflow_id)
-        .order_by(WorkflowExecution.started_at.desc())
-        .limit(limit)
-    )
-    result = await session.execute(stmt)
-    return [WorkflowExecutionResponse.model_validate(e) for e in result.scalars().all()]
+@router.get("/{workflow_id}/executions")
+async def list_executions(
+    workflow_id: str, limit: int = Query(50, ge=1, le=100), session=Depends(get_session)
+):
+    from app.services.workflow_jobs import run_response
+
+    await owned_workflow(session, workflow_id)
+    rows = (
+        await session.scalars(
+            select(WorkflowExecution)
+            .where(WorkflowExecution.workflow_id == workflow_id)
+            .order_by(WorkflowExecution.started_at.desc(), WorkflowExecution.id)
+            .limit(limit)
+        )
+    ).all()
+    return [run_response(row) for row in rows]
+
+
+@router.post("/{workflow_id}/executions/{exec_id}/cancel")
+async def cancel_run(workflow_id: str, exec_id: str, session=Depends(get_session)):
+    from app.services.workflow_jobs import cancel
+
+    await session.execute(text("BEGIN IMMEDIATE"))
+    await owned_workflow(session, workflow_id)
+    execution = await session.get(WorkflowExecution, exec_id)
+    if execution is None or execution.workflow_id != workflow_id:
+        raise HTTPException(404, "Workflow execution not found")
+    await cancel(session, execution)
+    return {"status": "cancelled"}

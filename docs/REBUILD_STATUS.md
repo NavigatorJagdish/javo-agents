@@ -1,6 +1,42 @@
 # Rebuild evidence and remaining scope
 
-Current review: 16 November 2026. This is an unfinished rebuild, not a production release.
+Current review: 18 November 2026. This is an unfinished rebuild, not a production release.
+
+## Saved workflows and realistic-use repair — 17–18 November 2026
+
+Replaced the disconnected graph prototype with real owner-scoped persistence,
+schema/edge/cycle/size validation, immutable revisions/fingerprints, restore and
+expected-revision conflict checks. The editor preserves pending changes, offers
+Save as new copy, warns before navigation/discard, supports keyboard connections
+and refits graphs at narrow widths. No production-user telemetry was available;
+these are reproduced input/concurrency/browser scenarios, not external usage data.
+
+An actual durable worker supports reviewed manual Trigger → local AI Prompt/Delay
+→ End paths. Runs retain their reviewed definition, permission snapshot and real
+queued/running/final receipts. Cancellation/emergency stop prevents late success;
+interrupted runs are not replayed blindly. Legacy counters/receipts are separated
+from new verified runs. Other node types and automatic triggers remain unavailable.
+Busy companion requests now give actionable resource guidance without weakening
+capacity guards or exposing provider errors. See [WORKFLOWS.md](WORKFLOWS.md) and
+[best use / bug review](BEST_USE_AND_BUG_REVIEW.md) for exact boundaries.
+
+The full local backend run passed243 checks, skipped2 platform-specific cases and
+reported one upstream TestClient deprecation warning (1073.89s). Ruff/Bandit,
+shared TypeScript/API-client builds and14 skill checks passed. Real Chrome tests
+passed workflow save/reopen/restore, stale-edit copy recovery, cycle rejection,
+unsaved navigation, queue/cancel/run/reload and390px layout. The model text in this
+browser path is explicitly synthetic behind the real router/database/worker.
+The companion/provider/content browser regression also passed. Actual development
+Electron plus venv runtime started, opened Workflows and other saved pages, and
+quit without leaving a backend listener, using an isolated temporary profile.
+
+A new real-model workflow smoke was attempted but not completed: after service
+startup, normal admission refused inference under low free RAM on this host.
+No resource safeguard was bypassed. The earlier real companion-model result below
+remains evidence for that earlier path, not a successful new workflow benchmark.
+CI results for the new source head are recorded separately after observation.
+
+The following sections are historical checkpoint evidence.
 
 ## Final follow-up verification — 16 November 2026
 

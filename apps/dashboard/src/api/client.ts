@@ -202,11 +202,15 @@ export interface ContentAssetDto {
 export interface WorkflowDto {
   id: string;
   name: string;
-  description: string;
-  active: boolean;
+  description: string | null;
+  status: 'draft' | 'active' | 'paused' | 'archived';
+  revision: number;
+  fingerprint: string;
+  execution_available: boolean;
+  validation_errors: string[];
   nodes: unknown[];
   edges: unknown[];
-  last_run?: string;
+  last_run_at: string | null;
 }
 
 export const apiClient = {
@@ -261,9 +265,10 @@ export const apiClient = {
         method: 'POST',
         body: workflow,
       }),
-    execute: (id: string) =>
-      apiRequest<{ execution_id: string }>(`/api/workflows/${id}/execute`, {
+    execute: (id: string, review: { expected_revision: number; fingerprint: string; trigger_data?: Record<string, unknown> }) =>
+      apiRequest<{ id: string; status: string }>(`/api/workflows/${id}/execute`, {
         method: 'POST',
+        body: review,
       }),
   },
   analytics: {

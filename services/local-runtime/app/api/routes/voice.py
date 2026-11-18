@@ -128,6 +128,13 @@ async def process_voice_command(
     manager = get_resource_manager()
     if manager._paused or manager._emergency_stopped:
         raise HTTPException(409, "Runtime is paused or stopped. Explicitly resume before requesting AI text.")
+    allowed, reason = manager.can_accept_work()
+    if not allowed:
+        guidance = {
+            'Insufficient RAM headroom': 'Not enough free memory for AI text. Close unused applications or unload an idle model, then retry. Runtime memory safeguards are still enabled.',
+            'Execution queue is full': 'The local work queue is full. Wait for current work to finish or cancel a queued task, then retry.',
+        }.get(reason, 'The runtime is busy or unavailable. Wait for current CPU work to finish and check runtime controls before retrying.')
+        raise HTTPException(503, guidance)
     prompt = json.dumps({"previous_turns": [turn.model_dump() for turn in body.history],
                          "user_message": text}, ensure_ascii=False)
     system = (

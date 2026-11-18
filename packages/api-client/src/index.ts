@@ -343,14 +343,26 @@ export class JavoApiClient {
     return this.request<Workflow>("GET", `/workflows/${encodeURIComponent(workflowId)}`);
   }
 
-  public createWorkflow(payload: Partial<Workflow> & { name: string }): Promise<Workflow> {
+  public createWorkflow(payload: Pick<Workflow, "name"> & Partial<Pick<Workflow, "description" | "status" | "trigger_config" | "viewport" | "nodes" | "edges">>): Promise<Workflow> {
     return this.request<Workflow>("POST", "/workflows/", { body: payload });
   }
 
-  public executeWorkflow(workflowId: string, triggerData?: Record<string, unknown>): Promise<WorkflowExecution> {
+  public updateWorkflow(workflowId: string, payload: Pick<Workflow, "name" | "description" | "status" | "trigger_config" | "viewport" | "nodes" | "edges"> & { expected_revision: number }): Promise<Workflow> {
+    return this.request<Workflow>("PUT", `/workflows/${encodeURIComponent(workflowId)}`, { body: payload });
+  }
+
+  public executeWorkflow(workflowId: string, review: { expected_revision: number; fingerprint: string; trigger_data?: Record<string, unknown> }): Promise<WorkflowExecution> {
     return this.request<WorkflowExecution>("POST", `/workflows/${encodeURIComponent(workflowId)}/execute`, {
-      body: { trigger_data: triggerData ?? {} },
+      body: review,
     });
+  }
+
+  public listWorkflowExecutions(workflowId: string): Promise<WorkflowExecution[]> {
+    return this.request<WorkflowExecution[]>("GET", `/workflows/${encodeURIComponent(workflowId)}/executions`);
+  }
+
+  public cancelWorkflowExecution(workflowId: string, executionId: string): Promise<{ status: string }> {
+    return this.request("POST", `/workflows/${encodeURIComponent(workflowId)}/executions/${encodeURIComponent(executionId)}/cancel`);
   }
 
   // -------------------------------------------------------------------------

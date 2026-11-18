@@ -16,7 +16,7 @@ import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts', 'setup'], default='dashboard')
+parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts', 'setup', 'workflows'], default='dashboard')
 args = parser.parse_args()
 
 
@@ -42,7 +42,9 @@ def fixture_provider():
                 return
             payload = json.loads(self.rfile.read(length))
             conversation = json.loads(payload["messages"][-1]["content"])
-            reply = {"message": {"content": "Fixture assistant reply; previous turns: " + str(len(conversation["previous_turns"]))},
+            content = ('Synthetic saved workflow draft.' if 'instruction' in conversation else
+                       'Fixture assistant reply; previous turns: ' + str(len(conversation['previous_turns'])))
+            reply = {"message": {"content": content},
                      "prompt_eval_count": 10, "eval_count": 10}
             encoded = json.dumps(reply).encode()
             self.send_response(200)
@@ -124,7 +126,7 @@ engine.dispose()
     with (data / "runtime.log").open("w", encoding="utf-8") as log:
         bundled = os.environ.get("JAVO_RUNTIME_EXE")
         module = 'app.main:app'
-        if args.scenario in ('agents', 'dashboard') and not bundled:
+        if args.scenario in ('agents', 'dashboard', 'workflows') and not bundled:
             # Synthetic model/read operations exercise the real worker with
             # fixture capacity, independently of other apps using the host RAM.
             # This does not benchmark a real model or change production limits.
@@ -150,7 +152,7 @@ engine.dispose()
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'setup': 'setup-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
+            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'setup': 'setup-smoke.cjs', 'workflows': 'workflows-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
             result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)

@@ -32,6 +32,7 @@ env/
 *.sqlite
 *.sqlite3
 *.agent-worker.lock
+*.workflow-worker.lock
 *.jbackup
 *.sha256
 uploads/

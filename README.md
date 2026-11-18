@@ -40,6 +40,10 @@ credentials remain unverified; official platform sign-in is unavailable.
 The [setup guide](docs/SETUP_GUIDE.md) uses measured hardware/service status,
 saved provider forms and an explicit loopback model-list check. It no longer
 certifies unavailable audio, Telegram or platform connections.
+The [workflow editor](docs/WORKFLOWS.md) saves graphs with revision history,
+conflict recovery and reviewed manual local-text runs. Supported paths use
+Trigger, local AI Prompt, Delay and End; other catalog nodes remain save-only.
+See [best use and reproduced bug fixes](docs/BEST_USE_AND_BUG_REVIEW.md).
 Android, full workflows/analytics, official live connectors and complete
 specialist functionality remain under development. See [evidence](docs/REBUILD_STATUS.md).
 

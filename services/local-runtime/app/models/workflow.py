@@ -39,6 +39,7 @@ class NodeType(str, enum.Enum):
 
 
 class WorkflowExecutionStatus(str, enum.Enum):
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -124,3 +125,16 @@ class WorkflowExecution(Base):
 
     def __repr__(self) -> str:
         return f"<WorkflowExecution id={self.id} workflow={self.workflow_id} status={self.status}>"
+
+
+class WorkflowRevision(Base):
+    """Additive immutable definition history; existing graphs start at revision0."""
+
+    __tablename__ = 'workflow_revisions'
+    __table_args__ = (sa.UniqueConstraint('workflow_id', 'revision'),)
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=lambda: str(uuid4()))
+    workflow_id: Mapped[str] = mapped_column(sa.String(36), ForeignKey('workflows.id'), nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    definition: Mapped[Dict[str, Any]] = mapped_column(sa.JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, server_default=func.now(), nullable=False)

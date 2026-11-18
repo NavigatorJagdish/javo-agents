@@ -398,6 +398,7 @@ export type NodeType =
   | "end";
 
 export type WorkflowExecutionStatus =
+  | "queued"
   | "running"
   | "completed"
   | "failed"
@@ -430,6 +431,11 @@ export interface Workflow {
   name: string;
   description: string | null;
   status: WorkflowStatus;
+  revision: number;
+  fingerprint: string;
+  execution_available: boolean;
+  validation_errors: string[];
+  reported_run_count: number;
   trigger_config: Record<string, unknown> | null;
   viewport: { x: number; y: number; zoom: number } | null;
   run_count: number;
@@ -444,11 +450,15 @@ export interface WorkflowExecution {
   id: UUID;
   workflow_id: UUID;
   status: WorkflowExecutionStatus;
-  trigger_data: Record<string, unknown> | null;
+  execution_verified: boolean;
+  revision: number | null;
+  fingerprint: string | null;
+  created_at: ISODateTime;
+  message: string;
   current_node_id: UUID | null;
   execution_log: Array<Record<string, unknown>> | null;
   error: string | null;
-  started_at: ISODateTime;
+  started_at: ISODateTime | null;
   completed_at: ISODateTime | null;
 }
 

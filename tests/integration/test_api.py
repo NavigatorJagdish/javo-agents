@@ -245,11 +245,17 @@ def test_armed_timer_worker_produces_saved_receipt_at_due_time(client, tmp_path)
         result = client.get(prefix + "/receipt")
         if result.status_code == 200:
             assert datetime.now(timezone.utc) >= due
-            assert result.json()["status"] == "simulated"
-            assert client.get("/api/content/timers").json()[0]["state"] == "simulated"
-            assert client.get(prefix + "/receipt").json() == result.json()
-            return
-        assert result.status_code == 404
+            # Intent and completed receipt/timer are separate durable commits.
+            # An observed in-flight record is truthful, not premature success.
+            assert result.json()['status'] in {'dispatching', 'simulated'}
+            if result.json()['status'] == 'simulated':
+                state = client.get('/api/content/timers').json()[0]['state']
+                assert state in {'executing', 'simulated'}
+                if state == 'simulated':
+                    assert client.get(prefix + '/receipt').json() == result.json()
+                    return
+        else:
+            assert result.status_code == 404
         time.sleep(0.1)
     pytest.fail("Production timed worker did not persist a simulation receipt by deadline")
 

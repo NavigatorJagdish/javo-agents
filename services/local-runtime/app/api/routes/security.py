@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.resource_manager import get_resource_manager
@@ -28,6 +28,8 @@ from app.models.security import (
 from app.models.task import Task, TaskState
 
 from app.core.runtime_control import pause_runtime, resume_runtime, stop_runtime
+from app.core.local_identity import OWNER_IDS
+from app.models.workflow import Workflow, WorkflowExecution, WorkflowExecutionStatus
 
 router = APIRouter(prefix="/security", tags=["security"])
 
@@ -255,6 +257,11 @@ async def emergency_stop(
         execution.status = ExecutionStatus.CANCELLED
         execution.completed_at = now
         execution.error = f"Emergency stop: {body.reason}"
+
+    await session.execute(update(WorkflowExecution).where(
+        WorkflowExecution.workflow_id.in_(select(Workflow.id).where(Workflow.user_id.in_(OWNER_IDS))),
+        WorkflowExecution.status.in_([WorkflowExecutionStatus.QUEUED, WorkflowExecutionStatus.RUNNING]),
+    ).values(status=WorkflowExecutionStatus.CANCELLED, completed_at=now, error='Cancelled by emergency stop'))
 
     session.add(
         AuditLog(

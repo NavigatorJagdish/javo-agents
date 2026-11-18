@@ -1,643 +1,1210 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useBeforeUnload, useBlocker } from "react-router-dom";
 import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
+  Handle,
+  Position,
   addEdge,
   useEdgesState,
   useNodesState,
-  Handle,
-  Position,
-  type Connection,
-  type Edge,
   type Node,
   type NodeProps,
-  BackgroundVariant,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import {
-  Zap,
-  Clock,
-  FolderOpen,
-  UserCheck,
-  ScanSearch,
-  Sparkles,
-  GitFork,
-  ShieldCheck,
-  Send,
-  MessageSquareReply,
-  Bell,
-  BarChart2,
-  Timer,
-  RotateCcw,
-  AlertTriangle,
-  Flag,
-  Play,
-  Save,
-  Trash2,
-  Plus,
-} from 'lucide-react';
-import { Button, Badge, Card } from '@javo/design-system';
-import { useSaveWorkflowMutation } from '../api/hooks';
-import { useAppStore } from '../store/useAppStore';
+  type Edge,
+  type Connection,
+  type ReactFlowInstance,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Button, Card, Modal } from "@javo/design-system";
+import { apiRequest, ApiError } from "../api/client";
 
-export type WorkflowNodeKind =
-  | 'Trigger'
-  | 'Schedule'
-  | 'Folder Watcher'
-  | 'Account Event'
-  | 'Content Analyzer'
-  | 'AI Prompt'
-  | 'Condition'
-  | 'Approval'
-  | 'Publish'
-  | 'Comment Reply'
-  | 'Notification'
-  | 'Analytics'
-  | 'Delay'
-  | 'Retry'
-  | 'Error Handler'
-  | 'End';
-
-interface NodeCatalogEntry {
-  kind: WorkflowNodeKind;
-  category: 'Triggers' | 'AI & Logic' | 'Actions' | 'Flow Control';
-  description: string;
-  defaultConfig: Record<string, string>;
-}
-
-const NODE_CATALOG: NodeCatalogEntry[] = [
-  { kind: 'Trigger', category: 'Triggers', description: 'Manual or webhook event trigger', defaultConfig: { source: 'Webhook / Manual' } },
-  { kind: 'Schedule', category: 'Triggers', description: 'Cron or interval schedule', defaultConfig: { cron: '0 18 * * 1-5' } },
-  { kind: 'Folder Watcher', category: 'Triggers', description: 'Watch local media folder', defaultConfig: { path: 'D:/CreatorContent/Ready' } },
-  { kind: 'Account Event', category: 'Triggers', description: 'New follower, mention, or comment', defaultConfig: { platform: 'YouTube', event: 'new_comment' } },
-  { kind: 'Content Analyzer', category: 'AI & Logic', description: 'Score video/audio quality & hook', defaultConfig: { minScore: '85' } },
-  { kind: 'AI Prompt', category: 'AI & Logic', description: 'Run local Ollama or Gemini prompt', defaultConfig: { model: 'Qwen 2.5 14B', prompt: 'Generate viral 3-line caption' } },
-  { kind: 'Condition', category: 'AI & Logic', description: 'Branch on expression result', defaultConfig: { expression: 'score >= 85' } },
-  { kind: 'Approval', category: 'Actions', description: 'Require human sign-off via Telegram', defaultConfig: { channel: 'Telegram + Inbox', timeout: '4h' } },
-  { kind: 'Publish', category: 'Actions', description: 'Post to connected social channel', defaultConfig: { platform: 'YouTube Shorts', visibility: 'public' } },
-  { kind: 'Comment Reply', category: 'Actions', description: 'Auto-reply with brand voice', defaultConfig: { tone: 'Helpful & Concise' } },
-  { kind: 'Notification', category: 'Actions', description: 'Send desktop or Telegram alert', defaultConfig: { target: 'Telegram Admin' } },
-  { kind: 'Analytics', category: 'Actions', description: 'Record metrics snapshot', defaultConfig: { metric: '1h_velocity' } },
-  { kind: 'Delay', category: 'Flow Control', description: 'Wait before continuing flow', defaultConfig: { duration: '30m' } },
-  { kind: 'Retry', category: 'Flow Control', description: 'Retry failed branch with backoff', defaultConfig: { maxRetries: '3', backoff: 'exponential' } },
-  { kind: 'Error Handler', category: 'Flow Control', description: 'Catch exceptions & alert recovery', defaultConfig: { fallback: 'Recovery Agent #20' } },
-  { kind: 'End', category: 'Flow Control', description: 'Terminate workflow execution', defaultConfig: { status: 'completed' } },
-];
-
-const iconForKind: Record<WorkflowNodeKind, React.ReactNode> = {
-  Trigger: <Zap className="h-4 w-4" />,
-  Schedule: <Clock className="h-4 w-4" />,
-  'Folder Watcher': <FolderOpen className="h-4 w-4" />,
-  'Account Event': <UserCheck className="h-4 w-4" />,
-  'Content Analyzer': <ScanSearch className="h-4 w-4" />,
-  'AI Prompt': <Sparkles className="h-4 w-4" />,
-  Condition: <GitFork className="h-4 w-4" />,
-  Approval: <ShieldCheck className="h-4 w-4" />,
-  Publish: <Send className="h-4 w-4" />,
-  'Comment Reply': <MessageSquareReply className="h-4 w-4" />,
-  Notification: <Bell className="h-4 w-4" />,
-  Analytics: <BarChart2 className="h-4 w-4" />,
-  Delay: <Timer className="h-4 w-4" />,
-  Retry: <RotateCcw className="h-4 w-4" />,
-  'Error Handler': <AlertTriangle className="h-4 w-4" />,
-  End: <Flag className="h-4 w-4" />,
-};
-
-const categoryColor: Record<NodeCatalogEntry['category'], string> = {
-  Triggers: 'border-[#00E5FF]/60 bg-[#00E5FF]/10 text-[#00E5FF]',
-  'AI & Logic': 'border-[#8B5CF6]/60 bg-[#8B5CF6]/15 text-[#A78BFA]',
-  Actions: 'border-emerald-500/60 bg-emerald-500/15 text-emerald-400',
-  'Flow Control': 'border-amber-500/60 bg-amber-500/15 text-amber-400',
-};
-
-interface CustomNodeData extends Record<string, unknown> {
-  kind: WorkflowNodeKind;
+type NodeData = {
   label: string;
-  category: NodeCatalogEntry['category'];
-  config: Record<string, string>;
-  simulating?: boolean;
+  kind: string;
+  config: Record<string, unknown> | null;
+  entry: boolean;
+};
+type GraphNode = Node<NodeData>;
+type SavedNode = {
+  id: string;
+  node_type: string;
+  label: string;
+  config: Record<string, unknown> | null;
+  position_x: number;
+  position_y: number;
+  is_entry_point: boolean;
+};
+type SavedEdge = {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  condition: string | null;
+  label: string | null;
+};
+type Graph = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  revision: number;
+  fingerprint: string;
+  execution_available: boolean;
+  validation_errors: string[];
+  nodes: SavedNode[];
+  edges: SavedEdge[];
+  trigger_config: Record<string, unknown> | null;
+  viewport: Record<string, unknown> | null;
+};
+type Revision = { revision: number; name: string; created_at: string };
+type Run = {
+  id: string;
+  status: string;
+  revision: number | null;
+  execution_verified: boolean;
+  error: string | null;
+  message: string;
+  execution_log: {
+    node_id: string;
+    event: string;
+    node_type: string;
+    output?: { text?: string; actions_executed?: boolean };
+  }[];
+};
+const supported = new Set(["trigger", "ai_prompt", "delay", "end"]);
+const kinds = [
+  "trigger",
+  "ai_prompt",
+  "delay",
+  "end",
+  "condition",
+  "approval",
+  "publish",
+  "schedule",
+  "folder_watcher",
+  "account_event",
+  "content_analyzer",
+  "comment_reply",
+  "notification",
+  "analytics",
+  "retry",
+  "error_handler",
+];
+const inputClass =
+  "w-full min-w-0 rounded-lg border border-slate-300 dark:border-white/20 bg-white dark:bg-slate-950 px-3 py-2 text-sm";
+const title = (kind: string) => kind.replaceAll("_", " ");
+function message(error: unknown) {
+  const detail =
+    error instanceof ApiError
+      ? (error.detail as { detail?: unknown })?.detail
+      : null;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail))
+    return detail
+      .map((item) =>
+        typeof item?.msg === "string" ? item.msg : "Invalid graph field",
+      )
+      .join("; ");
+  return error instanceof Error
+    ? error.message
+    : "The runtime did not confirm this operation.";
 }
-
-const JavoWorkflowNode: React.FC<NodeProps<Node<CustomNodeData>>> = ({ data, selected }) => {
-  const isTrigger = data.category === 'Triggers';
-  const isEnd = data.kind === 'End';
-  const summary = Object.entries(data.config || {})
-    .slice(0, 2)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join(' • ');
-
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactElement<{ id?: string }>;
+}) {
+  const id = useId();
+  return (
+    <div className="space-y-1 min-w-0">
+      <label htmlFor={id} className="block text-sm">
+        {label}
+      </label>
+      {React.cloneElement(children, { id })}
+    </div>
+  );
+}
+function FlowNode({ data, selected }: NodeProps<GraphNode>) {
   return (
     <div
-      className={`min-w-[220px] max-w-[260px] rounded-2xl border backdrop-blur-xl transition-all shadow-lg ${
-        data.simulating
-          ? 'border-[#00E5FF] ring-2 ring-[#00E5FF]/60 shadow-[0_0_24px_rgba(0,229,255,0.45)]'
-          : selected
-            ? 'border-[#00E5FF] ring-2 ring-[#00E5FF]/35'
-            : 'border-slate-300 dark:border-white/15'
-      } bg-white/95 dark:bg-[#131C40]/95`}
+      className={`w-52 rounded-xl border-2 ${selected ? "border-cyan-500" : "border-slate-400 dark:border-slate-600"} bg-white dark:bg-slate-900 p-3 text-slate-900 dark:text-white`}
     >
-      {!isTrigger && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!w-3 !h-3 !bg-[#00E5FF] !border-2 !border-[#0B1026]"
-        />
-      )}
-
-      <div className="p-3">
-        <div className="flex items-center justify-between gap-2">
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold border ${
-              categoryColor[data.category]
-            }`}
-          >
-            {iconForKind[data.kind]}
-            {data.kind}
-          </span>
-          {data.simulating && (
-            <span className="h-2 w-2 rounded-full bg-[#00E5FF] animate-ping" />
-          )}
-        </div>
-        <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white truncate">
-          {data.label}
+      {!data.entry && <Handle type="target" position={Position.Left} />}
+      <p className="text-xs capitalize">
+        {title(data.kind)}
+        {data.entry ? " · Start" : ""}
+      </p>
+      <p className="font-semibold break-words">{data.label}</p>
+      {!supported.has(data.kind) && (
+        <p className="text-xs text-amber-600">
+          Save only · execution unavailable
         </p>
-        {summary && (
-          <p className="mt-1 text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">
-            {summary}
-          </p>
-        )}
-      </div>
-
-      {!isEnd && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!w-3 !h-3 !bg-[#8B5CF6] !border-2 !border-[#0B1026]"
-        />
+      )}
+      {data.kind !== "end" && (
+        <Handle type="source" position={Position.Right} />
       )}
     </div>
   );
-};
-
-const INITIAL_NODES: Node<CustomNodeData>[] = [
-  {
-    id: 'n-1',
-    type: 'javoNode',
-    position: { x: 40, y: 140 },
-    data: {
-      kind: 'Folder Watcher',
-      label: 'Watch Ready Reels',
-      category: 'Triggers',
-      config: { path: 'D:/CreatorContent/Ready' },
-    },
-  },
-  {
-    id: 'n-2',
-    type: 'javoNode',
-    position: { x: 320, y: 140 },
-    data: {
-      kind: 'Content Analyzer',
-      label: 'Inspect Hook & Audio',
-      category: 'AI & Logic',
-      config: { minScore: '85' },
-    },
-  },
-  {
-    id: 'n-3',
-    type: 'javoNode',
-    position: { x: 600, y: 60 },
-    data: {
-      kind: 'AI Prompt',
-      label: 'Generate Viral Caption',
-      category: 'AI & Logic',
-      config: { model: 'Qwen 2.5 14B', prompt: '3-line high retention hook' },
-    },
-  },
-  {
-    id: 'n-4',
-    type: 'javoNode',
-    position: { x: 600, y: 230 },
-    data: {
-      kind: 'Condition',
-      label: 'Score >= 85?',
-      category: 'AI & Logic',
-      config: { expression: 'score >= 85' },
-    },
-  },
-  {
-    id: 'n-5',
-    type: 'javoNode',
-    position: { x: 890, y: 60 },
-    data: {
-      kind: 'Approval',
-      label: 'Telegram Sign-off',
-      category: 'Actions',
-      config: { channel: 'Telegram + Inbox', timeout: '4h' },
-    },
-  },
-  {
-    id: 'n-6',
-    type: 'javoNode',
-    position: { x: 1170, y: 60 },
-    data: {
-      kind: 'Publish',
-      label: 'Publish YouTube Short',
-      category: 'Actions',
-      config: { platform: 'YouTube Shorts', visibility: 'public' },
-    },
-  },
-  {
-    id: 'n-7',
-    type: 'javoNode',
-    position: { x: 1170, y: 230 },
-    data: {
-      kind: 'Analytics',
-      label: 'Track 1h Velocity',
-      category: 'Actions',
-      config: { metric: '1h_velocity' },
-    },
-  },
-];
-
-const INITIAL_EDGES: Edge[] = [
-  { id: 'e1-2', source: 'n-1', target: 'n-2', animated: true, style: { stroke: '#00E5FF', strokeWidth: 2 } },
-  { id: 'e2-3', source: 'n-2', target: 'n-3', animated: true, style: { stroke: '#8B5CF6', strokeWidth: 2 } },
-  { id: 'e2-4', source: 'n-2', target: 'n-4', style: { stroke: '#8B5CF6', strokeWidth: 2 } },
-  { id: 'e3-5', source: 'n-3', target: 'n-5', animated: true, style: { stroke: '#00E5FF', strokeWidth: 2 } },
-  { id: 'e5-6', source: 'n-5', target: 'n-6', animated: true, style: { stroke: '#10B981', strokeWidth: 2 } },
-  { id: 'e6-7', source: 'n-6', target: 'n-7', style: { stroke: '#10B981', strokeWidth: 2 } },
-];
+}
+const nodeTypes = { workflow: FlowNode };
 
 export const Workflows: React.FC = () => {
-  const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<CustomNodeData>>(INITIAL_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES);
-  const [workflowName, setWorkflowName] = useState('Autonomous Short-Form Pipeline');
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('n-3');
-  const [paletteFilter, setPaletteFilter] = useState('');
-  const [simulating, setSimulating] = useState(false);
-
-  const saveWorkflow = useSaveWorkflowMutation();
-  const addToast = useAppStore((s) => s.addToast);
-
-  const nodeTypes = useMemo(() => ({ javoNode: JavoWorkflowNode }), []);
-
-  const selectedNode = useMemo(
-    () => nodes.find((n) => n.id === selectedNodeId) ?? null,
-    [nodes, selectedNodeId]
+  const canvas = useRef<HTMLDivElement>(null);
+  const flow = useRef<ReactFlowInstance<GraphNode, Edge> | null>(null);
+  const [nodes, setNodes, changeNodes] = useNodesState<GraphNode>([]);
+  const [edges, setEdges, changeEdges] = useEdgesState<Edge>([]);
+  const [name, setName] = useState("Untitled workflow");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("draft");
+  const [saved, setSaved] = useState<Graph | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [selectedSaved, setSelectedSaved] = useState("");
+  const [selected, setSelected] = useState("");
+  const [configs, setConfigs] = useState<Record<string, string>>({});
+  const [source, setSource] = useState("");
+  const [target, setTarget] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [review, setReview] = useState(false);
+  const [trigger, setTrigger] = useState("{}");
+  const [revision, setRevision] = useState("");
+  const [confirm, setConfirm] = useState<{
+    text: string;
+    action: () => void;
+  } | null>(null);
+  const qc = useQueryClient();
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname,
   );
-
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...connection,
-            animated: true,
-            style: { stroke: '#00E5FF', strokeWidth: 2 },
-          },
-          eds
-        )
-      );
-    },
-    [setEdges]
-  );
-
-  const addCatalogNode = useCallback(
-    (entry: NodeCatalogEntry, position?: { x: number; y: number }) => {
-      const id = `n-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const pos = position ?? {
-        x: 180 + (nodes.length % 4) * 140,
-        y: 120 + (nodes.length % 3) * 110,
-      };
-      const newNode: Node<CustomNodeData> = {
-        id,
-        type: 'javoNode',
-        position: pos,
-        data: {
-          kind: entry.kind,
-          label: entry.kind,
-          category: entry.category,
-          config: { ...entry.defaultConfig },
-        },
-      };
-      setNodes((nds) => nds.concat(newNode));
-      setSelectedNodeId(id);
-    },
-    [nodes.length, setNodes]
-  );
-
-  const onDragStart = (event: React.DragEvent, entry: NodeCatalogEntry) => {
-    event.dataTransfer.setData('application/javo-node', JSON.stringify(entry));
-    event.dataTransfer.effectAllowed = 'move';
-  };
-
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
-
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-      const raw = event.dataTransfer.getData('application/javo-node');
-      if (!raw || !reactFlowWrapper.current) return;
-      const entry = JSON.parse(raw) as NodeCatalogEntry;
-      const bounds = reactFlowWrapper.current.getBoundingClientRect();
-      const position = {
-        x: event.clientX - bounds.left - 110,
-        y: event.clientY - bounds.top - 40,
-      };
-      addCatalogNode(entry, position);
-    },
-    [addCatalogNode]
-  );
-
-  const updateSelectedLabel = (label: string) => {
-    if (!selectedNode) return;
-    setNodes((nds) =>
-      nds.map((n) => (n.id === selectedNode.id ? { ...n, data: { ...n.data, label } } : n))
-    );
-  };
-
-  const updateSelectedConfig = (key: string, value: string) => {
-    if (!selectedNode) return;
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === selectedNode.id
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                config: { ...n.data.config, [key]: value },
-              },
-            }
-          : n
-      )
-    );
-  };
-
-  const deleteSelectedNode = () => {
-    if (!selectedNode) return;
-    setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-    setEdges((eds) =>
-      eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id)
-    );
-    setSelectedNodeId(null);
-  };
-
-  const handleSave = async () => {
-    try {
-    await saveWorkflow.mutateAsync({
-      name: workflowName,
-      nodes,
-      edges,
-      active: true,
-    });
-    addToast('Workflow record saved', 'The runtime saved this record. No execution was started.', 'success');
-    } catch {
-      addToast('Workflow not saved', 'The editor graph format is not fully connected to saved workflow definitions. No save was confirmed.', 'error');
-    }
-  };
-
-  const handleSimulate = () => {
-    if (simulating || nodes.length === 0) return;
-    setSimulating(true);
-    addToast('Graph animation started', 'Visual preview only. No nodes are executed or validated.', 'info');
-    nodes.forEach((node, index) => {
-      setTimeout(() => {
-        setNodes((nds) =>
-          nds.map((n) => ({
-            ...n,
-            data: { ...n.data, simulating: n.id === node.id },
-          }))
-        );
-        if (index === nodes.length - 1) {
-          setTimeout(() => {
-            setNodes((nds) =>
-              nds.map((n) => ({ ...n, data: { ...n.data, simulating: false } }))
-            );
-            setSimulating(false);
-            addToast('Graph animation finished', 'No workflow branches were executed or verified.', 'info');
-          }, 550);
+  useBeforeUnload(
+    useCallback(
+      (event) => {
+        if (dirty) {
+          event.preventDefault();
+          event.returnValue = "";
         }
-      }, index * 480);
-    });
-  };
+      },
+      [dirty],
+    ),
+  );
+  const list = useQuery({
+    queryKey: ["workflow-definitions", offset],
+    queryFn: () =>
+      apiRequest<Graph[]>("/api/workflows/", { params: { limit: 50, offset } }),
+    retry: false,
+  });
+  const revisions = useQuery({
+    queryKey: ["workflow-revisions", saved?.id, saved?.revision],
+    enabled: !!saved,
+    queryFn: () =>
+      apiRequest<Revision[]>(`/api/workflows/${saved!.id}/revisions`),
+    retry: false,
+  });
+  const history = useQuery({
+    queryKey: ["workflow-runs", saved?.id],
+    enabled: !!saved,
+    queryFn: () => apiRequest<Run[]>(`/api/workflows/${saved!.id}/executions`),
+    retry: false,
+    refetchInterval: 1000,
+  });
+  const control = useQuery({
+    queryKey: ["workflow-control"],
+    queryFn: () =>
+      apiRequest<{ paused: boolean; emergency_stopped: boolean }>(
+        "/api/security/autopilot-status",
+      ),
+    refetchInterval: 2000,
+    retry: false,
+  });
+  const selectedNode = nodes.find((node) => node.id === selected);
 
-  const filteredCatalog = NODE_CATALOG.filter(
-    (entry) =>
-      entry.kind.toLowerCase().includes(paletteFilter.toLowerCase()) ||
-      entry.category.toLowerCase().includes(paletteFilter.toLowerCase())
+  useEffect(() => {
+    let frame = 0;
+    const fit = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        void flow.current?.fitView({ padding: 0.2, maxZoom: 1 });
+      });
+    };
+    const observer = new ResizeObserver(fit);
+    if (canvas.current) observer.observe(canvas.current);
+    fit();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [nodes.length, saved?.id]);
+
+  function load(graph: Graph) {
+    save.reset();
+    setSaved(graph);
+    setName(graph.name);
+    setDescription(graph.description ?? "");
+    setStatus(graph.status);
+    setSelectedSaved(graph.id);
+    setNodes(
+      graph.nodes.map((node) => ({
+        id: node.id,
+        type: "workflow",
+        position: { x: node.position_x, y: node.position_y },
+        data: {
+          label: node.label,
+          kind: node.node_type,
+          config: node.config,
+          entry: node.is_entry_point,
+        },
+      })),
+    );
+    setEdges(
+      graph.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source_node_id,
+        target: edge.target_node_id,
+        data: { condition: edge.condition },
+        label: edge.label ?? undefined,
+      })),
+    );
+    setConfigs(
+      Object.fromEntries(
+        graph.nodes.map((node) => [
+          node.id,
+          JSON.stringify(node.config, null, 2),
+        ]),
+      ),
+    );
+    setSelected(graph.nodes[0]?.id ?? "");
+    setDirty(false);
+    setError("");
+    setRevision("");
+  }
+  function guard(action: () => void, text = "Discard unsaved workflow edits?") {
+    if (dirty) setConfirm({ text, action });
+    else action();
+  }
+  function blank() {
+    save.reset();
+    setSaved(null);
+    setName("Untitled workflow");
+    setDescription("");
+    setStatus("draft");
+    setNodes([]);
+    setEdges([]);
+    setConfigs({});
+    setSelected("");
+    setSelectedSaved("");
+    setDirty(false);
+    setError("");
+    setNotice("");
+  }
+  function add(kind: string) {
+    if (nodes.length >= 64) {
+      setError("A workflow supports up to64 nodes.");
+      return;
+    }
+    const id = crypto.randomUUID();
+    const config =
+      kind === "ai_prompt"
+        ? {
+            prompt: "Draft a short caption for manual review.",
+            provider: "ollama",
+            max_tokens: 128,
+          }
+        : kind === "delay"
+          ? { seconds: 1 }
+          : {};
+    setNodes((previous) => [
+      ...previous,
+      {
+        id,
+        type: "workflow",
+        position: { x: 70 + previous.length * 240, y: 100 },
+        data: {
+          kind,
+          label: title(kind),
+          config,
+          entry: kind === "trigger" && !previous.some((n) => n.data.entry),
+        },
+      },
+    ]);
+    setConfigs((previous) => ({
+      ...previous,
+      [id]: JSON.stringify(config, null, 2),
+    }));
+    setSelected(id);
+    setDirty(true);
+  }
+  function template() {
+    blank();
+    const start = crypto.randomUUID(),
+      ai = crypto.randomUUID(),
+      end = crypto.randomUUID();
+    const config = {
+      prompt: "Draft a short caption for manual review.",
+      provider: "ollama",
+      max_tokens: 128,
+    };
+    setName("Local caption draft");
+    setNodes([
+      {
+        id: start,
+        type: "workflow",
+        position: { x: 30, y: 90 },
+        data: {
+          kind: "trigger",
+          label: "Manual start",
+          config: {},
+          entry: true,
+        },
+      },
+      {
+        id: ai,
+        type: "workflow",
+        position: { x: 300, y: 90 },
+        data: {
+          kind: "ai_prompt",
+          label: "Draft caption",
+          config,
+          entry: false,
+        },
+      },
+      {
+        id: end,
+        type: "workflow",
+        position: { x: 570, y: 90 },
+        data: { kind: "end", label: "End", config: {}, entry: false },
+      },
+    ]);
+    setEdges([
+      { id: crypto.randomUUID(), source: start, target: ai },
+      { id: crypto.randomUUID(), source: ai, target: end },
+    ]);
+    setConfigs({
+      [start]: "{}",
+      [ai]: JSON.stringify(config, null, 2),
+      [end]: "{}",
+    });
+    setSelected(ai);
+    setDirty(true);
+  }
+  function connect(connection: Connection) {
+    const from = connection.source,
+      to = connection.target;
+    if (!from || !to) return;
+    const reachable = (key: string, visited = new Set<string>()): boolean => {
+      if (key === from) return true;
+      if (visited.has(key)) return false;
+      visited.add(key);
+      return edges
+        .filter((e) => e.source === key)
+        .some((e) => reachable(e.target, visited));
+    };
+    if (reachable(to)) {
+      setError("That connection would create a cycle. Choose a later node.");
+      return;
+    }
+    if (edges.some((e) => e.source === from && e.target === to)) {
+      setError("These nodes are already connected.");
+      return;
+    }
+    setEdges((previous) =>
+      addEdge({ ...connection, id: crypto.randomUUID() }, previous),
+    );
+    setDirty(true);
+    setError("");
+  }
+  function body() {
+    return {
+      name,
+      description: description || null,
+      status,
+      trigger_config: saved?.trigger_config ?? null,
+      viewport: saved?.viewport ?? null,
+      nodes: nodes.map((node) => {
+        let config: unknown;
+        try {
+          config = JSON.parse(configs[node.id] ?? "{}");
+        } catch {
+          throw new Error(
+            "Node configuration must be valid JSON. Your edits are still on this page.",
+          );
+        }
+        if (
+          config !== null &&
+          (typeof config !== "object" || Array.isArray(config))
+        )
+          throw new Error("Node configuration must be a JSON object or null.");
+        return {
+          id: node.id,
+          node_type: node.data.kind,
+          label: node.data.label,
+          position_x: node.position.x,
+          position_y: node.position.y,
+          config,
+          is_entry_point: node.data.entry,
+        };
+      }),
+      edges: edges.map((edge) => ({
+        id: edge.id,
+        source_node_id: edge.source,
+        target_node_id: edge.target,
+        condition: edge.data?.condition ?? null,
+        label: typeof edge.label === "string" ? edge.label : null,
+      })),
+      ...(saved ? { expected_revision: saved.revision } : {}),
+    };
+  }
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest<Graph>(
+        saved ? `/api/workflows/${saved.id}` : "/api/workflows/",
+        { method: saved ? "PUT" : "POST", body: body() },
+      ),
+    onSuccess: (graph) => {
+      load(graph);
+      setNotice(
+        `Saved revision ${graph.revision}. No automatic trigger was enabled.`,
+      );
+      void qc.invalidateQueries({ queryKey: ["workflow-definitions"] });
+    },
+  });
+  const operation = useMutation({
+    mutationFn: async (action: () => Promise<void>) => {
+      setError("");
+      await action();
+    },
+    onError: (failure) => setError(message(failure)),
+  });
+  const run = useMutation({
+    mutationFn: () => {
+      let data: unknown;
+      try {
+        data = JSON.parse(trigger);
+      } catch {
+        throw new Error("Trigger data must be valid JSON.");
+      }
+      if (!data || typeof data !== "object" || Array.isArray(data))
+        throw new Error("Trigger data must be a JSON object.");
+      return apiRequest<Run>(`/api/workflows/${saved!.id}/execute`, {
+        method: "POST",
+        body: {
+          expected_revision: saved!.revision,
+          fingerprint: saved!.fingerprint,
+          trigger_data: data,
+        },
+      });
+    },
+    onSuccess: () => {
+      setReview(false);
+      setNotice(
+        "The saved run is queued. Its receipt will show the actual outcome.",
+      );
+      void qc.invalidateQueries({ queryKey: ["workflow-runs"] });
+    },
+  });
+  const busy = save.isPending || operation.isPending;
+  const active = history.data?.some((item) =>
+    ["queued", "running"].includes(item.status),
   );
 
   return (
-    <div className="space-y-4">
-      <p className="rounded border border-amber-500/40 p-3 text-sm">Prototype graph editor. Graph animation does not run tasks. Saved graph editing and durable workflow execution still need integration.</p>
-      {/* Top toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <input
-            value={workflowName}
-            onChange={(e) => setWorkflowName(e.target.value)}
-            aria-label="Workflow name"
-            className="font-display text-xl sm:text-2xl font-bold bg-transparent border-b border-transparent hover:border-white/20 focus:border-[#00E5FF] focus:outline-none text-slate-900 dark:text-white"
-          />
-          <Badge status="info" size="sm">
-            {nodes.length} Nodes • {edges.length} Connections
-          </Badge>
+    <section className="space-y-5 min-w-0">
+      <h1 className="text-3xl font-bold">Workflows</h1>
+      <p className="text-sm">
+        Save and reopen real graphs with revision history. Manual runs support
+        one connected path of Trigger, local AI Prompt, Delay and End. Other
+        nodes can be saved for planning; they do not execute. Generated text
+        never publishes or performs an action.
+      </p>
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex-1 min-w-48">
+          <Field label="Saved workflow">
+            <select
+              className={inputClass}
+              value={selectedSaved}
+              onChange={(event) => setSelectedSaved(event.target.value)}
+            >
+              <option value="">Choose a saved workflow</option>
+              {saved && !list.data?.some((graph) => graph.id === saved.id) && (
+                <option value={saved.id}>
+                  {saved.name} · revision {saved.revision}
+                </option>
+              )}
+              {list.data?.map((graph) => (
+                <option key={graph.id} value={graph.id}>
+                  {graph.name} · revision {graph.revision}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={<Play className="h-4 w-4" />}
-            onClick={handleSimulate}
-            isLoading={simulating}
-          >
-            Animate graph preview
-          </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            leftIcon={<Save className="h-4 w-4" />}
-            onClick={handleSave}
-            isLoading={saveWorkflow.isPending}
-          >
-            Save Workflow
-          </Button>
-        </div>
-      </div>
-
-      {/* 3-Column Visual Editor */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-210px)] min-h-[580px]">
-        {/* Left Node Palette (All 16 node types) */}
-        <Card
-          variant="default"
-          padding="sm"
-          className="lg:col-span-3 xl:col-span-2 flex flex-col overflow-hidden"
+        <Button
+          disabled={!selectedSaved || busy}
+          onClick={() =>
+            guard(() =>
+              operation.mutate(async () =>
+                load(
+                  await apiRequest<Graph>(`/api/workflows/${selectedSaved}`),
+                ),
+              ),
+            )
+          }
         >
-          <div className="mb-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-              Node Palette (16 Types)
-            </p>
+          Open saved workflow
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => guard(blank)}
+          disabled={busy}
+        >
+          New workflow
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => guard(template)}
+          disabled={busy}
+        >
+          Use caption draft template
+        </Button>
+      </div>
+      {list.isError && (
+        <p role="alert">
+          Saved workflows could not be loaded.{" "}
+          <Button onClick={() => list.refetch()}>Retry workflows</Button>
+        </p>
+      )}
+      <div className="flex gap-3 items-center">
+        <Button
+          size="sm"
+          disabled={offset === 0}
+          onClick={() => setOffset(Math.max(0, offset - 50))}
+        >
+          Previous workflows
+        </Button>
+        <span>Page {offset / 50 + 1}</span>
+        <Button
+          size="sm"
+          disabled={list.data?.length !== 50}
+          onClick={() => setOffset(offset + 50)}
+        >
+          Next workflows
+        </Button>
+      </div>
+      {(error || save.isError) && (
+        <p
+          role="alert"
+          className="border border-red-500 rounded p-3 break-words"
+        >
+          {error || message(save.error)}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="border border-cyan-500 rounded p-3">
+          {notice}
+        </p>
+      )}
+      <Card>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Workflow name">
             <input
-              type="search"
-              value={paletteFilter}
-              onChange={(e) => setPaletteFilter(e.target.value)}
-              placeholder="Search nodes..."
-              aria-label="Search node types"
-              className="w-full h-8 px-2.5 rounded-lg text-xs bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/10 focus:outline-none focus:border-[#00E5FF]"
+              className={inputClass}
+              maxLength={256}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setDirty(true);
+              }}
             />
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-            {filteredCatalog.map((entry) => (
-              <div
-                key={entry.kind}
-                draggable
-                onDragStart={(e) => onDragStart(e, entry)}
-                className="group flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-[#0B1026]/80 border border-slate-200 dark:border-white/10 hover:border-[#00E5FF]/50 cursor-grab active:cursor-grabbing transition-colors"
+          </Field>
+          <Field label="Definition status">
+            <select
+              className={inputClass}
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setDirty(true);
+              }}
+            >
+              <option value="draft">Draft · manual run</option>
+              <option value="paused">Paused</option>
+              <option value="archived">Archived</option>
+              {status === "active" && (
+                <option value="active" disabled>
+                  Legacy active · choose a new status
+                </option>
+              )}
+            </select>
+          </Field>
+          <Field label="Workflow description">
+            <textarea
+              className={inputClass}
+              maxLength={4000}
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                setDirty(true);
+              }}
+            />
+          </Field>
+          <div className="space-y-2 text-sm">
+            <p>
+              {dirty
+                ? "Unsaved edits"
+                : saved
+                  ? `Saved revision ${saved.revision}`
+                  : "New empty graph"}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={busy || !name.trim()}
+                onClick={() => save.mutate()}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`p-1.5 rounded-lg border shrink-0 ${categoryColor[entry.category]}`}>
-                    {iconForKind[entry.kind]}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                      {entry.kind}
-                    </p>
-                    <p className="text-[10px] text-slate-400 truncate">{entry.category}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  title={`Add ${entry.kind}`}
-                  aria-label={`Add ${entry.kind} node`}
-                  onClick={() => addCatalogNode(entry)}
-                  className="p-1 rounded-md text-slate-400 hover:text-[#00E5FF] hover:bg-white/10 cursor-pointer"
+                Save workflow
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy || !name.trim()}
+                onClick={() =>
+                  operation.mutate(async () => {
+                    const copy = body();
+                    delete copy.expected_revision;
+                    const ids = new Map(
+                      copy.nodes.map((node) => [node.id, crypto.randomUUID()]),
+                    );
+                    copy.name = name.slice(0, 247) + " (copy)";
+                    const graph = await apiRequest<Graph>("/api/workflows/", {
+                      method: "POST",
+                      body: {
+                        ...copy,
+                        nodes: copy.nodes.map((node) => ({
+                          ...node,
+                          id: ids.get(node.id),
+                        })),
+                        edges: copy.edges.map((edge) => ({
+                          ...edge,
+                          id: crypto.randomUUID(),
+                          source_node_id: ids.get(edge.source_node_id),
+                          target_node_id: ids.get(edge.target_node_id),
+                        })),
+                      },
+                    });
+                    load(graph);
+                    setNotice(
+                      "Saved your current edits as a separate copy. The original workflow was preserved.",
+                    );
+                    await qc.invalidateQueries({
+                      queryKey: ["workflow-definitions"],
+                    });
+                  })
+                }
+              >
+                Save as new copy
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={
+                  busy || dirty || !saved?.execution_available || active
+                }
+                onClick={() => {
+                  run.reset();
+                  setReview(true);
+                }}
+              >
+                Review manual run
+              </Button>
+              {saved && (
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    guard(() =>
+                      operation.mutate(async () =>
+                        load(
+                          await apiRequest<Graph>(`/api/workflows/${saved.id}`),
+                        ),
+                      ),
+                    )
+                  }
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+                  Reload saved version
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+        {saved?.validation_errors.map((item) => (
+          <p
+            className="mt-3 text-sm text-amber-600 dark:text-amber-300"
+            key={item}
+          >
+            {item}
+          </p>
+        ))}
+      </Card>
+      <div className="flex flex-wrap gap-2">
+        {kinds
+          .filter((kind) => supported.has(kind))
+          .map((kind) => (
+            <Button
+              key={kind}
+              size="sm"
+              variant="secondary"
+              disabled={busy || nodes.length >= 64}
+              onClick={() => add(kind)}
+            >{`Add ${title(kind)}${supported.has(kind) ? "" : " (save only)"}`}</Button>
+          ))}
+      </div>
+      <details className="rounded-xl border border-slate-300 dark:border-white/20 p-3">
+        <summary className="cursor-pointer text-sm">
+          More planning nodes · execution unavailable
+        </summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {kinds
+            .filter((kind) => !supported.has(kind))
+            .map((kind) => (
+              <Button
+                key={kind}
+                size="sm"
+                variant="secondary"
+                disabled={busy || nodes.length >= 64}
+                onClick={() => add(kind)}
+              >{`Add ${title(kind)} (save only)`}</Button>
+            ))}
+        </div>
+      </details>
+      <div
+        ref={canvas}
+        className="h-[430px] sm:h-[500px] border rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950"
+      >
+        <ReactFlow
+          onInit={(instance) => {
+            flow.current = instance;
+            void instance.fitView({ padding: 0.2, maxZoom: 1 });
+          }}
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={(changes) => {
+            changeNodes(changes);
+            if (
+              changes.some(
+                (change) => !["select", "dimensions"].includes(change.type),
+              )
+            )
+              setDirty(true);
+          }}
+          onEdgesChange={(changes) => {
+            changeEdges(changes);
+            if (changes.some((change) => change.type !== "select"))
+              setDirty(true);
+          }}
+          onConnect={connect}
+          onNodeClick={(_, node) => setSelected(node.id)}
+          fitView
+          minZoom={0.1}
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
+      </div>
+      <Card>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <h2 className="text-lg font-semibold">Node inspector</h2>
+            <Field label="Selected node">
+              <select
+                className={inputClass}
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+              >
+                <option value="">Choose a node</option>
+                {nodes.map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {node.data.label} · {title(node.data.kind)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {selectedNode && (
+              <>
+                <Field label="Node label">
+                  <input
+                    className={inputClass}
+                    maxLength={128}
+                    value={selectedNode.data.label}
+                    onChange={(e) => {
+                      setNodes((previous) =>
+                        previous.map((node) =>
+                          node.id === selected
+                            ? {
+                                ...node,
+                                data: { ...node.data, label: e.target.value },
+                              }
+                            : node,
+                        ),
+                      );
+                      setDirty(true);
+                    }}
+                  />
+                </Field>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    disabled={selectedNode.data.kind !== "trigger"}
+                    checked={selectedNode.data.entry}
+                    onChange={(e) => {
+                      setNodes((previous) =>
+                        previous.map((node) => ({
+                          ...node,
+                          data: {
+                            ...node.data,
+                            entry: e.target.checked
+                              ? node.id === selected
+                              : node.id === selected
+                                ? false
+                                : node.data.entry,
+                          },
+                        })),
+                      );
+                      setDirty(true);
+                    }}
+                  />
+                  Manual starting node
+                </label>
+                <Field label="Node configuration (JSON)">
+                  <textarea
+                    className={`${inputClass} font-mono`}
+                    rows={7}
+                    value={configs[selected] ?? "{}"}
+                    onChange={(e) => {
+                      setConfigs((previous) => ({
+                        ...previous,
+                        [selected]: e.target.value,
+                      }));
+                      setDirty(true);
+                    }}
+                  />
+                </Field>
+                <p className="text-xs text-slate-500">
+                  AI Prompt: prompt, provider="ollama", max_tokens (1–1024).
+                  Delay: seconds (0–30). Trigger/End: empty object. Do not put
+                  credentials in graph configuration.
+                </p>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() =>
+                    setConfirm({
+                      text: "Remove this node and its connected edges?",
+                      action: () => {
+                        setNodes((previous) =>
+                          previous.filter((node) => node.id !== selected),
+                        );
+                        setEdges((previous) =>
+                          previous.filter(
+                            (edge) =>
+                              edge.source !== selected &&
+                              edge.target !== selected,
+                          ),
+                        );
+                        setSelected("");
+                        setDirty(true);
+                      },
+                    })
+                  }
+                >
+                  Remove selected node
+                </Button>
+              </>
+            )}
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-lg font-semibold">Connections</h2>
+            <Field label="Connect from">
+              <select
+                className={inputClass}
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+              >
+                <option value="">Choose source</option>
+                {nodes.map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {node.data.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Connect to">
+              <select
+                className={inputClass}
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              >
+                <option value="">Choose target</option>
+                {nodes.map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {node.data.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button
+              size="sm"
+              disabled={!source || !target || edges.length >= 128}
+              onClick={() =>
+                connect({
+                  source,
+                  target,
+                  sourceHandle: null,
+                  targetHandle: null,
+                })
+              }
+            >
+              Connect nodes
+            </Button>
+            {edges.map((edge) => (
+              <div
+                key={edge.id}
+                className="text-sm flex flex-wrap justify-between gap-2"
+              >
+                <span className="break-all">
+                  {nodes.find((node) => node.id === edge.source)?.data.label} →{" "}
+                  {nodes.find((node) => node.id === edge.target)?.data.label}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEdges((previous) =>
+                      previous.filter((item) => item.id !== edge.id),
+                    );
+                    setDirty(true);
+                  }}
+                >
+                  Remove connection
+                </Button>
               </div>
             ))}
           </div>
-        </Card>
-
-        {/* Center ReactFlow Canvas */}
-        <div
-          ref={reactFlowWrapper}
-          className="lg:col-span-6 xl:col-span-7 rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#080C1D] relative"
-        >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onNodeClick={(_e, node) => setSelectedNodeId(node.id)}
-            nodeTypes={nodeTypes}
-            fitView
-            deleteKeyCode={['Backspace', 'Delete']}
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={20}
-              size={1.2}
-              color="rgba(0, 229, 255, 0.18)"
-            />
-            <Controls />
-            <MiniMap
-              nodeColor={(n) => {
-                const cat = (n.data as CustomNodeData | undefined)?.category;
-                if (cat === 'Triggers') return '#00E5FF';
-                if (cat === 'AI & Logic') return '#8B5CF6';
-                if (cat === 'Actions') return '#10B981';
-                return '#F59E0B';
-              }}
-              maskColor="rgba(11, 16, 38, 0.7)"
-            />
-          </ReactFlow>
         </div>
-
-        {/* Right Inspector Panel */}
-        <Card
-          variant="default"
-          padding="sm"
-          className="lg:col-span-3 flex flex-col justify-between overflow-y-auto"
-        >
-          {selectedNode ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
-                    categoryColor[selectedNode.data.category]
-                  }`}
-                >
-                  {iconForKind[selectedNode.data.kind]}
-                  {selectedNode.data.kind}
-                </span>
-                <button
-                  type="button"
-                  onClick={deleteSelectedNode}
-                  aria-label="Delete selected node"
-                  className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/15 cursor-pointer"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                  Node Label
-                </label>
-                <input
-                  value={selectedNode.data.label}
-                  onChange={(e) => updateSelectedLabel(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl text-sm bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15 focus:outline-none focus:border-[#00E5FF]"
-                />
-              </div>
-
-              <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/10">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Node Parameters
-                </p>
-                {Object.entries(selectedNode.data.config).map(([key, val]) => (
-                  <div key={key}>
-                    <label className="block text-xs font-medium capitalize text-slate-500 dark:text-slate-400 mb-1">
-                      {key}
-                    </label>
-                    <input
-                      value={val}
-                      onChange={(e) => updateSelectedConfig(key, e.target.value)}
-                      className="w-full h-9 px-3 rounded-xl text-xs font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15 focus:outline-none focus:border-[#00E5FF]"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-slate-400">
-              <Sparkles className="h-8 w-8 text-[#00E5FF] mb-2 opacity-70" />
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                Select a node to inspect
-              </p>
-              <p className="text-xs mt-1">
-                Drag any of the 16 node types from the left palette or click + to add to the canvas.
-              </p>
-            </div>
+      </Card>
+      {saved && (
+        <Card>
+          <h2 className="text-lg font-semibold mb-3">Saved revision history</h2>
+          {revisions.isError && (
+            <p role="alert">Revision history unavailable.</p>
           )}
-
-          <div className="pt-4 mt-4 border-t border-slate-200 dark:border-white/10 text-[11px] text-slate-400">
-            Drag handles to connect nodes • Press Delete to remove selected node or edge.
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="Revision to restore">
+              <select
+                className={inputClass}
+                value={revision}
+                onChange={(e) => setRevision(e.target.value)}
+              >
+                <option value="">Choose revision</option>
+                {revisions.data?.map((item) => (
+                  <option key={item.revision} value={item.revision}>
+                    Revision {item.revision} · {item.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button
+              disabled={!revision || busy}
+              onClick={() =>
+                setConfirm({
+                  text: "Restore this earlier definition as a new revision? Unsaved edits will be discarded. Existing run receipts keep their original snapshot.",
+                  action: () =>
+                    operation.mutate(async () => {
+                      const graph = await apiRequest<Graph>(
+                        `/api/workflows/${saved.id}/restore`,
+                        {
+                          method: "POST",
+                          body: {
+                            expected_revision: saved.revision,
+                            revision: Number(revision),
+                          },
+                        },
+                      );
+                      load(graph);
+                      setNotice(`Restored as revision ${graph.revision}.`);
+                      await qc.invalidateQueries({
+                        queryKey: ["workflow-definitions"],
+                      });
+                    }),
+                })
+              }
+            >
+              Restore revision
+            </Button>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() =>
+                setConfirm({
+                  text: "Remove this unused workflow and its revisions? Workflows with execution history are retained; archive them instead.",
+                  action: () =>
+                    operation.mutate(async () => {
+                      await apiRequest(`/api/workflows/${saved.id}`, {
+                        method: "DELETE",
+                        params: { expected_revision: saved.revision },
+                      });
+                      blank();
+                      await qc.invalidateQueries({
+                        queryKey: ["workflow-definitions"],
+                      });
+                    }),
+                })
+              }
+            >
+              Remove unused workflow
+            </Button>
           </div>
         </Card>
-      </div>
-    </div>
+      )}
+      <Card>
+        <h2 className="text-lg font-semibold">Execution receipts</h2>
+        <p className="my-2 text-sm">
+          {control.isError
+            ? "Runtime controls unavailable."
+            : control.data?.emergency_stopped
+              ? "Emergency stop active."
+              : control.data?.paused
+                ? "Runtime paused. Queued runs wait until you explicitly resume."
+                : "Runtime resumed."}{" "}
+          Pausing holds work between nodes; cancelling or emergency stop
+          interrupts supported running work.
+        </p>
+        {history.isError && <p role="alert">Saved receipts unavailable.</p>}
+        {history.data?.map((item) => (
+          <div
+            className="border-t border-slate-300 dark:border-white/15 py-3 space-y-2"
+            key={item.id}
+          >
+            <p className="font-semibold">
+              Run: {item.status} · revision{" "}
+              {item.revision ?? "legacy/unverified"}
+            </p>
+            <p className="text-xs break-all">{item.id}</p>
+            <p className="text-sm">{item.message}</p>
+            {item.error && <p className="text-sm text-red-500">{item.error}</p>}
+            {["queued", "running"].includes(item.status) && (
+              <Button
+                size="sm"
+                onClick={() =>
+                  operation.mutate(async () => {
+                    await apiRequest(
+                      `/api/workflows/${saved!.id}/executions/${item.id}/cancel`,
+                      { method: "POST" },
+                    );
+                    await history.refetch();
+                  })
+                }
+              >
+                Cancel run
+              </Button>
+            )}
+            {item.execution_verified &&
+              item.execution_log.map((event, index) => (
+                <div className="text-sm" key={index}>
+                  <p>
+                    {title(event.node_type)} · {event.event}
+                  </p>
+                  {event.output?.text && (
+                    <pre className="whitespace-pre-wrap break-words rounded bg-slate-100 dark:bg-slate-950 p-3">
+                      {event.output.text}
+                    </pre>
+                  )}
+                </div>
+              ))}
+          </div>
+        ))}
+        {saved && history.data?.length === 0 && (
+          <p>No saved executions for this workflow.</p>
+        )}
+      </Card>
+      <Modal
+        open={review}
+        onClose={() => {
+          if (!run.isPending) setReview(false);
+        }}
+        title="Review manual local run"
+      >
+        <p className="mb-3 text-sm">
+          Run saved revision {saved?.revision} of {saved?.name}? This uses its
+          fixed graph snapshot, may generate local AI advice and has no
+          publishing or other action tools. Earlier saved output may be passed
+          to the next AI node. Results are saved in the local database.
+        </p>
+        <Field label="Trigger data (JSON)">
+          <textarea
+            className={`${inputClass} font-mono`}
+            rows={4}
+            value={trigger}
+            onChange={(e) => setTrigger(e.target.value)}
+          />
+        </Field>
+        {run.isError && (
+          <p role="alert" className="text-red-500 my-3">
+            {message(run.error)}
+          </p>
+        )}
+        <Button disabled={run.isPending} onClick={() => run.mutate()}>
+          Confirm manual run
+        </Button>
+      </Modal>
+      <Modal
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        title="Confirm workflow change"
+      >
+        <p className="mb-4">{confirm?.text}</p>
+        <div className="flex gap-3">
+          <Button
+            onClick={() => {
+              const action = confirm?.action;
+              setConfirm(null);
+              action?.();
+            }}
+          >
+            Confirm change
+          </Button>
+          <Button variant="secondary" onClick={() => setConfirm(null)}>
+            Keep current edits
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        open={blocker.state === "blocked"}
+        onClose={() => {
+          if (blocker.state === "blocked") blocker.reset();
+        }}
+        title="Unsaved workflow edits"
+      >
+        <p className="mb-4">
+          Leave this page and discard unsaved workflow edits?
+        </p>
+        <div className="flex gap-3">
+          <Button
+            onClick={() => {
+              if (blocker.state === "blocked") blocker.proceed();
+            }}
+          >
+            Discard edits and leave
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (blocker.state === "blocked") blocker.reset();
+            }}
+          >
+            Stay and keep editing
+          </Button>
+        </div>
+      </Modal>
+    </section>
   );
 };

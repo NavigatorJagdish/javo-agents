@@ -264,7 +264,7 @@ export const MainLayout: React.FC = () => {
         {/* Page Outlet */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
           <p role="status" className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            Rebuild in progress. Home, AI Team, Content, Goals, Accounts, Settings and Companion use runtime APIs. Other screens still contain prototype data and unfinished controls; charts and activity are not verified account results.
+            Rebuild in progress. Home, AI Team, Content, Goals, Workflows, Accounts, Settings and Companion use runtime APIs. Supported workflow execution is local text drafting only. Other screens still contain prototype data and unfinished controls; charts and activity are not verified account results.
           </p>
           <RouteContent><Outlet /></RouteContent>
         </main>

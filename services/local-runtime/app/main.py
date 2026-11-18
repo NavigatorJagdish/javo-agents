@@ -29,6 +29,7 @@ from app.services.content_watcher import get_content_watcher
 from app.services.timed_dispatch import timed_worker
 from app.services.agent_jobs import agent_worker
 from app.services.social_credentials import migrate_legacy_credentials
+from app.services.workflow_jobs import workflow_worker
 
 settings = get_settings()
 logging.basicConfig(
@@ -162,6 +163,9 @@ async def lifespan(app: FastAPI):
 
         cleanup.push_async_callback(agent_worker.stop)
         await agent_worker.start()
+
+        cleanup.push_async_callback(workflow_worker.stop)
+        await workflow_worker.start()
 
         try:
             yield

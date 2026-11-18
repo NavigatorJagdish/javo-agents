@@ -35,6 +35,8 @@ def complete(coro):
             "watcher_stop",
             ["agent_stop", "timer_stop", "watcher_stop", "scheduler_stop", "worker_stop", "db_close"],
         ),
+        ("workflow_start", ["agent_stop", "timer_stop", "watcher_stop", "scheduler_stop", "worker_stop", "db_close"]),
+        ("workflow_stop", ["agent_stop", "timer_stop", "watcher_stop", "scheduler_stop", "worker_stop", "db_close"]),
         (None, ["agent_stop", "timer_stop", "watcher_stop", "scheduler_stop", "worker_stop", "db_close"]),
     ],
 )
@@ -89,8 +91,11 @@ def test_partial_start_and_cleanup_failures_release_resources(monkeypatch, failu
         SimpleNamespace(start=asynchronous("timer_start"), stop=asynchronous("timer_stop")),
     )
     monkeypatch.setattr(main, 'agent_worker', SimpleNamespace(start=asynchronous('agent_start'), stop=asynchronous('agent_stop')))
+    monkeypatch.setattr(main, 'workflow_worker', SimpleNamespace(start=asynchronous('workflow_start'), stop=asynchronous('workflow_stop')))
+    if failure in {None, 'agent_stop', 'timer_stop', 'watcher_stop', 'workflow_start', 'workflow_stop'}:
+        expected = ['workflow_stop', *expected]
     context = main.lifespan(None)
-    if failure and failure not in {"watcher_stop", "timer_stop", "agent_stop"}:
+    if failure and failure not in {"watcher_stop", "timer_stop", "agent_stop", "workflow_stop"}:
         with pytest.raises(RuntimeError, match=failure):
             complete(context.__aenter__())
     else:
