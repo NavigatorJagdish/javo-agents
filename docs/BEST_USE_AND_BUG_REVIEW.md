@@ -1,4 +1,4 @@
-# Best use and realistic-use bug review — 17 November 2026
+# Best use and realistic-use bug review — 18 November 2026
 
 This is an implementation/use review, not a claim to have monitored real
 production users. No production telemetry or external-user session was available.
@@ -47,6 +47,7 @@ full visual automation remain incomplete; manual review is still necessary.
 | --- | --- |
 | Editor sends ReactFlow objects to a different server schema | Actual mapping, real saved graph reopening and visible server errors |
 | Reload loses the editor's apparent saved graph | Runtime-backed selection/reopen and revision history |
+| Newly saved graph briefly disappears from the selector while list refresh lags | Retain the confirmed current graph as an option, including when outside the current list page |
 | A second tab silently overwrites a newer graph | Expected-revision checks,409conflict, preserved edits and Save as new copy |
 | Reusing node IDs across workflows collides with database keys | Owner/graph ID checks; copies generate new node and edge IDs |
 | Circular/dangling/duplicate connections can be saved | Client cycle prevention plus server graph validation before any mutation |

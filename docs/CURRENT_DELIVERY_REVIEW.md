@@ -47,9 +47,10 @@ Workflows now has real persistence and a connected worker for the bounded manual
 local-text subset described in [WORKFLOWS.md](WORKFLOWS.md). Unsupported graphs
 are rejected before enqueueing; historic prototype receipts are labelled
 unverified. Browser tests use labelled synthetic model text, not model-quality
-or live-connector evidence. A fresh real-model workflow acceptance attempt was
-blocked by low available RAM; normal admission safeguards were retained. The
-earlier companion model smoke remains historical evidence for its exact path.
+or live-connector evidence. Initial real-model attempts were refused under low
+free RAM. After capacity improved, an isolated real Qwen workflow completed in
+1.922s and retained actual usage across restart, with normal safeguards enabled.
+This is one small drafting smoke, not broad quality or hardware acceptance.
 
 ## External configuration and unresolved access
 

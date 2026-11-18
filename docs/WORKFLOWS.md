@@ -1,4 +1,4 @@
-# Saved workflows and manual local drafting — 17 November 2026
+# Saved workflows and manual local drafting — 18 November 2026
 
 Workflows now saves/reopens real graphs, keeps definition revisions and runs a
 bounded subset through an actual durable worker. It does not activate automatic
@@ -101,6 +101,13 @@ via copy, cancellation, supported local execution, authenticated reload and
 mobile overflow. `scripts/verify-local-model.py --workflow` optionally exercises
 the saved run against an already installed real local model with actual resource
 admission; no model download or owner-profile mutation is performed.
+
+On18November this real-model check passed with installed Qwen2.5:0.5b: saved
+workflow output in1.922s, companion output in5.391s, and2 successful requests /
+218 reported tokens preserved across runtime restart. Initial attempts were
+refused under low memory; the successful retry used improved host headroom and
+unchanged production admission. This is one small synthetic brief against a real
+model, not a broad quality, multilingual, privacy-policy or hardware benchmark.
 
 Full16-node execution, automatic triggers, branch/condition/retry semantics,
 general approval/reply/publishing integration and broad multilingual/hardware

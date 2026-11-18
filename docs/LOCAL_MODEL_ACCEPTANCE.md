@@ -1,4 +1,17 @@
-# Real local model smoke — 16 November 2026
+# Real local model smoke — updated 18 November 2026
+
+On18November the extended `--workflow` check also passed against the installed
+real model. It saved/reviewed a three-node graph through the authenticated API,
+ran it through the durable worker/router/resource manager, inspected actual
+nonempty model output and verified2 successful requests /218 reported tokens
+after runtime restart. Markers: REAL_LOCAL_MODEL_COMPANION_LEDGER_RESTART_OK
+and REAL_SAVED_LOCAL_WORKFLOW_OUTPUT_LEDGER_OK. Observed companion time5.391s;
+workflow time1.922s. Initial attempts under low memory were refused. The retry
+used improved available host RAM and unchanged production safeguards, with no
+fixture, cloud call or owner-profile mutation. This remains one short English
+brief, not sustained hardware or multilingual-quality acceptance.
+
+The following records the earlier16November companion-only observation.
 
 An actual Qwen2.5:0.5b model generated a reply through the authenticated Javo
 companion, production resource manager, AI router and durable usage ledger.
@@ -42,6 +55,8 @@ To repeat against an existing local-only Ollama service and installed model:
 
 ```powershell
 .\services\local-runtime\.venv\Scripts\python.exe scripts/verify-local-model.py --model qwen2.5:0.5b
+# Include the actual saved/reviewed workflow path:
+.\services\local-runtime\.venv\Scripts\python.exe scripts/verify-local-model.py --model qwen2.5:0.5b --workflow
 ```
 
 The script does not download models. Insufficient real headroom fails the

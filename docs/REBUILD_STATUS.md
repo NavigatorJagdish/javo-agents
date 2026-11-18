@@ -30,10 +30,12 @@ The companion/provider/content browser regression also passed. Actual developmen
 Electron plus venv runtime started, opened Workflows and other saved pages, and
 quit without leaving a backend listener, using an isolated temporary profile.
 
-A new real-model workflow smoke was attempted but not completed: after service
-startup, normal admission refused inference under low free RAM on this host.
-No resource safeguard was bypassed. The earlier real companion-model result below
-remains evidence for that earlier path, not a successful new workflow benchmark.
+Initial real-model workflow attempts were refused under low free RAM. Once host
+capacity improved, the isolated smoke passed on18November: actual companion text
+in5.391s, saved/reviewed workflow output in1.922s,2 successful local requests and
+218 reported tokens retained after lifespan restart. Normal resource admission
+remained enabled; no cloud call, model fixture or owner-profile mutation. This
+single small drafting prompt is not multilingual quality or sustained-load proof.
 CI results for the new source head are recorded separately after observation.
 
 The following sections are historical checkpoint evidence.
