@@ -1,0 +1,76 @@
+name: CI - Cloud container
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - services/local-runtime/**
+      - apps/dashboard/**
+      - packages/design-system/**
+      - tests/integration/test_cloud_deployment.py
+      - .github/workflows/ci-cloud.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - services/local-runtime/**
+      - apps/dashboard/**
+      - packages/design-system/**
+      - .github/workflows/ci-cloud.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cloud image
+        run: docker build -t javo-cloud:test .
+      - name: Check login gate, health and persistent task storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVO_CLOUD_USERNAME=cloud-ci
+          export JAVO_CLOUD_PASSWORD=$(openssl rand -hex 24)
+          export JAVO_SECRET_KEY=$(openssl rand -hex 32)
+          export JAVO_ENCRYPTION_KEY=$(openssl rand -hex 32)
+          docker volume create javo-cloud-test
+          start_cloud() {
+            docker run -d --name javo-cloud -p 127.0.0.1:8000:8000 \
+              --mount source=javo-cloud-test,target=/data \
+              -e JAVO_CLOUD_USERNAME -e JAVO_CLOUD_PASSWORD \
+              -e JAVO_SECRET_KEY -e JAVO_ENCRYPTION_KEY javo-cloud:test
+            for attempt in $(seq 1 45); do
+              if curl --fail --silent http://127.0.0.1:8000/healthz; then return; fi
+              sleep 1
+            done
+            docker logs javo-cloud
+            return 1
+          }
+          start_cloud
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/agents/)" = 401
+          curl --fail --silent -u "$JAVO_CLOUD_USERNAME:$JAVO_CLOUD_PASSWORD" \
+            http://127.0.0.1:8000/ai-team | grep -q '<!doctype html>'
+          curl --fail --silent -u "$JAVO_CLOUD_USERNAME:$JAVO_CLOUD_PASSWORD" \
+            http://127.0.0.1:8000/api/agents/ | python -c 'import json,sys; assert len(json.load(sys.stdin)) == 30'
+          curl --fail --silent -u "$JAVO_CLOUD_USERNAME:$JAVO_CLOUD_PASSWORD" \
+            -H 'Content-Type: application/json' -d '{"title":"cloud restart test"}' \
+            http://127.0.0.1:8000/api/tasks/ > /tmp/cloud-task.json
+          docker rm -f javo-cloud
+          start_cloud
+          curl --fail --silent -u "$JAVO_CLOUD_USERNAME:$JAVO_CLOUD_PASSWORD" \
+            http://127.0.0.1:8000/api/tasks/ | python -c 'import json,sys; task=json.load(open("/tmp/cloud-task.json")); assert any(t["task_id"] == task["task_id"] for t in json.load(sys.stdin))'
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs javo-cloud || true
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f javo-cloud || true
+          docker volume rm javo-cloud-test || true
