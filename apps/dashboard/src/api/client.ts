@@ -5,7 +5,11 @@ function resolveApiBaseUrl(): string {
       return paramBase.replace(/\/+$/, '');
     }
   }
-  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  const configuredBase = import.meta.env.VITE_API_BASE_URL;
+  if (configuredBase === 'same-origin' && typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return configuredBase || 'http://localhost:8000';
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();

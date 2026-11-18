@@ -25,6 +25,13 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Once running, open the interactive API docs at `http://localhost:8000/docs`.
 
+## Cloud preview (Northflank)
+
+The root `Dockerfile` packages the runtime and dashboard as one password-protected
+service. See [Northflank deployment](docs/setup/NORTHFLANK_DEPLOY.md) for free-plan
+checks, required secrets, persistent storage, and the application's current
+execution limitations. Cloud hosting does not include a local AI model.
+
 ## Key Features
 
 - **29 Specialist Agents + Master Orchestrator**: Content creation, scheduling, growth analysis, compliance, security guarding, memory, and device sync.
