@@ -79,7 +79,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'javo_list_workflows',arguments:{}}}) }}",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'javo_list_workflows','arguments':{} } }) }}",
         "options": {
           "timeout": 15000
         }
@@ -117,7 +117,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'javo_propose_workflow',arguments:{request_key:'n8n_'+$execution.id,title:'Reviewed draft from n8n',workflow_id:$json.id,expected_revision:$json.revision,fingerprint:$json.fingerprint,trigger_data:{brief:$('Validate input').first().json.brief}}}}) }}",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'javo_propose_workflow','arguments':{request_key:'n8n_'+$execution.id,title:'Reviewed draft from n8n',workflow_id:$json.id,expected_revision:$json.revision,fingerprint:$json.fingerprint,trigger_data:{brief:$('Validate input').first().json.brief} } } }) }}",
         "options": {
           "timeout": 15000
         }
@@ -171,7 +171,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'javo_get_my_proposal',arguments:{proposal_id:$('Keep proposal reference').first().json.proposal_id}}}) }}",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'javo_get_my_proposal','arguments':{proposal_id:$('Keep proposal reference').first().json.proposal_id} } }) }}",
         "options": {
           "timeout": 15000
         }
@@ -275,7 +275,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:4,method:'tools/call',params:{name:'javo_get_my_workflow_result',arguments:{proposal_id:$('Keep proposal reference').first().json.proposal_id}}}) }}",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:4,method:'tools/call',params:{name:'javo_get_my_workflow_result','arguments':{proposal_id:$('Keep proposal reference').first().json.proposal_id} } }) }}",
         "options": {
           "timeout": 15000
         }

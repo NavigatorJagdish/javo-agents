@@ -25,6 +25,7 @@ for (const node of flow.nodes) {
   if (node.type.endsWith('.httpRequest')) {
     assert.equal(node.parameters.authentication, 'genericCredentialType');
     assert.equal(node.credentials, undefined);
+    assert(!node.parameters.jsonBody.slice(3,-2).includes('}}'), 'Nested JavaScript object closes must not terminate an n8n expression early');
     new Function('$', '$json', '$execution', 'return '+node.parameters.jsonBody.slice(3,-2));
   }
 }
