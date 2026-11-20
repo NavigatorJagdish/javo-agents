@@ -7,7 +7,7 @@ import logging
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,8 @@ from app.api.routes import security
 from app.core.ai_router import get_ai_router
 from app.core.resource_manager import get_resource_manager
 from app.database import get_session
+from app.services import speech
+from app.core.provider_store import VaultUnavailable
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 logger = logging.getLogger(__name__)
@@ -53,17 +55,33 @@ class VoiceCommandResponse(BaseModel):
 
 class TTSRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    text: str = Field(min_length=1, max_length=4000)
-    language: str = "en"
-    voice: str = "default"
-    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    text: str = Field(min_length=1, max_length=800)
+    language: Literal['en', 'hi', 'hinglish'] = 'en'
+    voice: str = 'af_heart'
+    speed: float = Field(default=1.0, ge=0.75, le=1.5, allow_inf_nan=False)
+    effect: Literal['natural', 'radio', 'echo', 'deep', 'bright'] = 'natural'
 
 
 @router.get("/capabilities")
 async def capabilities() -> dict:
-    return {"text_assistant": True, "speech_to_text": False, "text_to_speech": False,
-            "wake_word": False, "history_storage": "tab-memory-only",
-            "message": "Local speech recognition and synthesis engines are not installed or integrated."}
+    return speech.capabilities()
+
+
+@router.get('/configuration')
+async def speech_configuration():
+    return speech.configuration()
+
+
+@router.put('/configuration')
+async def save_speech_configuration(body: speech.SpeechConfiguration):
+    for key, operation in [('tts_model_dir', 'tts'), ('asr_model_dir', 'asr')]:
+        if getattr(body, key) and not speech.ready(getattr(body, key), operation):
+            raise HTTPException(422, 'The selected directory does not contain the required model files.')
+    try:
+        speech.vault().update(lambda value: value['settings'].update(body.model_dump()))
+    except VaultUnavailable:
+        raise HTTPException(503, 'Voice configuration could not be saved. Existing settings were retained.') from None
+    return speech.configuration()
 
 
 async def _await_connected(request: Request, operation):
@@ -167,12 +185,34 @@ async def process_voice_command(
 
 
 @router.post("/tts")
-async def text_to_speech(body: TTSRequest):
-    raise HTTPException(501, "Local speech synthesis is not integrated. No audio was generated.")
+async def text_to_speech(body: TTSRequest, request: Request):
+    if not body.text.strip():
+        raise HTTPException(422, 'Enter text to speak')
+    try:
+        data = await _await_connected(request, speech.synthesize(body.text, body.voice, body.speed, body.effect))
+        return Response(data, media_type='audio/wav', headers={'Cache-Control': 'no-store',
+            'Content-Disposition': 'attachment; filename="javo-ai-voice.wav"'})
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, 'Speech synthesis failed. Check model files, available memory and voice setup.') from None
 
 
 @router.post("/transcribe")
-async def transcribe_audio(file: UploadFile = File(...), language: str = Form(default="auto")):
-    # Do not read/store an upload while no recognizer is available.
-    await file.close()
-    raise HTTPException(501, "Local speech recognition is not integrated. No transcript was generated.")
+async def transcribe_audio(request: Request, file: UploadFile = File(...), language: str = Form(default="auto")):
+    try:
+        if language not in {'auto', 'en', 'hi'}:
+            raise HTTPException(422, 'Choose auto, English or Hindi recognition')
+        # Refuse before reading an upload if there is no configured recognizer.
+        if not speech.capabilities()['speech_to_text']:
+            raise HTTPException(501, 'Local speech recognition model is not configured. No transcript was generated.')
+        data = await file.read(3 * 1024 * 1024 + 1)
+        if len(data) > 3 * 1024 * 1024:
+            raise HTTPException(413, 'Recording exceeds3MiB; use a shorter mono WAV')
+        return await _await_connected(request, speech.transcribe(data, language))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, 'Transcription failed. Check model files, free memory and recording format.') from None
+    finally:
+        await file.close()

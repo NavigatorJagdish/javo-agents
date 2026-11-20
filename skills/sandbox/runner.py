@@ -1,14 +1,9 @@
-"""Constrained AST + Subprocess Sandbox Runner for Javo Agents skills.
+"""Reviewed built-in skill runner with AST checks and a subprocess deadline.
 
-Security guarantees:
-1. AST static inspection rejects dangerous builtins (`eval`, `exec`, `compile`,
-   `__import__`, `globals`, `locals`) and unauthorized imports (`subprocess`,
-   `os`, `socket`, `http`, `urllib`, `requests`, `ctypes`, `shutil`, etc.).
-2. Permission enforcement aligns imported capabilities with `manifest.json`.
-3. Subprocess execution uses a scrubbed environment (`env`) so host secrets
-   (`JAVO_*`, `GEMINI_*`, `OPENAI_*`, `TELEGRAM_*`, tokens, keys) never leak.
-4. Wall-clock timeout enforcement kills runaway skills cleanly.
-5. Deterministic Trust Score calculator (0.0 to 1.0) evaluates skill safety.
+This is not an OS sandbox for downloaded Python. Only the two pinned original
+built-ins can execute. AST/environment checks provide defense in depth; a trust
+score does not prove arbitrary-code isolation. External/native tools stay in
+separately configured runtimes and do not get execution through this runner.
 """
 
 from __future__ import annotations
@@ -17,6 +12,7 @@ import ast
 import hashlib
 import json
 import os
+import math
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -33,7 +29,20 @@ ALWAYS_FORBIDDEN_CALLS = {
     "globals",
     "locals",
     "vars",
+    "getattr", "setattr", "delattr", "hasattr", "dir",
 }
+
+BUILTIN_SOURCES = {
+    'social-caption-optimizer': 'e1db25209b827b4925201f786d48fcea968ea5697e7896574ac717513b5c13c8',
+    'hindi-hinglish-hook-writer': 'e77d68f5a7f6e75f120f74d5b87a60f27db0bc1a987f566884d1702793c81b7a',
+}
+
+
+def _trusted_builtin(skill_dir: Path, source: str) -> bool:
+    root = (Path(__file__).resolve().parents[1]/'core').resolve()
+    directory = skill_dir.resolve()
+    expected = BUILTIN_SOURCES.get(directory.name)
+    return directory.parent == root and expected == hashlib.sha256(source.encode('utf-8')).hexdigest()
 
 ALWAYS_FORBIDDEN_MODULES = {
     "subprocess",
@@ -120,6 +129,11 @@ def inspect_skill_ast(source_code: str, permissions: list[str]) -> list[str]:
             if node.module:
                 root_mod = node.module.split(".")[0]
                 violations.extend(_check_module_allowed(root_mod, allow_fs, allow_net))
+            if any(alias.name.startswith('_') or alias.name == '*' or alias.name in {'sys','os','builtins','codecs','subprocess','importlib'} for alias in node.names):
+                violations.append('Forbidden indirect/private import')
+        elif isinstance(node, ast.Name):
+            if node.id in ALWAYS_FORBIDDEN_CALLS or (node.id.startswith('__') and node.id != '__name__') or (node.id == 'open' and not allow_fs):
+                violations.append('Forbidden dynamic builtin reference: '+node.id)
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name):
                 if node.func.id in ALWAYS_FORBIDDEN_CALLS:
@@ -130,8 +144,8 @@ def inspect_skill_ast(source_code: str, permissions: list[str]) -> list[str]:
                 if node.func.attr in {"system", "popen", "execv", "spawnl"}:
                     violations.append(f"Forbidden method call: .{node.func.attr}()")
         elif isinstance(node, ast.Attribute):
-            if node.attr.startswith("__") and node.attr in {"__subclasses__", "__globals__", "__builtins__", "__code__"}:
-                violations.append(f"Forbidden dunder attribute access: {node.attr}")
+            if node.attr.startswith('_') or node.attr in {'sys','os','builtins','codecs','subprocess','importlib','environ','modules'}:
+                violations.append(f"Forbidden private/runtime attribute access: {node.attr}")
 
     return violations
 
@@ -207,7 +221,7 @@ def run_skill_sandboxed(
     payload: dict[str, Any],
     verify_checksum: bool = True,
 ) -> SandboxResult:
-    """Validate manifest, inspect AST, and execute skill in an isolated subprocess."""
+    """Validate and run a pinned original built-in; reject downloaded Python."""
     import time
 
     t0 = time.monotonic()
@@ -224,6 +238,8 @@ def run_skill_sandboxed(
     handler = manifest.get("handler", "run")
     permissions = list(manifest.get("permissions", []))
     timeout_sec = float(manifest.get("timeout_seconds", 5.0))
+    if not math.isfinite(timeout_sec) or not 0.05 <= timeout_sec <= 30:
+        return SandboxResult(success=False, error='Skill deadline must be finite and between0.05 and30seconds')
 
     skill_file = (skill_dir / entrypoint).resolve()
     if not skill_file.exists() or skill_dir.resolve() not in skill_file.parents:
@@ -249,6 +265,11 @@ def run_skill_sandboxed(
             violations=violations,
             trust_score=0.0,
         )
+
+    if not _trusted_builtin(skill_dir, source_code) or set(permissions) - {'pure:compute', 'text:transform'}:
+        return SandboxResult(success=False,
+            error='External, modified or privileged skill execution requires real OS isolation; this runner permits only reviewed pinned built-ins.',
+            trust_score=0.0)
 
     bootstrap = (
         "import importlib.util, json, sys\n"

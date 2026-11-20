@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MicOff, Send, Bot, User, Square, Trash2 } from 'lucide-react';
+import { Send, Bot, User, Square, Trash2 } from 'lucide-react';
+import { SpeechStudio } from '../components/SpeechStudio';
 import { Card, Badge, Button } from '@javo/design-system';
 import { ApiError, apiRequest } from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -69,11 +70,10 @@ export const Voice: React.FC = () => {
     <div className="flex flex-wrap justify-between gap-3">
       <div><h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">Javo companion</h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Text conversation and real runtime controls. Conversation stays in this tab until cleared or closed.</p></div>
-      <Badge status="warning">Audio engines pending</Badge>
+      <Badge status="info">Local speech studio</Badge>
     </div>
     <Card variant="default">
-      <div className="flex items-start gap-3"><MicOff className="h-5 w-5 shrink-0 text-slate-400" />
-        <p className="text-sm">Microphone, speech recognition, spoken replies and wake word are unavailable. Use text below; no audio is captured.</p></div>
+      <p className="text-sm">Use the voice studio to record and review a transcript, or generate spoken text. Microphone access starts only when you choose Record. Wake word is unavailable.</p>
       <div className="mt-4 flex flex-wrap gap-4">
         <label className="text-sm">Provider
           <select aria-label="Companion provider" className="ml-2 rounded border p-2 bg-white dark:bg-slate-900" value={provider} disabled={busy} onChange={event => { setProvider(event.target.value); context.current = []; setHistory([]); setPending(null); }}>
@@ -86,6 +86,7 @@ export const Voice: React.FC = () => {
       </div>
       {provider !== 'ollama' && <p className="mt-3 text-sm text-amber-600 dark:text-amber-300">Sending a message sends its conversation context to the selected configured cloud provider. Zero-cost budgets block cloud generation. Choose Ollama for local conversation.</p>}
     </Card>
+    <SpeechStudio onTranscript={setInput}/>
     <Card variant="default">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h2 className="font-semibold">Conversation</h2>

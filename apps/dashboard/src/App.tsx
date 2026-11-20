@@ -131,6 +131,7 @@ const queryClient = new QueryClient({
     },
   },
 });
+const Studio = lazy(() => import('./pages/Studio').then(module => ({default: module.Studio})));
 
 const router = createHashRouter(
   createRoutesFromElements(
@@ -147,6 +148,7 @@ const router = createHashRouter(
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/voice" element={<Voice />} />
+        <Route path="/studio" element={<Studio />} />
         <Route path="/github" element={<GitHub />} />
         <Route path="/skills" element={<Skills />} />
         <Route path="/security" element={<Security />} />

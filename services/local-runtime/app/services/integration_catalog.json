@@ -1,0 +1,112 @@
+[
+  {
+    "id": "hermes",
+    "repository": "https://github.com/NousResearch/hermes-agent",
+    "commit": "91cb42b51bddc6841c4e50183c41c96d59e48516",
+    "license": "MIT",
+    "archived": false,
+    "purpose": "Long-lived assistant and reusable skill workflows",
+    "integration": "MCP client; separate terminal/container execution",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "openhands",
+    "repository": "https://github.com/OpenHands/OpenHands",
+    "commit": "309f23f3f1488cdb75835ffa307327d30489e705",
+    "license": "MIT",
+    "archived": false,
+    "purpose": "Large coding tasks in isolated workspaces",
+    "integration": "MCP/agent backend; external runtime required",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "n8n",
+    "repository": "https://github.com/n8n-io/n8n",
+    "commit": "c3b98e6b65e8e5ca3634ffeb65828ad21606a74c",
+    "license": "Sustainable Use / Enterprise; external-only",
+    "archived": false,
+    "purpose": "Deterministic scheduled/event workflows",
+    "integration": "HTTP/MCP; separately operated instance; Sustainable Use / Enterprise license",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "aider",
+    "repository": "https://github.com/Aider-AI/aider",
+    "commit": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c",
+    "license": "Apache-2.0",
+    "archived": false,
+    "purpose": "Small reviewed code edits and git diffs",
+    "integration": "Read-only context / task export; separate CLI",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "crewai",
+    "repository": "https://github.com/crewAIInc/crewAI",
+    "commit": "435262c638173ef9a97e4ed58bbde16af33f254b",
+    "license": "MIT",
+    "archived": false,
+    "purpose": "Role-based research or specialist crews",
+    "integration": "MCP/HTTP tool adapter; separate model configuration",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "cloudflare-inbox",
+    "repository": "https://github.com/cloudflare/agentic-inbox",
+    "commit": "48039bb6785af34e592c2966f87cde2b255c4c80",
+    "license": "Apache-2.0",
+    "archived": false,
+    "purpose": "Email drafts and inbox organization",
+    "integration": "Cloudflare deployment/email/domain required; no email activated",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "agent-inbox",
+    "repository": "https://github.com/langchain-ai/agent-inbox",
+    "commit": "f1616f3e7998e7e4fd574545b9558554d88d9c49",
+    "license": "MIT",
+    "archived": true,
+    "purpose": "Human review of interrupted agent work",
+    "integration": "Archived upstream; optional LangGraph review-format export",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "langgraph",
+    "repository": "https://github.com/langchain-ai/langgraph",
+    "commit": "84ced603d3a201ab0f9379936bb35868e243f3f3",
+    "license": "MIT",
+    "archived": false,
+    "purpose": "Stateful orchestration with explicit human review",
+    "integration": "MCP/HTTP adapter and optional local SDK",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "task-master",
+    "repository": "https://github.com/eyaltoledano/claude-task-master",
+    "commit": "c0c98d367c55296bfe69e65680625b6db437af02",
+    "license": "MIT + Commons Clause; external-only",
+    "archived": false,
+    "purpose": "Project decomposition and dependency planning",
+    "integration": "Task export / separately configured MCP server; MIT + Commons Clause",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "mcp-directory",
+    "repository": "https://github.com/punkpeye/awesome-mcp-servers",
+    "commit": "5fb385c3c56a004eacad6a21cb446205c787926b",
+    "license": "MIT",
+    "archived": false,
+    "purpose": "Discover server implementations for review",
+    "integration": "Reference directory only; entries are not verified or executable integrations",
+    "upstream_runtime_enabled": false
+  },
+  {
+    "id": "browser-use",
+    "repository": "https://github.com/browser-use/browser-use",
+    "commit": "ccbdb8095fbaf903c748880a600054a34c7b6191",
+    "license": "MIT",
+    "archived": false,
+    "purpose": "Isolated browser research and UI tasks",
+    "integration": "MCP/HTTP adapter; separate browser, allowlist and local model configuration",
+    "upstream_runtime_enabled": false
+  }
+]

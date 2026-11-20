@@ -43,7 +43,7 @@ jobs:
       - name: Install dashboard dependencies and build
         working-directory: apps/dashboard
         run: |
-          npm install --ignore-scripts --package-lock=false --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run build
       - name: Install desktop dependencies and verify lifecycle contracts
         working-directory: apps/windows
@@ -91,6 +91,19 @@ jobs:
         run: |
           $env:JAVO_RUNTIME_EXE = (Resolve-Path "apps/windows/build/runtime/javo-runtime/javo-runtime.exe").Path
           python scripts/verify-dashboard.py --scenario workflows
+      - name: Verify voice controls and reviewed integrations against the frozen backend
+        shell: pwsh
+        run: |
+          $env:JAVO_RUNTIME_EXE = (Resolve-Path "apps/windows/build/runtime/javo-runtime/javo-runtime.exe").Path
+          python scripts/verify-dashboard.py --scenario creator
+      - name: Verify real packaged neural speech with optional external models
+        shell: pwsh
+        run: |
+          $modelRoot = Join-Path $env:RUNNER_TEMP "javo-speech-models"
+          python scripts/install-speech-models.py --model-root $modelRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:JAVO_RUNTIME_EXE = (Resolve-Path "apps/windows/build/runtime/javo-runtime/javo-runtime.exe").Path
+          python scripts/verify-local-speech.py --model-root $modelRoot --output-dir (Join-Path $env:RUNNER_TEMP "speech-evidence")
       - name: Download Electron and package unsigned development directory
         working-directory: apps/windows
         shell: pwsh

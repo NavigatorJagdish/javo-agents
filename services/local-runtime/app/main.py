@@ -14,6 +14,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from app.core.http_boundary import LocalHttpBoundary
 from sqlalchemy import select
 
 import app.models  # noqa: F401 - ensure all SQLAlchemy models are registered
@@ -184,6 +186,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    application.add_middleware(LocalHttpBoundary)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins + ["http://127.0.0.1:3000", "http://127.0.0.1:5173", "null"],
@@ -191,6 +194,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    application.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
     @application.exception_handler(RequestValidationError)
     async def private_validation_error(request, error):
@@ -202,6 +206,8 @@ def create_app() -> FastAPI:
     # Both path forms use exactly the same handlers and authentication boundary.
     application.include_router(api_router, dependencies=[Depends(require_local_owner)])
     application.include_router(api_router, prefix="/api", dependencies=[Depends(require_local_owner)])
+    from app.api.routes.integrations import mcp_router
+    application.include_router(mcp_router)
 
     @application.get("/auth/status", tags=["auth"])
     async def auth_status() -> dict[str, bool]:

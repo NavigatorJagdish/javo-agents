@@ -210,6 +210,40 @@ async def get_execution(exec_id: str, session=Depends(get_session)):
     return run_response(execution)
 
 
+@router.get('/node-types')
+async def node_types():
+    from app.models.workflow import NodeType
+    from app.services.workflow_graphs import SUPPORTED_NODES
+    defaults = {'trigger': {}, 'end': {}, 'ai_prompt': {'prompt': 'Draft a short original caption from the supplied brief.', 'provider': 'ollama', 'max_tokens': 256},
+                'delay': {'seconds': 1}, 'schedule': {'cron': '0 9 * * *', 'timezone': 'Asia/Kolkata'},
+                'condition': {'field': 'review_status', 'equals': 'approved'}, 'approval': {'mode': 'owner_review'},
+                'retry': {'max_attempts': 2}, 'error_handler': {'mode': 'stop_and_report'}}
+    return [{'node_type': kind.value, 'execution_available': kind.value in SUPPORTED_NODES,
+             'default_config': defaults.get(kind.value, {}), 'owner_review_required': True,
+             'message': 'Supported bounded manual local-text node' if kind.value in SUPPORTED_NODES else
+                'Planning node only in the native executor. Use a separately configured reviewed n8n path where supported; this node is never silently executed.'}
+             for kind in NodeType]
+
+
+@router.get('/templates')
+async def workflow_templates():
+    from uuid import uuid4
+    result = []
+    for name, prompt in [
+        ('Reviewed caption draft', 'Write one short original caption from the supplied trigger brief. Use only supplied facts. Text advice only; no action claims.'),
+        ('Hindi voice script', 'Write a short natural Hindi voiceover in Devanagari from the supplied brief. Keep it below600 characters. Do not claim actions or invented facts.'),
+        ('Source-labelled trend ideas', 'Suggest three original content ideas using only the supplied trend titles, sources and timestamps. State missing context. Do not claim live social analytics or guaranteed popularity.'),
+    ]:
+        first, middle, end = [str(uuid4()) for _ in range(3)]
+        result.append({'name': name, 'description': 'Manual local-text template. Review before running. Voice/media rendering and publishing are separate explicit operations.',
+            'status': 'draft', 'nodes': [
+                {'id': first, 'node_type': 'trigger', 'label': 'Reviewed manual start', 'position_x': 30, 'position_y': 90, 'is_entry_point': True, 'config': {}},
+                {'id': middle, 'node_type': 'ai_prompt', 'label': name, 'position_x': 300, 'position_y': 90, 'config': {'prompt': prompt, 'provider': 'ollama', 'max_tokens': 256}},
+                {'id': end, 'node_type': 'end', 'label': 'Saved text result', 'position_x': 570, 'position_y': 90, 'config': {}}],
+            'edges': [{'source_node_id': first, 'target_node_id': middle}, {'source_node_id': middle, 'target_node_id': end}]})
+    return result
+
+
 @router.get("/{workflow_id}")
 async def get_workflow(workflow_id: str, session=Depends(get_session)):
     await session.execute(text("BEGIN"))

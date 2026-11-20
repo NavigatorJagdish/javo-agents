@@ -12,6 +12,18 @@ export const API_BASE_URL = resolveApiBaseUrl();
 let ownerToken = '';
 export function setOwnerToken(token: string): void { ownerToken = token; }
 
+// Audio/artifact requests keep the same private in-memory authorization boundary.
+export async function apiMediaRequest(path: string, options: RequestInit = {}): Promise<Response> {
+  const response = await fetch(buildUrl(path), { ...options, headers: {
+    ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}), ...options.headers,
+  } });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new ApiError(response.status, 'Media request failed', detail);
+  }
+  return response;
+}
+
 export class ApiError extends Error {
   status: number;
   detail: unknown;

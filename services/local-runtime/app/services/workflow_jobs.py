@@ -87,7 +87,7 @@ def run_response(row):
     }
 
 
-async def enqueue(session, workflow, definition, revision, input_data):
+async def enqueue(session, workflow, definition, revision, input_data, *, commit=True):
     if get_resource_manager()._emergency_stopped:
         raise HTTPException(409, "Runtime is emergency stopped; review and explicitly resume first")
     if revision < 1:
@@ -130,7 +130,10 @@ async def enqueue(session, workflow, definition, revision, input_data):
             description="Owner queued a reviewed manual local-text workflow",
         )
     )
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return run
 
 

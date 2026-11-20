@@ -1,109 +1,54 @@
-import React, { useState } from 'react';
-import {
-  Cpu,
-  Cloud,
-  MessageCircle,
-  Youtube,
-  Instagram,
-  Facebook,
-  Github,
-  Mic,
-  Database,
-  Webhook,
-  FolderSync,
-  Shield,
-} from 'lucide-react';
-import { FeatureCard, Badge, Button, Chip } from '@javo/design-system';
-import { useAppStore } from '../store/useAppStore';
+import React, {useState} from 'react';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
+import {Card, Button, Modal} from '@javo/design-system';
+import {apiRequest, apiMediaRequest} from '../api/client';
+import {errorText} from '../components/SpeechStudio';
 
-interface IntegrationItem {
-  id: string;
-  name: string;
-  category: 'AI Models' | 'Social' | 'Messaging' | 'Storage & Dev';
-  description: string;
-  connected: boolean;
-  badge: string;
-  icon: React.ReactNode;
-}
-
-const INITIAL_INTEGRATIONS: IntegrationItem[] = [
-  { id: 'ollama', name: 'Ollama Local Runtime', category: 'AI Models', description: 'Run Qwen 2.5, Llama 3.2, and Nomic embeddings 100% offline on GPU/CPU.', connected: true, badge: 'Local First', icon: <Cpu className="h-5 w-5" /> },
-  { id: 'gemini', name: 'Google Gemini API', category: 'AI Models', description: 'High-reasoning cloud fallback gated by Privacy Firewall & Budget Guardian.', connected: true, badge: 'Hybrid Cloud', icon: <Cloud className="h-5 w-5" /> },
-  { id: 'telegram', name: 'Telegram Bot Bridge', category: 'Messaging', description: 'Approve posts, send voice notes, and run emergency stop from mobile.', connected: true, badge: 'Live Webhook', icon: <MessageCircle className="h-5 w-5" /> },
-  { id: 'youtube', name: 'YouTube Data & Studio', category: 'Social', description: 'Upload Shorts/Videos, sync analytics velocity, and manage comment threads.', connected: true, badge: 'OAuth 2.0', icon: <Youtube className="h-5 w-5" /> },
-  { id: 'instagram', name: 'Instagram Graph API', category: 'Social', description: 'Publish Reels & carousels, track saves, and moderate community DMs.', connected: true, badge: 'OAuth 2.0', icon: <Instagram className="h-5 w-5" /> },
-  { id: 'facebook', name: 'Facebook Pages API', category: 'Social', description: 'Cross-post branded media and monitor engagement metrics.', connected: true, badge: 'OAuth 2.0', icon: <Facebook className="h-5 w-5" /> },
-  { id: 'whisper', name: 'Whisper + Neural TTS', category: 'AI Models', description: 'Low-latency local speech recognition and voice response synthesis.', connected: true, badge: 'Audio Bus', icon: <Mic className="h-5 w-5" /> },
-  { id: 'github', name: 'GitHub Skill Registry', category: 'Storage & Dev', description: 'Sync verified community skills and signed Windows desktop releases.', connected: true, badge: 'Signed', icon: <Github className="h-5 w-5" /> },
-  { id: 'sqlite', name: 'Encrypted SQLite + Vector', category: 'Storage & Dev', description: 'Local-first WAL database with semantic Smart Memory recall.', connected: true, badge: 'AES-256', icon: <Database className="h-5 w-5" /> },
-  { id: 'folder', name: 'Local Folder Watcher', category: 'Storage & Dev', description: 'Real-time file-system monitor for raw exports and render drops.', connected: true, badge: 'Watchdog', icon: <FolderSync className="h-5 w-5" /> },
-  { id: 'webhooks', name: 'Custom REST Webhooks', category: 'Messaging', description: 'Trigger workflows from Zapier, n8n, OBS, or custom studio hardware.', connected: false, badge: 'Optional', icon: <Webhook className="h-5 w-5" /> },
-  { id: 'firewall', name: 'Privacy Egress Firewall', category: 'Storage & Dev', description: 'Redacts PII and enforces strict local-only policy for sensitive assets.', connected: true, badge: 'Enforced', icon: <Shield className="h-5 w-5" /> },
-];
-
+interface Item {id: string; repository: string; commit: string; license: string; archived: boolean; purpose: string; integration: string}
+interface Grant {id: string; client: string; label: string; scopes: string[]; expires_at: string; revoked_at: string | null}
+const scopes = ['read_status', 'read_goals', 'read_workflows', 'propose_workflow', 'read_own_results'];
 export const Integrations: React.FC = () => {
-  const [items, setItems] = useState(INITIAL_INTEGRATIONS);
-  const [category, setCategory] = useState<string>('All');
-  const addToast = useAppStore((s) => s.addToast);
-
-  const toggleConnect = (id: string) => {
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const next = !item.connected;
-        addToast(
-          next ? `${item.name} Connected` : `${item.name} Disconnected`,
-          next ? 'Connector verified and active.' : 'Connector disabled cleanly.',
-          next ? 'success' : 'info'
-        );
-        return { ...item, connected: next };
-      })
-    );
-  };
-
-  const filtered = items.filter((i) => category === 'All' || i.category === category);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-          Integrations & Connectors
-        </h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Modular AI providers, social APIs, and local studio pipelines powered by API Integration (#08).
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {['All', 'AI Models', 'Social', 'Messaging', 'Storage & Dev'].map((cat) => (
-          <Chip key={cat} label={cat} selected={category === cat} onClick={() => setCategory(cat)} />
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {filtered.map((item) => (
-          <FeatureCard
-            key={item.id}
-            title={item.name}
-            description={item.description}
-            icon={item.icon}
-            badge={item.badge}
-          >
-            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/10">
-              <Badge status={item.connected ? 'active' : 'inactive'} size="sm" pulse={item.connected}>
-                {item.connected ? 'Connected' : 'Disconnected'}
-              </Badge>
-              <Button
-                size="sm"
-                variant={item.connected ? 'secondary' : 'primary'}
-                onClick={() => toggleConnect(item.id)}
-              >
-                {item.connected ? 'Configure' : 'Connect'}
-              </Button>
-            </div>
-          </FeatureCard>
-        ))}
-      </div>
-    </div>
-  );
+  const cache = useQueryClient();
+  const catalog = useQuery({queryKey: ['integration-catalog'], queryFn: () => apiRequest<{items: Item[]; message: string; policy: {memory_headroom_mb: number; max_local_workers: number}}>('/api/integrations/catalog'), retry: false});
+  const grants = useQuery({queryKey: ['integration-grants'], queryFn: () => apiRequest<Grant[]>('/api/integrations/grants'), retry: false});
+  const [client, setClient] = useState('hermes'); const [label, setLabel] = useState('My local client');
+  const [selected, setSelected] = useState(['read_status']); const [hours, setHours] = useState(24);
+  const [secret, setSecret] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const [confirm, setConfirm] = useState(false);
+  async function action(work: () => Promise<void>) {setBusy(true); setNotice(''); try {await work();} catch (e) {setNotice(errorText(e));} finally {setBusy(false);}}
+  async function download(format: string) {
+    const response = await apiMediaRequest('/api/integrations/exports/'+format);
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a'); link.href = url; link.download = 'javo-'+format+(format === 'aider' ? '.txt' : '.json'); link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  return <section className="space-y-5 min-w-0">
+    <h1 className="text-3xl font-bold">Integrations &amp; reviewed tools</h1>
+    <p>Connect an external client through a separate scoped token. It can read permitted data or propose a supported local workflow; owner approval remains in Javo.</p>
+    <Card><p className="text-sm">{catalog.data?.message ?? 'Checking integration catalog…'}</p>
+      <p className="mt-2 text-sm">Keep one heavy external runtime active at a time. Javo currently allows {catalog.data?.policy.max_local_workers ?? '…'} local workers and reserves {catalog.data?.policy.memory_headroom_mb ?? '…'}MiB memory headroom. External programs must also enforce their own limits.</p>
+      <p className="mt-2 text-sm">No external tool receives the owner token, shell access, publishing rights or a paid budget from creating a grant. Do not paste tokens into prompts.</p>
+    </Card>
+    {catalog.isError && <p role="alert">Integration catalog could not be loaded. <button onClick={() => void catalog.refetch()}>Retry</button></p>}
+    <div className="grid md:grid-cols-2 gap-4">{catalog.data?.items.map(item => <Card key={item.id}>
+      <h2 className="font-semibold">{item.id}{item.archived ? ' · archived upstream' : ''}</h2><p className="text-sm mt-2">{item.purpose}</p>
+      <p className="text-sm mt-2">{item.integration}</p><p className="text-xs mt-2 break-all">Reference pinned at {item.commit.slice(0,12)} · {item.license}</p>
+      <p className="text-xs mt-2">Upstream runtime: not activated or verified by this catalog.</p>
+      <a href={item.repository+'/tree/'+item.commit} target="_blank" rel="noreferrer noopener" className="inline-block underline mt-2 text-sm">View pinned source</a>
+    </Card>)}</div>
+    <Card><div className="space-y-3">
+      <h2 className="text-xl font-semibold">Create a client grant</h2>
+      <label className="block text-sm">Client<select aria-label="Integration client" value={client} onChange={e => setClient(e.target.value)} className="block w-full bg-transparent border rounded p-2">{catalog.data?.items.filter(i => i.id !== 'mcp-directory').map(i => <option key={i.id} value={i.id}>{i.id}</option>)}</select></label>
+      <label className="block text-sm">Grant label<input aria-label="Grant label" className="block w-full bg-transparent border rounded p-2" maxLength={100} value={label} onChange={e => setLabel(e.target.value)}/></label>
+      <label className="block text-sm">Expiry in hours<input aria-label="Grant lifetime" type="number" className="block bg-transparent border rounded p-2" min={1} max={168} value={hours} onChange={e => setHours(Number(e.target.value))}/></label>
+      <div className="flex flex-wrap gap-4">{scopes.map(scope => <label className="text-sm" key={scope}><input type="checkbox" checked={selected.includes(scope)} onChange={e => setSelected(e.target.checked ? [...selected, scope] : selected.filter(s => s !== scope))}/> {scope.replaceAll('_',' ')}</label>)}</div>
+      <p className="text-xs">Workflow reads share names/revision metadata; goal reads share goal titles. Proposal access cannot approve requests. Own-results access shares actual generated output for this same grant’s reviewed requests.</p>
+      <Button disabled={busy || !label.trim() || selected.length === 0} onClick={() => setConfirm(true)}>Review client access</Button>
+      {secret && <div className="border rounded p-3 space-y-2"><p>Copy this token once into the selected client’s protected credential settings. Closing this page discards this displayed copy.</p><input aria-label="New integration token" type="password" readOnly value={secret} className="w-full bg-transparent border p-2"/><div className="flex gap-2"><Button onClick={() => void navigator.clipboard.writeText(secret).then(() => setNotice('Token copied.')).catch(() => setNotice('Clipboard unavailable. Select and copy the token manually.'))}>Copy token</Button><Button variant="ghost" onClick={() => setSecret('')}>Hide token</Button></div></div>}
+    </div></Card>
+    <Card><h2 className="text-xl font-semibold">Saved grants</h2>{grants.isError && <p role="alert">Grants could not be loaded.</p>}{grants.data?.length === 0 && <p>No saved client grants.</p>}
+      {grants.data?.map(grant => <div key={grant.id} className="border-b py-3 space-y-2"><p>{grant.label} · {grant.client} · {grant.revoked_at ? 'revoked' : new Date(grant.expires_at).getTime() <= Date.now() ? 'expired' : 'configured grant'}</p><p className="text-xs break-words">{grant.scopes.join(', ')} · expires {new Date(grant.expires_at).toLocaleString()}</p>{!grant.revoked_at && <Button variant="ghost" disabled={busy} onClick={() => void action(async () => {await apiRequest('/api/integrations/grants/'+grant.id+'/revoke',{method:'POST'}); setSecret(''); await cache.invalidateQueries({queryKey:['integration-grants']}); setNotice('Client grant revoked. Pending proposals from this grant cannot be approved.');})}>Revoke {grant.label}</Button>}</div>)}
+    </Card>
+    <Card><h2 className="text-xl font-semibold">Project handoff exports</h2><p className="text-sm mb-3">Exports contain the latest100 review proposals. They do not run Aider/Task Master, deploy an inbox, send email or certify completed work.</p><div className="flex flex-wrap gap-2">{['aider','task-master','agent-inbox'].map(format => <Button key={format} disabled={busy} onClick={() => void action(() => download(format))}>Export {format}</Button>)}</div></Card>
+    {notice && <p role="status">{notice}</p>}
+    <Modal open={confirm} onClose={() => setConfirm(false)} title="Review integration permissions"><div className="space-y-3"><p>Create a {hours}-hour grant for {client} with: {selected.join(', ')}?</p><p>Only share it with the selected trusted client. Reads may disclose saved private data to that client. No tool is started automatically.</p><Button disabled={busy} onClick={() => void action(async () => {const value=await apiRequest<{token:string}>('/api/integrations/grants',{method:'POST',body:{client,label,scopes:selected,lifetime_hours:hours}}); setSecret(value.token); setConfirm(false); await cache.invalidateQueries({queryKey:['integration-grants']});})}>Create reviewed grant</Button></div></Modal>
+  </section>;
 };

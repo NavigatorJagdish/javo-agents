@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from skills.sandbox.runner import (
@@ -123,9 +124,31 @@ class TestSkillSandbox(unittest.TestCase):
                 "def run(p):\n    while True:\n        pass\n",
                 encoding="utf-8",
             )
-            res = run_skill_sandboxed(skill_dir, {})
+            # Exercise the deadline using our own controlled loop. Production
+            # trust policy remains pinned-built-ins-only, without a bypass flag.
+            with patch('skills.sandbox.runner._trusted_builtin', return_value=True):
+                res = run_skill_sandboxed(skill_dir, {})
             self.assertFalse(res.success)
             self.assertIn("timed out", (res.error or "").lower())
+
+    def test_indirect_dynamic_lookup_and_module_trampolines_are_rejected(self) -> None:
+        snippets = [
+            "import json\ndef run(p):\n return getattr(json.loads,'__globals__')['__builtins__']['eval']('1+2')",
+            "from typing import sys\ndef run(p):\n return sys.modules['os'].getcwd()",
+            "def run(p):\n f=eval\n return f('1+2')",
+        ]
+        for source in snippets:
+            self.assertTrue(inspect_skill_ast(source, ['pure:compute']))
+
+    def test_self_claimed_verified_manifest_cannot_enable_external_code(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)
+            (target/'manifest.json').write_text(json.dumps({'id':'social-caption-optimizer', 'trust_tier':'core_verified',
+                'permissions':['pure:compute'], 'timeout_seconds':1}), encoding='utf-8')
+            (target/'skill.py').write_text("def run(p):\n return {'not_executed': True}\n", encoding='utf-8')
+            result = run_skill_sandboxed(target, {})
+            self.assertFalse(result.success)
+            self.assertIn('real OS isolation', result.error)
 
     def test_trust_score_calculation(self) -> None:
         score = calculate_trust_score(

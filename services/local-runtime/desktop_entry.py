@@ -8,6 +8,11 @@ import os
 
 
 def main() -> None:
+    import sys
+    if sys.argv[1:] == ['--speech-worker']:
+        from app.services.speech_worker import main as speech_main
+        speech_main()
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--self-test", action="store_true")

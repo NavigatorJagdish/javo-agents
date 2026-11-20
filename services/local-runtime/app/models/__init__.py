@@ -61,6 +61,8 @@ from app.models.task import (
     TaskState,
 )
 from app.models.user import Device, DeviceType, User, UserRole
+from app.models.integration import IntegrationGrant, IntegrationProposal  # noqa: F401
+from app.models.studio import StudioJob, TrendSnapshot  # noqa: F401
 from app.models.workflow import (
     NodeType,
     Workflow,

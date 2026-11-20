@@ -32,9 +32,11 @@ store. Clear resets both displayed and sent context. Reload or leaving this scre
 also clears it. The selected provider processes the text it receives. No claim is
 made about a provider's retention policy. Request bodies are not written to logs.
 
-Speech recognition, speech synthesis, microphone capture and wake word are not
-yet integrated. `/voice/capabilities` reports this explicitly; `/voice/tts` and
-`/voice/transcribe` return 501. No dummy audio or transcript is returned.
+Voice studio now integrates optional local Kokoro synthesis, original effects,
+Whisper recognition, bounded microphone/WAV capture and manual transcript review.
+See [setup and actual evidence](CREATOR_AND_INTEGRATIONS.md). Model directories
+must be configured separately; unavailable engines never return dummy output.
+Wake word, custom training and streamed voice conversation remain unavailable.
 
 Tests use synthetic responses through a temporary loopback provider fixture,
 plus authenticated API, real worker cancellation and Windows packaged runtime

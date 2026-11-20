@@ -17,7 +17,7 @@ OUTPUT = ROOT / "apps" / "windows" / "build" / "runtime"
 
 
 def source_fingerprints() -> dict[str, str]:
-    paths = sorted((RUNTIME / "app").rglob("*.py")) + [
+    paths = sorted((RUNTIME / "app").rglob("*.py")) + [RUNTIME / 'app/services/integration_catalog.json'] + [
         RUNTIME / name for name in ("desktop_entry.py", "pyproject.toml", "requirements.txt")
     ]
     return {p.relative_to(RUNTIME).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -36,6 +36,10 @@ def main() -> None:
         "--specpath", str(OUTPUT.parent), "--paths", str(RUNTIME),
         "--collect-submodules", "app", "--collect-submodules", "apscheduler",
         "--copy-metadata", "apscheduler",
+        "--collect-all", "sherpa_onnx",
+        "--copy-metadata", "sherpa-onnx",
+        "--copy-metadata", "sherpa-onnx-core",
+        "--add-data", f"{RUNTIME / 'app/services/integration_catalog.json'}{os.pathsep}app/services",
         "--hidden-import", "sqlalchemy.dialects.sqlite.aiosqlite",
         "--hidden-import", "aiosqlite",
         "--hidden-import", "sqlalchemy.dialects.sqlite.pysqlite",
@@ -51,6 +55,7 @@ def main() -> None:
     source_files = source_fingerprints()
     subprocess.run(command, cwd=ROOT, env=env, check=True)
     bundle = OUTPUT / "javo-runtime"
+    subprocess.run([sys.executable, str(ROOT/'scripts/check-distribution-license-boundary.py'), '--bundle', str(bundle)], cwd=ROOT, env=env, check=True)
     # Invalidate previous verification before inspecting the newly built payload.
     manifest = bundle / "runtime-manifest.json"
     manifest.unlink(missing_ok=True)

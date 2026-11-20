@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Two public deterministic Android test tokens; not a general test-file exclusion"
+condition = "AND"
+paths = ['''(^|/)apps/android/app/src/test/kotlin/com/javo/agents/PairingTokenValidatorTest\.kt$''']
+regexTarget = "secret"
+regexes = ['''^tok_(0123456789abcdef|abcdef0123456789)$''']

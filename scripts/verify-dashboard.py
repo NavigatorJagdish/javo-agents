@@ -16,7 +16,7 @@ import urllib.request
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts', 'setup', 'workflows'], default='dashboard')
+parser.add_argument('--scenario', choices=['dashboard', 'goals', 'usage', 'agents', 'accounts', 'setup', 'workflows', 'creator'], default='dashboard')
 args = parser.parse_args()
 
 
@@ -152,7 +152,7 @@ engine.dispose()
                     time.sleep(0.25)
             else:
                 raise TimeoutError("Temporary backend readiness timed out")
-            scenario = {'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'setup': 'setup-smoke.cjs', 'workflows': 'workflows-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
+            scenario = {'creator': 'creator-smoke.cjs', 'goals': 'goals-smoke.cjs', 'usage': 'usage-smoke.cjs', 'agents': 'agents-smoke.cjs', 'accounts': 'accounts-smoke.cjs', 'setup': 'setup-smoke.cjs', 'workflows': 'workflows-smoke.cjs', 'dashboard': 'dashboard-smoke.cjs'}[args.scenario]
             result = subprocess.run(["node", str(repo / 'scripts' / scenario)], env=env, timeout=120)
             if result.returncode:
                 sys.exit(result.returncode)

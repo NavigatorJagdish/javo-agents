@@ -1,214 +1,26 @@
-import React, { useState } from 'react';
-import { Check, X, Edit3, CalendarClock, ShieldAlert } from 'lucide-react';
-import { Card, Badge, Button, Modal } from '@javo/design-system';
-import { useAppStore } from '../store/useAppStore';
+import React, {useState} from 'react';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
+import {Button, Card, Modal} from '@javo/design-system';
+import {apiRequest} from '../api/client';
+import {errorText} from '../components/SpeechStudio';
 
-interface ApprovalItem {
-  id: string;
-  agent: string;
-  platform: string;
-  type: 'Publish Video' | 'Comment Reply' | 'Skill Install' | 'Ad Experiment';
-  title: string;
-  preview: string;
-  scheduledFor: string;
-  risk: 'low' | 'medium';
-}
-
-const INITIAL_APPROVALS: ApprovalItem[] = [
-  {
-    id: 'app-1',
-    agent: 'Content Publisher (#09)',
-    platform: 'YouTube Shorts',
-    type: 'Publish Video',
-    title: '5 Local AI Workflows That Save 12 Hours/Week',
-    preview: 'Caption: Run 29 specialized agents locally on Windows with zero cloud lock-in. #LocalAI #Automation',
-    scheduledFor: '2026-11-13 18:00',
-    risk: 'low',
-  },
-  {
-    id: 'app-2',
-    agent: 'Community Manager (#10)',
-    platform: 'Instagram',
-    type: 'Comment Reply',
-    title: 'Reply to @dev_maya on "Ollama GPU Setup"',
-    preview: 'Thanks Maya! You only need 8GB VRAM for Qwen 2.5 14B Q4_K_M — our Resource Optimizer handles unloading automatically.',
-    scheduledFor: 'Immediate',
-    risk: 'low',
-  },
-  {
-    id: 'app-3',
-    agent: 'Self-Upgrading Engineer (#04)',
-    platform: 'Local Sandbox',
-    type: 'Skill Install',
-    title: 'Approve synthesized skill: youtube_chapter_extractor.py',
-    preview: 'Sandbox tests passed (12/12). Read-only transcript access; zero network egress required.',
-    scheduledFor: 'Pending Sign-off',
-    risk: 'medium',
-  },
-  {
-    id: 'app-4',
-    agent: 'Content Recycler (#17)',
-    platform: 'X',
-    type: 'Publish Video',
-    title: 'Thread: Privacy Firewall Architecture Breakdown',
-    preview: '1/5 Most AI tools send your raw client files straight to third-party servers. Here is how we fixed that locally...',
-    scheduledFor: '2026-11-14 09:30',
-    risk: 'low',
-  },
-];
-
+interface Proposal {id: string; title: string; status: string; revision: number; execution_id: string | null; expires_at: string; payload: {workflow_id: string; expected_revision: number; fingerprint: string; trigger_data: Record<string,unknown>}}
 export const Approvals: React.FC = () => {
-  const [items, setItems] = useState(INITIAL_APPROVALS);
-  const [editing, setEditing] = useState<ApprovalItem | null>(null);
-  const [editText, setEditText] = useState('');
-  const [editDate, setEditDate] = useState('');
-  const addToast = useAppStore((s) => s.addToast);
-
-  const handleDecision = (item: ApprovalItem, approved: boolean) => {
-    setItems((prev) => prev.filter((i) => i.id !== item.id));
-    addToast(
-      approved ? 'Approved & Dispatched' : 'Rejected',
-      `"${item.title}" ${approved ? 'queued for execution' : 'returned to draft'}.`,
-      approved ? 'success' : 'warning'
-    );
-  };
-
-  const openEdit = (item: ApprovalItem) => {
-    setEditing(item);
-    setEditText(item.preview);
-    setEditDate(item.scheduledFor);
-  };
-
-  const saveEdit = () => {
-    if (!editing) return;
-    setItems((prev) =>
-      prev.map((i) =>
-        i.id === editing.id ? { ...i, preview: editText, scheduledFor: editDate } : i
-      )
-    );
-    addToast('Approval Updated', 'Edited copy and reschedule saved.', 'info');
-    setEditing(null);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-            Human-in-the-Loop Approval Inbox
-          </h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Managed by Approval Manager (#15) — synchronized with your Telegram bot.
-          </p>
-        </div>
-        <Badge status={items.length > 0 ? 'warning' : 'active'}>
-          {items.length} Pending
-        </Badge>
-      </div>
-
-      {items.length === 0 ? (
-        <Card variant="status" className="text-center py-12">
-          <p className="text-lg font-semibold text-slate-900 dark:text-white">
-            All caught up!
-          </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            No pending items require manual review right now.
-          </p>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {items.map((item) => (
-            <Card key={item.id} variant="status" glow="cyan">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="space-y-2 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge status="info" size="sm">{item.type}</Badge>
-                    <Badge status={item.risk === 'medium' ? 'warning' : 'active'} size="sm">
-                      {item.risk === 'medium' ? 'Medium Risk' : 'Low Risk'}
-                    </Badge>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {item.agent} • {item.platform}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                    {item.title}
-                  </h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-[#0B1026]/80 p-3 rounded-xl border border-slate-200 dark:border-white/10">
-                    {item.preview}
-                  </p>
-                  <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                    <CalendarClock className="h-3.5 w-3.5 text-[#00E5FF]" />
-                    Scheduled: {item.scheduledFor}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap lg:flex-col gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    leftIcon={<Check className="h-4 w-4" />}
-                    onClick={() => handleDecision(item, true)}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<Edit3 className="h-4 w-4" />}
-                    onClick={() => openEdit(item)}
-                  >
-                    Edit / Reschedule
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    leftIcon={<X className="h-4 w-4" />}
-                    onClick={() => handleDecision(item, false)}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <Modal
-        open={Boolean(editing)}
-        onClose={() => setEditing(null)}
-        title="Edit & Reschedule"
-        description={editing?.title}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-            <Button onClick={saveEdit}>Save Changes</Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium mb-1">Payload / Copy</label>
-            <textarea
-              rows={4}
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              className="w-full p-3 rounded-xl bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Scheduled Time</label>
-            <input
-              value={editDate}
-              onChange={(e) => setEditDate(e.target.value)}
-              className="w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15 text-sm"
-            />
-          </div>
-          <p className="text-xs text-slate-400 flex items-center gap-1.5">
-            <ShieldAlert className="h-3.5 w-3.5 text-[#8B5CF6]" /> Changes are logged to the Compliance audit trail.
-          </p>
-        </div>
-      </Modal>
-    </div>
-  );
+  const cache = useQueryClient();
+  const inbox = useQuery({queryKey: ['integration-proposals'], queryFn: () => apiRequest<Proposal[]>('/api/integrations/proposals'), retry: false, refetchInterval: 5000});
+  const [review, setReview] = useState<Proposal | null>(null); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState('');
+  const preview=useQuery({queryKey:['proposal-preview',review?.id],enabled:!!review,queryFn:()=>apiRequest<{definition:unknown;matches_reviewed_snapshot:boolean}>('/api/integrations/proposals/'+review!.id+'/preview'),retry:false,staleTime:0});
+  async function decide(item: Proposal, decision: 'approve'|'reject') {
+    setBusy(true); setNotice('');
+    try {const result = await apiRequest<Proposal>('/api/integrations/proposals/'+item.id+'/review',{method:'POST',body:{expected_revision:item.revision,decision}}); setReview(null); await cache.invalidateQueries({queryKey:['integration-proposals']}); setNotice(result.execution_id ? 'Approved and queued actual run '+result.execution_id+'. Inspect Workflows for the execution outcome.' : 'Proposal rejected. No run was queued.');}
+    catch(e) {setNotice(errorText(e));} finally {setBusy(false);}
+  }
+  return <section className="space-y-5"><h1 className="text-3xl font-bold">Review inbox</h1><p>Actual saved requests from scoped integration clients. Approval queues the exact supported local-text workflow; it does not resume the runtime, publish or authorize other actions.</p>
+    <p className="text-sm">Content preview approvals remain in Content. Email drafts, paid actions, arbitrary code and broader approval types are not connected here.</p>
+    {inbox.isError && <p role="alert">Review inbox unavailable. <button onClick={() => void inbox.refetch()}>Retry</button></p>}
+    {inbox.data?.length === 0 && <Card>No saved integration proposals. Clients can propose a saved executable workflow after receiving an explicit grant.</Card>}
+    {inbox.data?.map(item => <Card key={item.id}><div className="space-y-3"><h2 className="font-semibold">{item.title}</h2><p>{item.status} · revision {item.revision}</p><p className="text-xs break-all">Workflow {item.payload.workflow_id} · saved revision {item.payload.expected_revision} · expires {new Date(item.expires_at).toLocaleString()}</p>{item.execution_id && <p className="text-xs break-all">Actual run: {item.execution_id}. Review its final status in Workflows.</p>}{item.status === 'pending' && <div className="flex gap-3"><Button disabled={busy} onClick={() => setReview(item)}>Review {item.title}</Button><Button variant="ghost" disabled={busy} onClick={() => void decide(item,'reject')}>Reject {item.title}</Button></div>}</div></Card>)}
+    {notice && <p role="status">{notice}</p>}
+    <Modal open={!!review} onClose={() => {if(!busy)setReview(null);}} title="Review exact proposed run">{review && <div className="space-y-3"><p>{review.title} · saved workflow revision {review.payload.expected_revision}</p><p className="text-xs break-all">Fingerprint: {review.payload.fingerprint}</p><h3 className="font-semibold">Proposed input</h3><pre className="text-xs whitespace-pre-wrap break-all max-h-40 overflow-auto">{JSON.stringify(review.payload.trigger_data,null,2)}</pre><h3 className="font-semibold">Actual saved definition and prompts</h3>{preview.isError&&<p role="alert">Saved definition could not be loaded.</p>}{preview.data&&<pre className="text-xs whitespace-pre-wrap break-all max-h-60 overflow-auto">{JSON.stringify(preview.data.definition,null,2)}</pre>}{preview.data&&!preview.data.matches_reviewed_snapshot&&<p role="alert">Workflow changed. Reject this stale proposal and request a fresh one.</p>}<p>Approval queues this exact saved snapshot and input. AI outputs are saved locally. A changed workflow, revoked source grant, expired proposal or repeated decision is refused.</p><Button disabled={busy||!preview.data?.matches_reviewed_snapshot} onClick={() => void decide(review,'approve')}>Approve reviewed local run</Button></div>}</Modal>
+  </section>;
 };

@@ -193,8 +193,19 @@ async def upload_content(
     original_name = Path(file.filename or "upload.bin").name
     asset_id = str(uuid4())
     dest_path = upload_dir / f"{asset_id}_{original_name}"
-    contents = await file.read()
-    dest_path.write_bytes(contents)
+    size = 0
+    try:
+        with dest_path.open('xb') as destination:
+            while chunk := await file.read(65536):
+                size += len(chunk)
+                if size > 64 * 1024 * 1024:
+                    raise HTTPException(413, 'Upload exceeds64MiB. Import a larger local file through its content folder instead.')
+                destination.write(chunk)
+    except BaseException:
+        dest_path.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
 
     asset = ContentAsset(
         id=asset_id,
@@ -209,7 +220,7 @@ async def upload_content(
         id=str(uuid4()),
         asset_id=asset_id,
         mime_type=file.content_type or mimetypes.guess_type(original_name)[0],
-        file_size=len(contents),
+        file_size=size,
     )
     session.add(asset)
     session.add(meta)

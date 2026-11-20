@@ -26,7 +26,8 @@ key protection; other platforms require a retained encryption secret. See
 Positive budget increases remain blocked pending verified pricing and explicit
 paid activation; saved usage accounting alone does not authorize spending.
 The [text companion](docs/COMPANION.md) now uses real runtime controls and configured AI
-with bounded context and cancellation. Audio engines remain unavailable.
+with bounded context and cancellation. The [voice and creation studio](docs/CREATOR_AND_INTEGRATIONS.md)
+adds local Kokoro/Whisper speech, original effects and reviewed optional media-service integration.
 The [Goals screen](docs/GOALS.md) uses saved measurements and milestones;
 [AI usage accounting](docs/AI_USAGE.md) survives restart. The
 [AI Team execution queue](docs/AGENT_EXECUTION.md) supports real saved-goal and
@@ -44,6 +45,10 @@ The [workflow editor](docs/WORKFLOWS.md) saves graphs with revision history,
 conflict recovery and reviewed manual local-text runs. Supported paths use
 Trigger, local AI Prompt, Delay and End; other catalog nodes remain save-only.
 See [best use and reproduced bug fixes](docs/BEST_USE_AND_BUG_REVIEW.md).
+External tools use [scoped reviewed integrations](docs/CREATOR_AND_INTEGRATIONS.md)
+and original [n8n workflow templates](docs/N8N_WORKFLOWS.md). Catalog entries are
+not activated runtimes. See the [license boundary](docs/THIRD_PARTY_BOUNDARY.md)
+and [current defensive review](docs/security/SECURITY_REVIEW_20261120.md).
 Android, full workflows/analytics, official live connectors and complete
 specialist functionality remain under development. See [evidence](docs/REBUILD_STATUS.md).
 

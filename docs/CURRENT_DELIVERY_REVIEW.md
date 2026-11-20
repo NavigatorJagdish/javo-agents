@@ -1,4 +1,4 @@
-# Current delivery review — 18 November 2026
+# Current delivery review — 20 November 2026
 
 Javo Agents remains an unfinished development build. This review separates
 working increments, incomplete implementation, external setup and proposed
@@ -17,7 +17,9 @@ in [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 | AI Team | Real definitions, enable/disable, supported Budget Guardian/Goal Persistence execution and receipts | Remaining specialist execution is explicitly unavailable; registration is not completion |
 | AI settings | Shared encrypted credentials/models/defaults, explicit key removal, durable usage ledger and zero-spend guards | Verified pricing, quotas, account/task budgets, paid activation and reconciliation remain incomplete |
 | Accounts | Real owner-scoped records, saved per-account brands, account-bound encrypted legacy credential migration, redaction and separate removal | Official OAuth, capability verification, token refresh/revocation and live results are unavailable |
-| Companion | Typed English/Hindi/Hinglish controls and bounded configured-model text path | Speech recognition, synthesis and wake word are unavailable; model quality needs actual evaluation |
+| Companion and voice | Typed controls, bounded configured-model text path, actual Kokoro/Whisper HTTP generation/transcription and original effects/pronunciation customization | Approximate Hindi frontend, imperfect recognition; physical mic/quality, streaming, wake word and custom training remain open |
+| Creation studio | Encrypted local media settings, reviewed durable submission/observed receipts, safe artifact checks and actual official Google trend refresh | Media tests use synthetic service; no actual image/video render accepted on this host |
+| Reviewed integrations | Eleven pinned references, scoped grants, exact saved-graph owner review, own-result reads and actual LangGraph/MCP/stdio compatibility | Full upstream runtimes are not all installed/verified;17-node n8n template needs separate engine acceptance |
 | Local model smoke | Real small Qwen model through companion/router/worker/usage ledger, with saved counts after restart | One synthetic prompt on this host; not multilingual quality, sustained load or full hardware acceptance |
 | Setup | Measured hardware/service data, real provider saves, explicit bounded loopback model-list check, honest capability guidance | A guide finish or listed model is not a product/model performance certificate |
 | Workflows | Saved validated graphs, revisions/restore/copy, concurrent-edit protection and durable reviewed manual local-text runs with actual receipts/cancellation/restart handling | Only one connected manual Trigger → local AI Prompt/Delay → End path; remaining catalog nodes, triggers, branches, retries and general approvals are unavailable |
@@ -40,7 +42,7 @@ in [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 | 3 | Design, accessibility and website completion | Compare original references; keyboard/screen-reader/reduced-motion/contrast checks; truthful pages and actual verified downloads |
 | 3 | Final Windows/Android distribution | Signing/SmartScreen strategy, repeatable clean-PC installer/portable checks, rollback/migrations, reproducible APK/AAB and store requirements |
 
-Prototype Analytics, Approvals, Automation, Integrations, GitHub, Skills and
+Prototype Analytics, Automation, GitHub, Skills and
 Security screens still need complete runtime-backed workflows. A labelled
 prototype is useful for design review, but does not satisfy those requirements.
 Workflows now has real persistence and a connected worker for the bounded manual

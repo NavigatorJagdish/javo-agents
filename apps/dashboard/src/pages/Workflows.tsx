@@ -338,17 +338,18 @@ export const Workflows: React.FC = () => {
     setSelected(id);
     setDirty(true);
   }
-  function template() {
+  function template(kind: 'caption' | 'hindi' | 'trends' = 'caption') {
     blank();
     const start = crypto.randomUUID(),
       ai = crypto.randomUUID(),
       end = crypto.randomUUID();
     const config = {
-      prompt: "Draft a short caption for manual review.",
+      prompt: kind === 'hindi' ? 'Write a short natural Hindi voiceover in Devanagari from the supplied brief. Keep below600 characters. Do not invent facts or claim actions.' : kind === 'trends' ? 'Suggest three original content ideas using only supplied trend titles, sources and timestamps. State missing context. Never claim live social analytics or guaranteed popularity.' : "Draft a short caption for manual review.",
       provider: "ollama",
       max_tokens: 128,
     };
-    setName("Local caption draft");
+    setName(kind === 'hindi' ? 'Hindi voice script' : kind === 'trends' ? 'Source-labelled trend ideas' : "Local caption draft");
+    setDescription('Review this saved local-text workflow before running. Audio/media rendering and publication are separate explicit operations.');
     setNodes([
       {
         id: start,
@@ -367,7 +368,7 @@ export const Workflows: React.FC = () => {
         position: { x: 300, y: 90 },
         data: {
           kind: "ai_prompt",
-          label: "Draft caption",
+          label: kind === 'hindi' ? 'Draft Hindi script' : kind === 'trends' ? 'Draft trend ideas' : "Draft caption",
           config,
           entry: false,
         },
@@ -570,6 +571,8 @@ export const Workflows: React.FC = () => {
         >
           Use caption draft template
         </Button>
+        <Button variant="secondary" disabled={busy} onClick={()=>guard(()=>template('hindi'))}>Use Hindi voice script template</Button>
+        <Button variant="secondary" disabled={busy} onClick={()=>guard(()=>template('trends'))}>Use trend ideas template</Button>
       </div>
       {list.isError && (
         <p role="alert">

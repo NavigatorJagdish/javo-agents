@@ -1,6 +1,19 @@
 # Rebuild evidence and remaining scope
 
-Current review: 18 November 2026. This is an unfinished rebuild, not a production release.
+Current review: 20 November 2026. This is an unfinished rebuild, not a production release.
+
+## Voice, studio and reviewed integration increment
+
+See [creator/integration evidence](CREATOR_AND_INTEGRATIONS.md),
+[n8n setup and node boundaries](N8N_WORKFLOWS.md),
+[license boundary](THIRD_PARTY_BOUNDARY.md) and
+[defensive findings/fixes](security/SECURITY_REVIEW_20261120.md).
+Real sherpa2 Kokoro/Whisper API acceptance, official Google trend refresh and
+official LangGraph/MCP plus stdio compatibility passed. Browser controls, saved
+settings and exact graph review were checked using labelled audio fixtures.
+Actual image/video rendering, custom training and full upstream runtime/n8n
+acceptance remain open. Final-head CI must be checked for the saved revision;
+earlier green checkpoints do not certify newly changed source.
 
 ## Saved workflows and realistic-use repair — 17–18 November 2026
 
