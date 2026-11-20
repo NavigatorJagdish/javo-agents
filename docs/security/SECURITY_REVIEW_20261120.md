@@ -24,17 +24,22 @@ scrubbing. Intentional Electron file-origin support was preserved. Browser check
 exercise actual production assets; audio/transcript fixtures are labelled and
 do not stand in for real model acceptance.
 
-## Mitigated, still open upstream
+## Dependency advisory recheck and correction
 
-The dashboard dependency audit reports11 high build-tool exposures associated
-with [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf),
-picomatch repeated-extglob ReDoS. At review time no patched version was listed.
-Do not claim npm audit is clean. An original pre-build guard refuses repeated
-extglobs/oversized patterns before regex generation in all3 installed matchers;
-regression checks exercise both rejection and normal globs. `build` and `dev`
-apply the guard after locked installs; CI uses `npm ci --ignore-scripts`.
-Upstream remains vulnerable/unpatched; the guard is a targeted mitigation, not
-a full proof of every glob pattern. Re-review when a verified fix is published.
+The initial dashboard audit reported11 high build-tool entries associated with
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
+The final20November primary-source recheck found GitHub had withdrawn this
+advisory on18November as not a security issue, with its page updated19November.
+A fresh npm audit then returned zero known vulnerabilities in every severity.
+Earlier “unpatched open advisory” reports describe the earlier audit response,
+not the final current status. No dependency upgrade fixed this advisory;
+the registry classification changed.
+
+Removed the temporary dependency-rewriting build guard because its premise no
+longer holds. Build/dev use normal Vite after locked `npm ci --ignore-scripts`
+installs. Do not expose a development server or let untrusted users supply build
+configuration/regex/glob patterns. A clean audit means no currently reported
+known advisories for that snapshot, not proof of complete security.
 
 ## Secret and distribution checks
 

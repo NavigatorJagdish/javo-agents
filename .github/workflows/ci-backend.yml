@@ -14,6 +14,8 @@ on:
       - "services/local-runtime/**"
       - "skills/**"
       - "tests/**"
+      - "scripts/**"
+      - ".github/workflows/ci-backend.yml"
 
 jobs:
   test-and-lint:
@@ -40,7 +42,7 @@ jobs:
           pip install pytest pytest-asyncio ruff bandit
 
       - name: Lint with Ruff
-        run: ruff check --config ruff.toml services/local-runtime/app skills tests
+        run: ruff check --config ruff.toml services/local-runtime/app skills tests scripts
 
       - name: Static security scan with Bandit
         run: bandit -r services/local-runtime/app skills -ll -q
