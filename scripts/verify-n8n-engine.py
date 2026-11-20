@@ -75,7 +75,8 @@ def main():
             'N8N_DIAGNOSTICS_ENABLED':'false','N8N_VERSION_NOTIFICATIONS_ENABLED':'false','N8N_TEMPLATES_ENABLED':'false',
             'N8N_COMMUNITY_PACKAGES_ENABLED':'false','N8N_PUBLIC_API_DISABLED':'true','N8N_BLOCK_ENV_ACCESS_IN_NODE':'true',
             'N8N_LICENSE_AUTO_RENEW_ENABLED':'false','N8N_LICENSE_SERVER_URL':'http://127.0.0.1:1',
-            'N8N_LOG_LEVEL':'warn','EXECUTIONS_TIMEOUT':'120',
+            # The execute command writes even --rawOutput through logger.info.
+            'N8N_LOG_LEVEL':'info','EXECUTIONS_TIMEOUT':'120',
             'NODES_INCLUDE':json.dumps(['n8n-nodes-base.'+name for name in ['manualTrigger','scheduleTrigger','code','httpRequest','wait','if','stopAndError']])})
         grant=request('/api/integrations/grants',{'client':'n8n','label':'Disposable actual n8n acceptance',
             'scopes':['read_status','read_workflows','propose_workflow','read_own_results'],'lifetime_hours':1})
