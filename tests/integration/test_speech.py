@@ -185,3 +185,40 @@ def test_companion_only_labels_uninvoked_capacity_refusals_safe_to_retry(owner_r
         monkeypatch.setattr(AIRouter,'generate',invoked)
         third=client.post('/api/voice/command',json=payload)
         assert third.status_code==503 and 'x-javo-admission' not in third.headers
+
+
+@pytest.mark.parametrize('operation', ['tts', 'transcribe'])
+def test_speech_admission_proof_never_labels_invoked_failures(owner_runtime, monkeypatch, tmp_path, operation):
+    from app.core.resource_manager import get_resource_manager, WorkAdmissionRefused
+    from app.services import speech
+    create,_=owner_runtime
+    tts,asr=tmp_path/'tts',tmp_path/'asr'
+    model_files(tts,'tts')
+    model_files(asr,'asr')
+    with create() as client:
+        client.put('/api/voice/configuration',json={'tts_model_dir':str(tts),'asr_model_dir':str(asr)})
+        client.post('/api/security/resume')
+        manager=get_resource_manager()
+        def send():
+            return (client.post('/api/voice/tts',json={'text':'Known synthetic text'}) if operation=='tts' else
+                    client.post('/api/voice/transcribe',files={'file':('clip.wav',wav())}))
+        monkeypatch.setattr(manager,'can_accept_work',lambda:(False,'CPU usage too high (95.0%)'))
+        first=send()
+        assert first.status_code==503 and first.headers['x-javo-admission']=='not-started'
+        assert 'CPU is busy' in first.json()['detail']
+        monkeypatch.setattr(manager,'can_accept_work',lambda:(True,'OK'))
+        original=manager.submit_task
+        async def refused(key,factory):
+            raise WorkAdmissionRefused('Synthetic pre-invocation race')
+        monkeypatch.setattr(manager,'submit_task',refused)
+        second=send()
+        assert second.status_code==503 and second.headers['x-javo-admission']=='not-started'
+        monkeypatch.setattr(manager,'submit_task',original)
+        calls=[]
+        async def invoked(value):
+            calls.append(value['operation'])
+            raise WorkAdmissionRefused('Synthetic failure within invoked speech')
+        monkeypatch.setattr(speech,'run_worker',invoked)
+        third=send()
+        assert third.status_code==503 and 'x-javo-admission' not in third.headers
+        assert len(calls)==1

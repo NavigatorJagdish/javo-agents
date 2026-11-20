@@ -22,6 +22,12 @@ natural laughter. The optional laugh-syllable button visibly adds editable
 recognizer accepts the format. Own-voice and permission-backed other-voice
 training remain pending an authorized dataset, reviewed model and real testing.
 
+Capacity refusals explicitly distinguish CPU, RAM and queue constraints and
+certify when speech never started. The explicit acceptance driver waits at most
+20seconds only for this proven pre-invocation refusal. Unknown/network outcomes,
+invoked model failures and paused/stopped runtime responses are not replayed.
+The app itself does not automatically resend speech or companion requests.
+
 Install the optional models outside the checkout/app bundle:
 
 ```powershell

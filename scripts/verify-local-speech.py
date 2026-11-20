@@ -7,7 +7,21 @@ import time
 import wave
 from uuid import uuid4
 
-from verification_runtime import isolated_runtime
+from verification_runtime import isolated_runtime, AcceptanceRefused
+
+
+def admitted_request(request, *args, **kwargs):
+    # The server explicitly proves no factory/model call began. Never retry a
+    # model failure, unknown/network outcome, stopped runtime or invoked work.
+    deadline = time.monotonic()+20
+    while True:
+        try:
+            return request(*args, **kwargs)
+        except AcceptanceRefused as error:
+            if error.status != 503 or not error.uninvoked or time.monotonic() >= deadline:
+                raise
+            print('SPEECH_ACCEPTANCE_WAITING_FOR_UNINVOKED_CAPACITY', flush=True)
+            time.sleep(1)
 
 
 def main():
@@ -33,7 +47,7 @@ def main():
         for label, voice, text, effect in samples:
             started = time.monotonic()
             tone=label if label in {'happy','curious','angry','laugh'} else 'neutral'
-            data = request('/api/voice/tts', {'text': text, 'voice': voice, 'effect': effect,'emotion':tone,'emotion_strength':0.7}, raw=True)
+            data = admitted_request(request, '/api/voice/tts', {'text': text, 'voice': voice, 'effect': effect,'emotion':tone,'emotion_strength':0.7}, raw=True)
             with wave.open(io.BytesIO(data)) as audio:
                 assert audio.getnchannels() == 1 and audio.getnframes() > 1000
                 assert audio.getframerate() in {16000,22050,24000,44100,48000}
@@ -50,7 +64,7 @@ def main():
                 '\r\n--'+boundary+'\r\nContent-Disposition: form-data; name="file"; filename="clip.wav"\r\nContent-Type: audio/wav\r\n\r\n').encode()
             form += (args.output_dir/('javo-'+label+'.wav')).read_bytes()+('\r\n--'+boundary+'--\r\n').encode()
             started = time.monotonic()
-            result = request('/api/voice/transcribe', form, content_type='multipart/form-data; boundary='+boundary)
+            result = admitted_request(request, '/api/voice/transcribe', form, content_type='multipart/form-data; boundary='+boundary)
             assert result['text'].strip() and result['requires_review'] is True and result['actions_executed'] is False
             recognition.append({'sample': label, 'seconds': round(time.monotonic()-started, 3), 'transcript': result['text']})
             print(json.dumps({'recognition_verified': recognition[-1]}, ensure_ascii=False), flush=True)

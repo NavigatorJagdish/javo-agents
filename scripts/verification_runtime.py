@@ -15,6 +15,13 @@ from urllib.error import HTTPError
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class AcceptanceRefused(RuntimeError):
+    def __init__(self, detail, status, uninvoked=False):
+        super().__init__('Isolated API refused request: '+detail)
+        self.status = status
+        self.uninvoked = uninvoked
+
+
 def clean_environment():
     allowed = {'PATH', 'PATHEXT', 'COMSPEC', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'HOME',
                'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'LANG'}
@@ -49,7 +56,8 @@ def isolated_runtime():
                 response = opener.open(message, timeout=100)
             except HTTPError as error:
                 detail = json.loads(error.read(32768)).get('detail')
-                raise RuntimeError('Isolated API refused request: '+(detail if isinstance(detail, str) else str(error.code))) from None
+                raise AcceptanceRefused(detail if isinstance(detail, str) else str(error.code), error.code,
+                    error.code == 503 and error.headers.get('X-Javo-Admission') == 'not-started') from None
             with response:
                 content = response.read(64*1024*1024+1)
                 if len(content) > 64*1024*1024:

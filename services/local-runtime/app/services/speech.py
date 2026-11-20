@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import get_settings
 from app.core.provider_store import ProviderVault, VaultUnavailable
-from app.core.resource_manager import get_resource_manager
+from app.core.resource_manager import get_resource_manager, WorkAdmissionRefused
 from app.services.prosody import PROFILES
 
 VOICES = [
@@ -101,9 +101,27 @@ def require_capacity():
     manager = get_resource_manager()
     if manager._paused or manager._emergency_stopped:
         raise HTTPException(409, 'Runtime is paused or stopped. Explicitly resume before generating or transcribing speech.')
-    if not manager.can_accept_work()[0]:
-        raise HTTPException(503, 'Speech needs free memory and a queue slot. Close unused applications or wait, then retry.')
+    allowed, reason = manager.can_accept_work()
+    if not allowed:
+        cause = 'CPU is busy' if reason.startswith('CPU usage') else 'RAM headroom is low' if reason == 'Insufficient RAM headroom' else 'queue or runtime is unavailable'
+        raise HTTPException(503, 'Speech has not started: '+cause+'. Wait for capacity or close unused applications.',
+                            headers={'X-Javo-Admission':'not-started','Retry-After':'1'})
     return manager
+
+
+async def submit_speech(manager, operation):
+    invoked = False
+    async def admitted():
+        nonlocal invoked
+        invoked = True
+        return await operation()
+    try:
+        return await manager.submit_task('speech-'+str(uuid4()), admitted)
+    except WorkAdmissionRefused:
+        if invoked:
+            raise
+        raise HTTPException(503, 'Speech has not started: admission capacity changed. Wait before retrying.',
+                            headers={'X-Javo-Admission':'not-started','Retry-After':'1'}) from None
 
 
 def validate_wave(data):
@@ -185,7 +203,7 @@ async def synthesize(text, voice, speed, effect, emotion='neutral', emotion_stre
             if not output.is_file() or output.stat().st_size > 8 * 1024 * 1024 or not 0 < result['seconds'] <= 90:
                 raise RuntimeError('Speech output exceeded its bound')
             return output.read_bytes()
-    return await manager.submit_task('speech-' + str(uuid4()), operation)
+    return await submit_speech(manager, operation)
 
 
 async def transcribe(data, language):
@@ -206,4 +224,4 @@ async def transcribe(data, language):
                 raise RuntimeError('Transcript exceeded its bound')
             return {'text': result['text'], 'language': language, 'source': 'Whisper tiny · local',
                     'requires_review': True, 'actions_executed': False}
-    return await manager.submit_task('transcribe-' + str(uuid4()), operation)
+    return await submit_speech(manager, operation)
