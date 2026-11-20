@@ -15,6 +15,8 @@ from app.api.routes.settings import router as settings_router
 from app.api.routes.voice import router as voice_router
 from app.api.routes.telegram import router as telegram_router
 from app.api.routes.devices import router as devices_router
+from app.api.routes.integrations import router as integrations_router
+from app.api.routes.studio import router as studio_router
 
 api_router = APIRouter()
 
@@ -31,5 +33,7 @@ api_router.include_router(settings_router)
 api_router.include_router(voice_router)
 api_router.include_router(telegram_router)
 api_router.include_router(devices_router)
+api_router.include_router(integrations_router)
+api_router.include_router(studio_router)
 
 __all__ = ["api_router"]

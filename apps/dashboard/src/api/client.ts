@@ -9,6 +9,20 @@ function resolveApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+let ownerToken = '';
+export function setOwnerToken(token: string): void { ownerToken = token; }
+
+// Audio/artifact requests keep the same private in-memory authorization boundary.
+export async function apiMediaRequest(path: string, options: RequestInit = {}): Promise<Response> {
+  const response = await fetch(buildUrl(path), { ...options, headers: {
+    ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}), ...options.headers,
+  } });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new ApiError(response.status, 'Media request failed', detail);
+  }
+  return response;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -25,6 +39,27 @@ export class ApiError extends Error {
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
+}
+
+export type AccountPlatform = 'youtube' | 'instagram' | 'facebook' | 'twitter' | 'tiktok' | 'linkedin' | 'pinterest' | 'threads' | 'telegram' | 'other';
+export interface AccountDto {
+  id: string;
+  platform: AccountPlatform;
+  username: string;
+  display_name: string | null;
+  status: 'disconnected';
+  connection_verified: false;
+  credential_state: 'none' | 'saved_unverified' | 'legacy_unprotected' | 'unavailable';
+  has_saved_credentials: boolean | null;
+  credentials_protection: string;
+  has_refresh_token: boolean | null;
+  credential_expires_at: string | null;
+}
+export interface BrandDto {
+  brand_name: string;
+  brand_voice: string | null;
+  target_audience: string | null;
+  content_pillars: string[] | null;
 }
 
 function buildUrl(path: string, params?: RequestOptions['params']): string {
@@ -51,6 +86,7 @@ export async function apiRequest<T>(
     ...rest,
     headers: {
       'Content-Type': 'application/json',
+      ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}),
       ...(headers ?? {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -89,27 +125,80 @@ export interface HealthResponse {
 
 export interface AgentDto {
   id: string;
-  number: number;
+  agent_key: string;
   name: string;
-  role: string;
-  category: string;
-  enabled: boolean;
-  status: 'active' | 'idle' | 'running' | 'error' | 'disabled';
-  tasks_completed: number;
-  success_rate: number;
-  last_run?: string;
+  description: string | null;
+  category: string | null;
+  version: string;
+  is_enabled: boolean;
+  status: 'idle' | 'running' | 'paused' | 'error' | 'disabled';
+  supported_actions: string[];
+}
+
+export interface AgentExecutionDto {
+  id: string;
+  agent_id: string;
+  task_id: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout';
+  inputs: Record<string, unknown> | null;
+  outputs: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+}
+
+export interface GoalObjective {
+  metric: string;
+  unit: string;
+  baseline: number;
+  baseline_source: string;
+  target: number;
+  constraints: string;
+  stopping_conditions: string;
+  uncertainty: string;
+}
+
+export interface GoalMeasurement {
+  value: number;
+  source: string;
+  observed_at: string;
+}
+
+export interface MilestoneDto {
+  id: string;
+  goal_id: string;
+  title: string;
+  target_value: number;
+  current_value: number;
+  is_completed: boolean;
+  due_date: string | null;
 }
 
 export interface GoalDto {
-  id: string;
+  goal_id: string;
   title: string;
-  description: string;
+  description: string | null;
+  owner_id: string;
+  target_metrics: Record<string, unknown> | null;
+  objective: GoalObjective | null;
+  measurement: GoalMeasurement | null;
   progress: number;
-  target_value: number;
-  current_value: number;
-  unit: string;
-  status: 'on_track' | 'at_risk' | 'completed' | 'paused';
-  deadline: string;
+  progress_basis: 'measurement' | 'milestones' | 'legacy_manual' | 'unmeasured';
+  total_milestones: number;
+  completed_milestones: number;
+  status: 'active' | 'paused' | 'completed' | 'cancelled';
+  deadline: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoalCreateDto {
+  title: string;
+  description?: string | null;
+  objective?: GoalObjective;
+  deadline?: string | null;
 }
 
 export interface ContentAssetDto {
@@ -125,11 +214,15 @@ export interface ContentAssetDto {
 export interface WorkflowDto {
   id: string;
   name: string;
-  description: string;
-  active: boolean;
+  description: string | null;
+  status: 'draft' | 'active' | 'paused' | 'archived';
+  revision: number;
+  fingerprint: string;
+  execution_available: boolean;
+  validation_errors: string[];
   nodes: unknown[];
   edges: unknown[];
-  last_run?: string;
+  last_run_at: string | null;
 }
 
 export const apiClient = {
@@ -140,29 +233,41 @@ export const apiClient = {
   agents: {
     list: () => apiRequest<AgentDto[]>('/api/agents'),
     toggle: (id: string, enabled: boolean) =>
-      apiRequest<AgentDto>(`/api/agents/${id}`, {
-        method: 'PATCH',
-        body: { enabled },
+      apiRequest<AgentDto>(`/api/agents/${id}/${enabled ? "enable" : "disable"}`, {
+        method: 'POST',
       }),
     run: (id: string, payload?: Record<string, unknown>) =>
-      apiRequest<Record<string, unknown>>(`/api/agents/${id}/run`, {
+      apiRequest<{ execution_id: string; agent_key: string; status: string }>(`/api/agents/${encodeURIComponent(id)}/run`, {
         method: 'POST',
-        body: payload ?? {},
+        body: { task_data: payload ?? {} },
       }),
+    executions: (key: string) => apiRequest<AgentExecutionDto[]>(`/api/agents/${encodeURIComponent(key)}/executions`),
+    cancelExecution: (key: string, executionId: string) => apiRequest<void>(`/api/agents/${encodeURIComponent(key)}/executions/${encodeURIComponent(executionId)}/cancel`, { method: 'POST' }),
   },
   goals: {
-    list: () => apiRequest<GoalDto[]>('/api/goals'),
-    create: (payload: Partial<GoalDto>) =>
-      apiRequest<GoalDto>('/api/goals', { method: 'POST', body: payload }),
-    update: (id: string, payload: Partial<GoalDto>) =>
-      apiRequest<GoalDto>(`/api/goals/${id}`, { method: 'PATCH', body: payload }),
+    list: (offset = 0) => apiRequest<GoalDto[]>('/api/goals/', { params: { limit: 50, offset } }),
+    create: (payload: GoalCreateDto) =>
+      apiRequest<GoalDto>('/api/goals/', { method: 'POST', body: payload }),
+    update: (id: string, payload: Partial<GoalCreateDto> & { status?: GoalDto['status'] }) =>
+      apiRequest<GoalDto>(`/api/goals/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+    remove: (id: string) => apiRequest<void>(`/api/goals/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    measure: (id: string, payload: GoalMeasurement) =>
+      apiRequest<GoalDto>(`/api/goals/${encodeURIComponent(id)}/measurements`, { method: 'POST', body: payload }),
+    measurements: (id: string) => apiRequest<(GoalMeasurement & { id: string })[]>(`/api/goals/${encodeURIComponent(id)}/measurements`),
+    milestones: (id: string) => apiRequest<MilestoneDto[]>(`/api/goals/${encodeURIComponent(id)}/milestones`),
+    addMilestone: (id: string, payload: { title: string; target_value: number; current_value?: number; due_date?: string | null }) =>
+      apiRequest<MilestoneDto>(`/api/goals/${encodeURIComponent(id)}/milestones`, { method: 'POST', body: payload }),
+    updateMilestone: (id: string, milestoneId: string, payload: { current_value: number }) =>
+      apiRequest<MilestoneDto>(`/api/goals/${encodeURIComponent(id)}/milestones/${encodeURIComponent(milestoneId)}`, { method: 'PUT', body: payload }),
+    removeMilestone: (id: string, milestoneId: string) =>
+      apiRequest<void>(`/api/goals/${encodeURIComponent(id)}/milestones/${encodeURIComponent(milestoneId)}`, { method: 'DELETE' }),
   },
   content: {
     list: () => apiRequest<ContentAssetDto[]>('/api/content'),
     scanFolder: (path: string) =>
-      apiRequest<{ scanned: number }>('/api/content/scan', {
+      apiRequest<{ scanned: number }>('/api/content/scan-folder', {
         method: 'POST',
-        body: { path },
+        body: { folder_path: path },
       }),
   },
   workflows: {
@@ -172,9 +277,10 @@ export const apiClient = {
         method: 'POST',
         body: workflow,
       }),
-    execute: (id: string) =>
-      apiRequest<{ execution_id: string }>(`/api/workflows/${id}/execute`, {
+    execute: (id: string, review: { expected_revision: number; fingerprint: string; trigger_data?: Record<string, unknown> }) =>
+      apiRequest<{ id: string; status: string }>(`/api/workflows/${id}/execute`, {
         method: 'POST',
+        body: review,
       }),
   },
   analytics: {

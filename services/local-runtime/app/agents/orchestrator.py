@@ -142,8 +142,8 @@ class MasterAgent(BaseAgent):
                 "details": subtask,
             })
             return result.get("approved", False)
-        self.logger.warning("No approval_manager available; auto-approving %s", subtask["task_type"])
-        return True
+        self.logger.warning("No approval manager; holding %s", subtask["task_type"])
+        return False
 
     # ── Execution with retry / fallback ─────────────────────────────
 
@@ -157,7 +157,8 @@ class MasterAgent(BaseAgent):
             if dep in context:
                 task_payload[f"{dep}_result"] = context[dep]
 
-        for attempt in range(1, self.MAX_RETRIES + 1):
+        retry_limit = 1 if agent_name == "content_publisher" else self.MAX_RETRIES
+        for attempt in range(1, retry_limit + 1):
             agent = self.get_agent(agent_name)
             if not agent:
                 self.logger.error("Agent %s not found or disabled", agent_name)
@@ -168,8 +169,11 @@ class MasterAgent(BaseAgent):
                 return result
 
             self.logger.warning("Subtask %s attempt %d failed: %s", subtask["task_type"], attempt, result.get("error"))
-            if attempt < self.MAX_RETRIES:
+            if attempt < retry_limit:
                 await asyncio.sleep(0.5 * attempt)
+
+        if agent_name == "content_publisher":
+            return result  # Never retry uncertain external writes via a recovery agent.
 
         # Fallback: try recovery_agent
         fallback = self.get_agent("recovery_agent")
@@ -204,7 +208,14 @@ class MasterAgent(BaseAgent):
             approved = []
             pending_approval = []
             for s in ready:
-                if task_data.get("approved") is True or await self.check_approval(s):
+                if any(context[d].get("status") not in {"success", "completed"}
+                       for d in s.get("depends_on", [])):
+                    outcome = {"status": "blocked", "reason": "dependency_not_successful"}
+                    context[s["task_type"]] = outcome
+                    results.append({"task_type": s["task_type"], **outcome})
+                    failed.append(s["task_type"])
+                    continue
+                if await self.check_approval(s):
                     approved.append(s)
                 else:
                     pending_approval.append(s)
@@ -214,11 +225,12 @@ class MasterAgent(BaseAgent):
                         "reason": "approval_required",
                     })
 
-            if pending_approval and not approved:
+            if pending_approval:
                 return {
                     "status": "pending_approval",
                     "subtask_results": results,
                     "pending_subtasks": [s["task_type"] for s in pending_approval],
+                    "remaining_subtasks": remaining,
                     "failed_subtasks": failed,
                     "total_subtasks": len(subtasks),
                 }

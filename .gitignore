@@ -22,6 +22,7 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 .venv/
+.venv-packaging/
 venv/
 env/
 
@@ -30,6 +31,8 @@ env/
 *.db-journal
 *.sqlite
 *.sqlite3
+*.agent-worker.lock
+*.workflow-worker.lock
 *.jbackup
 *.sha256
 uploads/
@@ -46,6 +49,7 @@ node_modules/
 .next/
 out/
 .vite/
+output/playwright/
 dist-electron/
 apps/windows/release/
 apps/windows/dist/
@@ -55,3 +59,13 @@ apps/windows/dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local runtime control state (not source)
+runtime-control.json
+runtime-control.json.*.tmp
+
+# Encrypted local provider configuration and OS-wrapped keys
+provider-config.enc
+provider-config.enc.*
+*.enc
+*.dpapi

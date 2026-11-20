@@ -1,19 +1,49 @@
-import React, { useState } from 'react';
-import { Sun, Moon, Cpu, Database, Download, Info } from 'lucide-react';
-import { Card, Button, Badge } from '@javo/design-system';
+import React from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ProviderEditor, type ProviderInfo } from '../components/ProviderEditor';
+import { LocalModelCheck } from '../components/LocalModelCheck';
+import { apiRequest, ApiError } from '../api/client';
+import { Sun, Moon, Database, Download, Info } from 'lucide-react';
+import { Card, Button } from '@javo/design-system';
 import { useAppStore } from '../store/useAppStore';
+
+interface SavedUsage {
+  total_attempts: number;
+  total_requests: number;
+  total_tokens: number;
+  failed_requests: number;
+  unresolved_requests: number;
+  requests_with_unknown_token_usage: number;
+  daily_spend_usd: number;
+  monthly_spend_usd: number;
+  unresolved_reserved_usd: number;
+  coverage_since: string;
+  period_timezone: string;
+}
 
 export const Settings: React.FC = () => {
   const { theme, setTheme, addToast } = useAppStore();
-  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
-  const [defaultLocalModel, setDefaultLocalModel] = useState('qwen2.5:14b');
-  const [dailyBudget, setDailyBudget] = useState('10.00');
-  const [geminiKey, setGeminiKey] = useState('••••••••••••••••••••');
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    addToast('Settings Saved', 'AI Router and local runtime configuration updated.', 'success');
-  };
+  const qc = useQueryClient();
+  const [defaultProvider, setDefaultProvider] = React.useState<string | null>(null);
+  const [savingDefaults, setSavingDefaults] = React.useState(false);
+  const settings = useQuery({ queryKey: ['runtime-settings'], queryFn: () => apiRequest<{ app_version: string; default_ai_provider: string; ai_daily_budget: number; ai_monthly_budget: number }>('/api/settings/'), retry: false });
+  const providers = useQuery({ queryKey: ['runtime-providers'], queryFn: () => apiRequest<ProviderInfo[]>('/api/settings/ai-providers'), retry: false });
+  const storage = useQuery({ queryKey: ['provider-storage'], queryFn: () => apiRequest<{ available: boolean; protection: string }>('/api/settings/provider-storage'), retry: false });
+  const usage = useQuery({ queryKey: ['saved-ai-usage'], queryFn: () => apiRequest<SavedUsage>('/api/settings/ai-usage'), retry: false, refetchInterval: 15000 });
+  async function refreshProviders() { await qc.invalidateQueries({ queryKey: ['runtime-providers'] }); }
+  const budget = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value) : 'Unavailable';
+  const [backingUp, setBackingUp] = React.useState(false);
+  async function snapshot() {
+    setBackingUp(true);
+    try {
+      const result = await apiRequest<{ filename: string; encrypted: boolean; size_bytes: number }>('/api/settings/backup', { method: 'POST' });
+      if (!result.encrypted || result.size_bytes <= 0) throw new Error('Encrypted snapshot was not confirmed');
+      addToast('Snapshot saved', result.filename, 'success');
+    } catch (failure) {
+      const detail = failure instanceof ApiError ? (failure.detail as { detail?: unknown })?.detail : null;
+      addToast('Snapshot failed', typeof detail === 'string' ? detail : 'Runtime did not confirm an encrypted backup.', 'error');
+    } finally { setBackingUp(false); }
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -65,54 +95,45 @@ export const Settings: React.FC = () => {
         </div>
       </Card>
 
-      {/* AI Providers */}
       <Card variant="default">
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-[#00E5FF]" /> AI Providers & Budget Cap
-            </h2>
-            <Badge status="active" size="sm">Local First</Badge>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium mb-1">Ollama Endpoint</label>
-              <input
-                value={ollamaUrl}
-                onChange={(e) => setOllamaUrl(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Default Local Model</label>
-              <input
-                value={defaultLocalModel}
-                onChange={(e) => setDefaultLocalModel(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Gemini API Key (Encrypted)</label>
-              <input
-                type="password"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">Daily Cloud Spend Cap ($ USD)</label>
-              <input
-                value={dailyBudget}
-                onChange={(e) => setDailyBudget(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl text-sm font-mono bg-slate-100 dark:bg-[#0B1026] border border-slate-200 dark:border-white/15"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button type="submit">Save Provider Config</Button>
-          </div>
-        </form>
+        <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">AI Providers & Configured Budgets</h2>
+        {(settings.isError || providers.isError || storage.isError) && <p role="alert">Runtime settings unavailable. No example values are substituted.</p>}
+        <p>Daily budget: {budget(settings.data?.ai_daily_budget)}</p>
+        <p>Monthly budget: {budget(settings.data?.ai_monthly_budget)}</p>
+        <p>Saving provider settings does not make an AI request. Cloud execution stays disabled pending verified pricing and explicit spending authorization.</p>
+        {!storage.data?.available && <p role="status">Encrypted provider storage is unavailable or locked. Configure a persistent encryption key on this runtime or recover its Windows user profile.</p>}
+        <p>Storage protection: {storage.data?.protection ?? 'Unavailable'}</p>
+        <label className="block">Default AI provider
+          <select className="rounded border border-slate-400 bg-white dark:bg-slate-900 p-2" value={defaultProvider ?? settings.data?.default_ai_provider ?? 'ollama'} disabled={!storage.data?.available || savingDefaults} onChange={event => setDefaultProvider(event.target.value)}>
+            <option value="ollama">ollama</option><option value="gemini">gemini</option><option value="openai">openai</option>
+          </select>
+        </label>
+        <Button disabled={!storage.data?.available || savingDefaults || defaultProvider === null} onClick={async () => {
+          setSavingDefaults(true);
+          try {
+            await apiRequest('/api/settings/', { method: 'PUT', body: { default_ai_provider: defaultProvider } });
+            await qc.invalidateQueries({ queryKey: ['runtime-settings'] }); setDefaultProvider(null);
+            addToast('AI defaults saved', 'The selected default provider is persisted.', 'success');
+          } catch { addToast('AI defaults not saved', 'Runtime did not confirm the change.', 'error'); }
+          finally { setSavingDefaults(false); }
+        }}>Save AI default</Button>
+        {providers.data?.map(provider => <ProviderEditor key={provider.name} provider={provider} available={storage.data?.available === true} onSaved={refreshProviders} />)}
+        <LocalModelCheck key={JSON.stringify(providers.data?.find(provider => provider.name === 'ollama'))} />
+      </Card>
+
+      <Card>
+        <h2 className="text-base font-semibold mb-3">Saved AI usage</h2>
+        {usage.isPending && <p role="status">Loading saved usage…</p>}
+        {usage.isError && <p role="alert">Saved usage is unavailable. Totals cannot be confirmed. <Button variant="ghost" onClick={() => void usage.refetch()}>Retry usage</Button></p>}
+        {usage.data && <div className="space-y-2 text-sm">
+          <p>Completed AI requests: {usage.data.total_requests}</p>
+          <p>Reported tokens: {usage.data.total_tokens}</p>
+          <p>Requests with unknown token counts: {usage.data.requests_with_unknown_token_usage}</p>
+          <p>Attempts: {usage.data.total_attempts} · Failed: {usage.data.failed_requests} · Unresolved: {usage.data.unresolved_requests}</p>
+          <p>Recorded API charges today: {budget(usage.data.daily_spend_usd)} · This month: {budget(usage.data.monthly_spend_usd)}</p>
+          <p>Unresolved reserved charges: {budget(usage.data.unresolved_reserved_usd)}</p>
+          <p className="text-slate-500">Saved since {new Date(usage.data.coverage_since).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST. Accounting periods use {usage.data.period_timezone}. Earlier process-only counters cannot be recovered. Local hardware and electricity costs are not included.</p>
+        </div>}
       </Card>
 
       {/* Backup & About */}
@@ -125,15 +146,16 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-            Export SQLite memory, workflows, and encrypted vault keys as a portable `.javobak` bundle.
+            Create an encrypted database snapshot on the runtime computer. A persistent backup encryption key must be configured and retained separately. Usage accounting, media folders, AI/social credential vaults and their keys are not included.
           </p>
           <Button
             size="sm"
             variant="secondary"
             leftIcon={<Download className="h-4 w-4" />}
-            onClick={() => addToast('Backup Exported', 'Saved javo-backup-2026-11-12.javobak.', 'success')}
+            disabled={backingUp}
+            onClick={() => { void snapshot(); }}
           >
-            Export Snapshot
+            Create encrypted database snapshot
           </Button>
         </Card>
 
@@ -145,10 +167,10 @@ export const Settings: React.FC = () => {
             </h3>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Dashboard v2.4.0 • Windows Desktop Edition
+            Runtime version: {settings.data?.app_version ?? 'Unavailable'}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            29 Specialist Agents • FastAPI Runtime (localhost:8000)
+            Registered agent definitions; production coverage varies. • FastAPI Runtime (localhost:8000)
           </p>
         </Card>
       </div>

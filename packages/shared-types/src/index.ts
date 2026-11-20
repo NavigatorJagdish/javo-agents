@@ -98,12 +98,47 @@ export interface Goal {
   description: string | null;
   owner_id: UUID;
   target_metrics: Record<string, unknown> | null;
+  objective?: GoalObjective | null;
+  measurement?: GoalMeasurement | null;
   progress: number;
+  progress_basis?: 'measurement' | 'milestones' | 'legacy_manual' | 'unmeasured';
+  total_milestones?: number;
+  completed_milestones?: number;
   status: GoalStatus;
   deadline: ISODateTime | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
   milestones?: Milestone[];
+}
+
+export interface GoalObjective {
+  metric: string;
+  unit: string;
+  baseline: number;
+  baseline_source: string;
+  target: number;
+  constraints?: string;
+  stopping_conditions?: string;
+  uncertainty?: string;
+}
+
+export interface GoalMeasurement {
+  value: number;
+  source: string;
+  observed_at: ISODateTime;
+}
+
+export interface GoalCreateRequest {
+  title: string;
+  description?: string | null;
+  target_metrics?: Record<string, unknown> | null;
+  objective?: GoalObjective | null;
+  deadline?: ISODateTime | null;
+}
+
+export interface GoalUpdateRequest extends Partial<GoalCreateRequest> {
+  status?: GoalStatus;
+  progress?: number;
 }
 
 export interface Milestone {
@@ -158,9 +193,26 @@ export interface AgentDefinition {
   dependencies: string[] | null;
   trust_score: number;
   is_enabled: boolean;
+  supported_actions?: string[];
   config?: AgentConfig | null;
   created_at?: ISODateTime;
   updated_at?: ISODateTime;
+}
+
+export type AgentSummary = Pick<AgentDefinition, 'id' | 'agent_key' | 'name' | 'description' | 'category' | 'version' | 'status' | 'trust_score' | 'is_enabled' | 'supported_actions'>;
+
+export interface QueuedAgentReceipt {
+  execution_id: UUID;
+  agent_id: UUID;
+  agent_key: string;
+  status: 'queued';
+}
+
+export interface TaskExecutionReceipt {
+  task_id: UUID;
+  execution_id: UUID;
+  state: 'pending';
+  message: string;
 }
 
 export interface AgentExecution {
@@ -205,6 +257,13 @@ export interface SocialAccount {
   username: string;
   display_name: string | null;
   status: AccountStatus;
+  reported_status: AccountStatus;
+  connection_verified: boolean;
+  credential_state: "none" | "saved_unverified" | "legacy_unprotected" | "unavailable";
+  has_saved_credentials: boolean | null;
+  credentials_protection: string;
+  has_refresh_token: boolean | null;
+  credential_expires_at: ISODateTime | null;
   token_expires_at: ISODateTime | null;
   metadata: Record<string, unknown> | null;
   created_at: ISODateTime;
@@ -222,8 +281,6 @@ export interface BrandProfile {
   color_palette: string[] | null;
   logo_url: string | null;
   guidelines: Record<string, unknown> | null;
-  created_at: ISODateTime;
-  updated_at: ISODateTime;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +398,7 @@ export type NodeType =
   | "end";
 
 export type WorkflowExecutionStatus =
+  | "queued"
   | "running"
   | "completed"
   | "failed"
@@ -373,6 +431,11 @@ export interface Workflow {
   name: string;
   description: string | null;
   status: WorkflowStatus;
+  revision: number;
+  fingerprint: string;
+  execution_available: boolean;
+  validation_errors: string[];
+  reported_run_count: number;
   trigger_config: Record<string, unknown> | null;
   viewport: { x: number; y: number; zoom: number } | null;
   run_count: number;
@@ -387,11 +450,15 @@ export interface WorkflowExecution {
   id: UUID;
   workflow_id: UUID;
   status: WorkflowExecutionStatus;
-  trigger_data: Record<string, unknown> | null;
+  execution_verified: boolean;
+  revision: number | null;
+  fingerprint: string | null;
+  created_at: ISODateTime;
+  message: string;
   current_node_id: UUID | null;
   execution_log: Array<Record<string, unknown>> | null;
   error: string | null;
-  started_at: ISODateTime;
+  started_at: ISODateTime | null;
   completed_at: ISODateTime | null;
 }
 

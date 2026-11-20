@@ -3,7 +3,14 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  base: './',
+  plugins: [react(), {
+    name: 'javo-production-content-policy',
+    apply: 'build',
+    transformIndexHtml() {
+      return [{tag: 'meta', attrs: {'http-equiv': 'Content-Security-Policy', content: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'none'; frame-src 'none'"}, injectTo: 'head-prepend'}];
+    },
+  }],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

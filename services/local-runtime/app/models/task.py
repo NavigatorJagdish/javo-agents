@@ -85,7 +85,8 @@ class Goal(Base):
 
     # Relationships
     owner: Mapped["User"] = relationship("User", back_populates="goals")
-    tasks: Mapped[List["Task"]] = relationship("Task", back_populates="goal", cascade="all, delete-orphan")
+    # Task execution history outlives goal removal.
+    tasks: Mapped[List["Task"]] = relationship("Task", back_populates="goal")
     milestones: Mapped[List["Milestone"]] = relationship("Milestone", back_populates="goal", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.resource_manager import get_resource_manager
@@ -26,6 +26,10 @@ from app.models.security import (
     TrustedDevice,
 )
 from app.models.task import Task, TaskState
+
+from app.core.runtime_control import pause_runtime, resume_runtime, stop_runtime
+from app.core.local_identity import OWNER_IDS
+from app.models.workflow import Workflow, WorkflowExecution, WorkflowExecutionStatus
 
 router = APIRouter(prefix="/security", tags=["security"])
 
@@ -224,10 +228,11 @@ async def emergency_stop(
     session: AsyncSession = Depends(get_session),
 ) -> EmergencyStopResponse:
     """Immediately cancel all running/queued tasks and agent executions."""
+    stop_runtime()
     now = datetime.now(timezone.utc)
 
     running_tasks = (
-        await session.execute(select(Task).where(Task.state == TaskState.RUNNING))
+        await session.execute(select(Task).where(Task.state.in_([TaskState.RUNNING, TaskState.PENDING, TaskState.PAUSED])))
     ).scalars().all()
     for task in running_tasks:
         task.state = TaskState.CANCELLED
@@ -253,6 +258,11 @@ async def emergency_stop(
         execution.completed_at = now
         execution.error = f"Emergency stop: {body.reason}"
 
+    await session.execute(update(WorkflowExecution).where(
+        WorkflowExecution.workflow_id.in_(select(Workflow.id).where(Workflow.user_id.in_(OWNER_IDS))),
+        WorkflowExecution.status.in_([WorkflowExecutionStatus.QUEUED, WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.WAITING_APPROVAL]),
+    ).values(status=WorkflowExecutionStatus.CANCELLED, completed_at=now, error='Cancelled by emergency stop'))
+
     session.add(
         AuditLog(
             id=str(uuid4()),
@@ -266,20 +276,13 @@ async def emergency_stop(
             },
         )
     )
-    get_resource_manager().trigger_emergency_stop()
-    try:
-        if scheduler.is_running and scheduler._scheduler is not None:
-            scheduler._scheduler.pause()
-    except Exception:
-        pass
-
     await session.commit()
 
     return EmergencyStopResponse(
         stopped_tasks=len(running_tasks),
         stopped_executions=len(active_execs),
         timestamp=now.isoformat(),
-        message="All running tasks and agent executions have been cancelled.",
+        message="Local queued tasks cancelled; cooperative running cancellation requested. Verify remote actions already in flight.",
     )
 
 
@@ -288,7 +291,7 @@ async def autopilot_status() -> AutopilotControlResponse:
     """Return global autopilot pause and emergency-stop status."""
     rm = get_resource_manager()
     paused = bool(
-        rm._emergency_stopped
+        rm._emergency_stopped or rm._paused
         or (scheduler._scheduler is not None and scheduler._scheduler.state == 2)
     )
     return AutopilotControlResponse(
@@ -304,13 +307,8 @@ async def pause_autopilot(
     session: AsyncSession = Depends(get_session),
 ) -> AutopilotControlResponse:
     """Pause scheduled automation without cancelling persisted jobs."""
+    pause_runtime()
     now = datetime.now(timezone.utc)
-    try:
-        if scheduler.is_running and scheduler._scheduler is not None:
-            scheduler._scheduler.pause()
-    except Exception:
-        pass
-
     session.add(
         AuditLog(
             id=str(uuid4()),
@@ -335,13 +333,7 @@ async def resume_autopilot(
 ) -> AutopilotControlResponse:
     """Clear emergency stop (if active) and resume scheduled automation."""
     now = datetime.now(timezone.utc)
-    rm = get_resource_manager()
-    rm.clear_emergency_stop()
-    try:
-        if scheduler._scheduler is not None and scheduler._scheduler.state == 2:
-            scheduler._scheduler.resume()
-    except Exception:
-        pass
+    resume_runtime()
 
     session.add(
         AuditLog(

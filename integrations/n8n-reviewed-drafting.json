@@ -1,0 +1,586 @@
+{
+  "name": "Javo reviewed local drafting — complete manual bridge",
+  "nodes": [
+    {
+      "id": "javo-1",
+      "name": "Manual start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        260
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "javo-2",
+      "name": "Optional scheduled start",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        500,
+        260
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "disabled": true
+    },
+    {
+      "id": "javo-3",
+      "name": "Set brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        260
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{base_url:'http://127.0.0.1:8000',workflow_id:'REPLACE_WITH_SAVED_JAVO_WORKFLOW_ID',brief:'Write a short original caption from these verified facts.',max_polls:30}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-4",
+      "name": "Validate input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const v=$input.first().json;if(!/^http:\\/\\/(127\\.0\\.0\\.1|localhost)(:\\d+)?$/.test(v.base_url)||! /^[a-f0-9-]{36}$/.test(v.workflow_id)||typeof v.brief!=='string'||!v.brief.trim()||v.brief.length>2000)throw new Error('Set a local endpoint, saved workflow UUID and bounded brief.');return [{json:{...v,max_polls:Math.max(1,Math.min(30,Number(v.max_polls)||30))}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-5",
+      "name": "Read saved workflows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validate input').first().json.base_url + '/api/integrations/mcp' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'javo_list_workflows','arguments':{} } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-6",
+      "name": "Select exact saved revision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        480
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(r.error||r.result?.isError)throw new Error('Workflow read refused');const rows=JSON.parse(r.result.content[0].text);const id=$('Validate input').first().json.workflow_id;const v=rows.find(x=>x.id===id&&x.execution_available);if(!v)throw new Error('Choose an executable workflow from the first20 saved entries.');return [{json:v}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-7",
+      "name": "Submit owner review proposal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validate input').first().json.base_url + '/api/integrations/mcp' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'javo_propose_workflow','arguments':{request_key:'n8n_'+$execution.id,title:'Reviewed draft from n8n',workflow_id:$json.id,expected_revision:$json.revision,fingerprint:$json.fingerprint,trigger_data:{brief:$('Validate input').first().json.brief} } } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-8",
+      "name": "Keep proposal reference",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        480
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(r.error||r.result?.isError)throw new Error('Proposal refused');const p=JSON.parse(r.result.content[0].text);if(!p.id||p.actions_executed!==false)throw new Error('Missing truthful proposal receipt');return [{json:{proposal_id:p.id,attempts:0}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-9",
+      "name": "Wait for review or execution",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1020,
+        480
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-10",
+      "name": "Read own proposal status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validate input').first().json.base_url + '/api/integrations/mcp' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'javo_get_my_proposal','arguments':{proposal_id:$('Keep proposal reference').first().json.proposal_id} } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-11",
+      "name": "Inspect actual status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        700
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(r.error||r.result?.isError)throw new Error('Status read refused');const p=JSON.parse(r.result.content[0].text);const n=$runIndex+1;return [{json:{...p,attempts:n,done:p.execution_status==='completed',terminal:p.status==='rejected'||['failed','cancelled'].includes(p.execution_status),continue_wait:n<$('Validate input').first().json.max_polls}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-12",
+      "name": "Completed actual run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        500,
+        700
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "javo-13",
+      "name": "Still eligible to wait?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        760,
+        700
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "condition",
+              "leftValue": "={{ !$json.terminal && $json.continue_wait }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "javo-14",
+      "name": "Fetch own reviewed result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1020,
+        700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validate input').first().json.base_url + '/api/integrations/mcp' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jsonrpc:'2.0',id:4,method:'tools/call',params:{name:'javo_get_my_workflow_result','arguments':{proposal_id:$('Keep proposal reference').first().json.proposal_id} } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-15",
+      "name": "Report verified local result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        700
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;if(r.error||r.result?.isError)throw new Error('Result read refused');const p=JSON.parse(r.result.content[0].text);if(p.execution?.status!=='completed'||p.execution?.execution_verified!==true)throw new Error('No completed verified receipt');return [{json:{proposal_id:p.id,execution_id:p.execution_id,status:'completed',outputs:p.execution.execution_log,actions_executed:false,source:'Actual reviewed Javo local workflow'}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "javo-16",
+      "name": "Stop without replay",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        240,
+        920
+      ],
+      "parameters": {
+        "errorMessage": "Review rejected, execution failed or bounded wait expired. Inspect the existing Javo receipt; never resubmit automatically."
+      }
+    },
+    {
+      "id": "javo-17",
+      "name": "Safe error report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        920
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{status:'failed_or_unconfirmed',message:'Inspect the existing Javo proposal/run receipt. No automatic approval, retry, publication or completed action is inferred.'}}];",
+        "mode": "runOnceForAllItems"
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Manual start": {
+      "main": [
+        [
+          {
+            "node": "Set brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Optional scheduled start": {
+      "main": [
+        [
+          {
+            "node": "Set brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set brief": {
+      "main": [
+        [
+          {
+            "node": "Validate input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate input": {
+      "main": [
+        [
+          {
+            "node": "Read saved workflows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read saved workflows": {
+      "main": [
+        [
+          {
+            "node": "Select exact saved revision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select exact saved revision": {
+      "main": [
+        [
+          {
+            "node": "Submit owner review proposal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit owner review proposal": {
+      "main": [
+        [
+          {
+            "node": "Keep proposal reference",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep proposal reference": {
+      "main": [
+        [
+          {
+            "node": "Wait for review or execution",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for review or execution": {
+      "main": [
+        [
+          {
+            "node": "Read own proposal status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read own proposal status": {
+      "main": [
+        [
+          {
+            "node": "Inspect actual status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inspect actual status": {
+      "main": [
+        [
+          {
+            "node": "Completed actual run?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completed actual run?": {
+      "main": [
+        [
+          {
+            "node": "Fetch own reviewed result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Still eligible to wait?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch own reviewed result": {
+      "main": [
+        [
+          {
+            "node": "Report verified local result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still eligible to wait?": {
+      "main": [
+        [
+          {
+            "node": "Wait for review or execution",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop without replay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report verified local result": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Safe error report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Kolkata"
+  }
+}

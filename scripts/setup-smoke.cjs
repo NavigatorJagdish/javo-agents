@@ -1,0 +1,80 @@
+// Actual saved settings/runtime readings; labelled synthetic loopback inventory.
+const { chromium } = require(process.env.JAVO_PLAYWRIGHT_MODULE || 'playwright-core');
+const assert = require('node:assert/strict');
+
+(async () => {
+  const browser = await chromium.launch({ executablePath: process.env.JAVO_CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    async function authenticate() {
+      await page.getByLabel('Owner access token').fill(process.env.JAVO_OWNER_ACCESS_TOKEN);
+      await page.getByRole('button', { name: 'Connect / retry' }).click();
+      await page.getByLabel('Owner access token').waitFor({ state: 'detached' });
+    }
+    await page.goto(process.env.JAVO_SMOKE_URL, { waitUntil: 'domcontentloaded' });
+    await authenticate();
+    await page.evaluate(() => { location.hash = '/setup/welcome'; });
+    await page.getByRole('heading', { name: 'Welcome to Javo Agents', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Start Setup', exact: true }).click();
+    await page.getByText('CPU threads', { exact: true }).waitFor();
+    assert.equal(await page.getByText(/NVIDIA RTX 4070|AVX2 Supported|Optimal/).count(), 0);
+    const info = await page.request.get(new URL('/api/health/system', process.env.JAVO_SMOKE_URL).href, { headers: { Authorization: 'Bearer '+process.env.JAVO_OWNER_ACCESS_TOKEN } });
+    assert.equal(info.status(), 200);
+    const measured = await info.json();
+    await page.getByText(`${(measured.ram_total_mb / 1024).toFixed(1)} GiB total;`, { exact: false }).waitFor();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByLabel('ollama model', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('ollama model', { exact: true }).inputValue(), 'synthetic-loopback-fixture');
+    await page.getByRole('button', { name: 'Check saved local model', exact: true }).click();
+    await page.getByText('Local model check: available', { exact: true }).waitFor();
+    await page.getByText('The saved model is listed by loopback Ollama. Generation and performance have not been tested.', { exact: true }).waitFor();
+    await page.getByLabel('ollama model', { exact: true }).fill('not-installed-fixture');
+    await page.getByRole('button', { name: 'Save ollama', exact: true }).click();
+    await page.getByText('Saved encrypted provider configuration. Connection has not been tested.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Check saved local model', exact: true }).click();
+    await page.getByText('Local model check: model missing', { exact: true }).waitFor();
+    await page.reload();
+    await authenticate();
+    await page.getByLabel('ollama model', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('ollama model', { exact: true }).inputValue(), 'not-installed-fixture');
+    await page.getByLabel('ollama model', { exact: true }).fill('synthetic-loopback-fixture');
+    await page.getByRole('button', { name: 'Save ollama', exact: true }).click();
+    await page.getByText('Saved encrypted provider configuration. Connection has not been tested.', { exact: true }).waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'AI setup must fit mobile viewport');
+    if (process.env.JAVO_SETUP_SCREENSHOT) await page.screenshot({ path: process.env.JAVO_SETUP_SCREENSHOT, fullPage: true });
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Import local content', exact: true }).waitFor();
+    assert.equal(await page.getByRole('textbox').count(), 0);
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Social account records', exact: true }).waitFor();
+    await page.getByText('0 saved records. No platform connections are verified by this build.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Brand voice and identity', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByText('Runtime state: Paused.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Telegram bridge availability', exact: true }).waitFor();
+    assert.equal(await page.getByRole('textbox').count(), 0);
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Companion and local voice setup', exact: true }).waitFor();
+    await page.getByRole('link', {name:'Open companion and voice studio',exact:true}).waitFor();
+    await page.getByText('Wake word and voice-model training remain unavailable.',{exact:false}).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Test Microphone Input' }).count(), 0);
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('heading', { name: 'Privacy and recovery boundaries', exact: true }).waitFor();
+    assert.equal(await page.getByRole('checkbox').count(), 0);
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByText('Runtime service status: healthy', { exact: true }).waitFor();
+    await page.getByText('Module imports; model availability and generation are not tested by this check', { exact: true }).waitFor();
+    assert.equal(await page.getByText('Passed', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: 'Finish guide', exact: true }).click();
+    await page.getByRole('heading', { name: 'Development setup guide finished', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Enter Mission Control', exact: true }).click();
+    await page.getByRole('heading', { name: 'Local runtime', exact: true }).waitFor();
+    assert.deepEqual(errors, []);
+    console.log('SETUP_REAL_MEASUREMENTS_SAVED_CONFIG_LOCAL_INVENTORY_NO_FAKE_CAPABILITIES_OK');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exit(1); });

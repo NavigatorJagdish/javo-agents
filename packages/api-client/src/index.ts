@@ -3,6 +3,9 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentExecution,
+  AgentSummary,
+  QueuedAgentReceipt,
+  TaskExecutionReceipt,
   ApprovalItem,
   AuditLog,
   BrandProfile,
@@ -10,6 +13,9 @@ import type {
   ContentSchedule,
   DevicePairing,
   Goal,
+  GoalCreateRequest,
+  GoalUpdateRequest,
+  GoalMeasurement,
   HealthResponse,
   Milestone,
   SecurityStatus,
@@ -127,6 +133,7 @@ export class JavoApiClient {
       });
 
       const contentType = response.headers.get("content-type") ?? "";
+      if (response.status === 204) return undefined as T;
       const parsed = contentType.includes("application/json")
         ? await response.json()
         : await response.text();
@@ -165,22 +172,34 @@ export class JavoApiClient {
   // Agents
   // -------------------------------------------------------------------------
 
-  public listAgents(): Promise<AgentDefinition[]> {
-    return this.request<AgentDefinition[]>("GET", "/agents/");
+  public listAgents(): Promise<AgentSummary[]> {
+    return this.request<AgentSummary[]>("GET", "/agents/");
   }
 
   public getAgent(agentKeyOrId: string): Promise<AgentDefinition> {
     return this.request<AgentDefinition>("GET", `/agents/${encodeURIComponent(agentKeyOrId)}`);
   }
 
-  public runAgent(agentKeyOrId: string, inputs: Record<string, unknown>): Promise<AgentExecution> {
-    return this.request<AgentExecution>("POST", `/agents/${encodeURIComponent(agentKeyOrId)}/run`, {
-      body: { inputs },
+  public runAgent(agentKeyOrId: string, inputs: Record<string, unknown>): Promise<QueuedAgentReceipt> {
+    return this.request<QueuedAgentReceipt>("POST", `/agents/${encodeURIComponent(agentKeyOrId)}/run`, {
+      body: { task_data: inputs },
     });
   }
 
-  public updateAgentConfig(agentKeyOrId: string, config: Partial<AgentConfig>): Promise<AgentConfig> {
-    return this.request<AgentConfig>("PUT", `/agents/${encodeURIComponent(agentKeyOrId)}/config`, {
+  public listAgentExecutions(agentKeyOrId: string): Promise<AgentExecution[]> {
+    return this.request<AgentExecution[]>("GET", `/agents/${encodeURIComponent(agentKeyOrId)}/executions`);
+  }
+
+  public getAgentExecution(agentKeyOrId: string, executionId: string): Promise<AgentExecution> {
+    return this.request<AgentExecution>("GET", `/agents/${encodeURIComponent(agentKeyOrId)}/executions/${encodeURIComponent(executionId)}`);
+  }
+
+  public cancelAgentExecution(agentKeyOrId: string, executionId: string): Promise<void> {
+    return this.request<void>("POST", `/agents/${encodeURIComponent(agentKeyOrId)}/executions/${encodeURIComponent(executionId)}/cancel`);
+  }
+
+  public updateAgentConfig(agentKeyOrId: string, config: Partial<AgentConfig>): Promise<AgentDefinition> {
+    return this.request<AgentDefinition>("PUT", `/agents/${encodeURIComponent(agentKeyOrId)}/config`, {
       body: config,
     });
   }
@@ -201,30 +220,58 @@ export class JavoApiClient {
     return this.request<Task>("POST", "/tasks/", { body: payload });
   }
 
-  public executeTask(taskId: string): Promise<Task> {
-    return this.request<Task>("POST", `/tasks/${encodeURIComponent(taskId)}/execute`);
+  public executeTask(taskId: string): Promise<TaskExecutionReceipt> {
+    return this.request<TaskExecutionReceipt>("POST", `/tasks/${encodeURIComponent(taskId)}/execute`);
   }
 
   public listGoals(status?: string): Promise<Goal[]> {
     return this.request<Goal[]>("GET", "/goals/", { query: { status } });
   }
 
-  public createGoal(payload: Partial<Goal> & { title: string }): Promise<Goal> {
+  public createGoal(payload: GoalCreateRequest): Promise<Goal> {
     return this.request<Goal>("POST", "/goals/", { body: payload });
   }
 
-  public addMilestone(goalId: string, payload: Partial<Milestone> & { title: string }): Promise<Milestone> {
+  public getGoal(goalId: string): Promise<Goal> {
+    return this.request<Goal>("GET", `/goals/${encodeURIComponent(goalId)}`);
+  }
+
+  public updateGoal(goalId: string, payload: GoalUpdateRequest): Promise<Goal> {
+    return this.request<Goal>("PUT", `/goals/${encodeURIComponent(goalId)}`, { body: payload });
+  }
+
+  public deleteGoal(goalId: string): Promise<void> {
+    return this.request<void>("DELETE", `/goals/${encodeURIComponent(goalId)}`);
+  }
+
+  public recordGoalMeasurement(goalId: string, payload: GoalMeasurement): Promise<Goal> {
+    return this.request<Goal>("POST", `/goals/${encodeURIComponent(goalId)}/measurements`, { body: payload });
+  }
+
+  public listMilestones(goalId: string): Promise<Milestone[]> {
+    return this.request<Milestone[]>("GET", `/goals/${encodeURIComponent(goalId)}/milestones`);
+  }
+
+  public addMilestone(goalId: string, payload: Pick<Milestone, 'title'> & Partial<Pick<Milestone, 'target_value' | 'current_value' | 'due_date'>>): Promise<Milestone> {
     return this.request<Milestone>("POST", `/goals/${encodeURIComponent(goalId)}/milestones`, {
       body: payload,
     });
+  }
+
+  public updateMilestone(goalId: string, milestoneId: string, payload: Partial<Pick<Milestone, 'title' | 'target_value' | 'current_value' | 'due_date'>>): Promise<Milestone> {
+    return this.request<Milestone>("PUT", `/goals/${encodeURIComponent(goalId)}/milestones/${encodeURIComponent(milestoneId)}`, { body: payload });
+  }
+
+  public deleteMilestone(goalId: string, milestoneId: string): Promise<void> {
+    return this.request<void>("DELETE", `/goals/${encodeURIComponent(goalId)}/milestones/${encodeURIComponent(milestoneId)}`);
   }
 
   // -------------------------------------------------------------------------
   // Social Accounts & Brand Profiles
   // -------------------------------------------------------------------------
 
-  public listAccounts(): Promise<SocialAccount[]> {
-    return this.request<SocialAccount[]>("GET", "/accounts/");
+  public listAccounts(params?: { limit?: number; offset?: number }): Promise<SocialAccount[]> {
+    return this.request<SocialAccount[]>("GET", "/accounts/", { query: params });
   }
 
   public createAccount(payload: {
@@ -239,7 +286,23 @@ export class JavoApiClient {
     return this.request<BrandProfile>("GET", `/accounts/${encodeURIComponent(accountId)}/brand-profile`);
   }
 
-  public upsertBrandProfile(accountId: string, profile: Partial<BrandProfile>): Promise<BrandProfile> {
+  public updateAccount(accountId: string, payload: { username?: string; display_name?: string | null }): Promise<SocialAccount> {
+    return this.request<SocialAccount>("PUT", `/accounts/${encodeURIComponent(accountId)}`, { body: payload });
+  }
+
+  public protectLegacyCredentials(accountId: string): Promise<SocialAccount> {
+    return this.request<SocialAccount>("POST", `/accounts/${encodeURIComponent(accountId)}/credentials/migrate`);
+  }
+
+  public removeAccountCredentials(accountId: string): Promise<SocialAccount> {
+    return this.request<SocialAccount>("DELETE", `/accounts/${encodeURIComponent(accountId)}/credentials`);
+  }
+
+  public deleteAccount(accountId: string): Promise<void> {
+    return this.request<void>("DELETE", `/accounts/${encodeURIComponent(accountId)}`);
+  }
+
+  public upsertBrandProfile(accountId: string, profile: Partial<Omit<BrandProfile, "id" | "account_id">>): Promise<BrandProfile> {
     return this.request<BrandProfile>("PUT", `/accounts/${encodeURIComponent(accountId)}/brand-profile`, {
       body: profile,
     });
@@ -280,14 +343,26 @@ export class JavoApiClient {
     return this.request<Workflow>("GET", `/workflows/${encodeURIComponent(workflowId)}`);
   }
 
-  public createWorkflow(payload: Partial<Workflow> & { name: string }): Promise<Workflow> {
+  public createWorkflow(payload: Pick<Workflow, "name"> & Partial<Pick<Workflow, "description" | "status" | "trigger_config" | "viewport" | "nodes" | "edges">>): Promise<Workflow> {
     return this.request<Workflow>("POST", "/workflows/", { body: payload });
   }
 
-  public executeWorkflow(workflowId: string, triggerData?: Record<string, unknown>): Promise<WorkflowExecution> {
+  public updateWorkflow(workflowId: string, payload: Pick<Workflow, "name" | "description" | "status" | "trigger_config" | "viewport" | "nodes" | "edges"> & { expected_revision: number }): Promise<Workflow> {
+    return this.request<Workflow>("PUT", `/workflows/${encodeURIComponent(workflowId)}`, { body: payload });
+  }
+
+  public executeWorkflow(workflowId: string, review: { expected_revision: number; fingerprint: string; trigger_data?: Record<string, unknown> }): Promise<WorkflowExecution> {
     return this.request<WorkflowExecution>("POST", `/workflows/${encodeURIComponent(workflowId)}/execute`, {
-      body: { trigger_data: triggerData ?? {} },
+      body: review,
     });
+  }
+
+  public listWorkflowExecutions(workflowId: string): Promise<WorkflowExecution[]> {
+    return this.request<WorkflowExecution[]>("GET", `/workflows/${encodeURIComponent(workflowId)}/executions`);
+  }
+
+  public cancelWorkflowExecution(workflowId: string, executionId: string): Promise<{ status: string }> {
+    return this.request("POST", `/workflows/${encodeURIComponent(workflowId)}/executions/${encodeURIComponent(executionId)}/cancel`);
   }
 
   // -------------------------------------------------------------------------

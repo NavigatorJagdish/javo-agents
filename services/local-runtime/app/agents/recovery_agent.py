@@ -74,8 +74,8 @@ class RecoveryAgent(BaseAgent):
     def _restore_backup(self, task_data: dict) -> dict:
         backup_id = task_data.get("backup_id", "latest")
         return {
-            "status": "success",
+            "status": "blocked",
             "backup_id": backup_id,
-            "verified_checksum": True,
-            "restored_at": time.time(),
+            "verified_checksum": False,
+            "message": "Restore requires verified staging and offline installation; no data was restored.",
         }

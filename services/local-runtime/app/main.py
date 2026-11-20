@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from app.core.http_boundary import LocalHttpBoundary
 from sqlalchemy import select
 
 import app.models  # noqa: F401 - ensure all SQLAlchemy models are registered
@@ -19,10 +23,15 @@ from app.api import api_router
 from app.config import get_settings
 from app.core.resource_manager import get_resource_manager
 from app.core.scheduler import scheduler
+from app.core.local_auth import is_valid_owner_token, require_local_owner
 from app import database as db
 from app.database import close_db, create_tables, init_engine
 from app.models.agent import AgentDefinition, AgentStatus
 from app.services.content_watcher import get_content_watcher
+from app.services.timed_dispatch import timed_worker
+from app.services.agent_jobs import agent_worker
+from app.services.social_credentials import migrate_legacy_credentials
+from app.services.workflow_jobs import workflow_worker
 
 settings = get_settings()
 logging.basicConfig(
@@ -76,12 +85,21 @@ async def _seed_agents() -> None:
 
     agents = get_all_agents()
     async with db.async_session_factory() as session:
-        existing_res = await session.execute(select(AgentDefinition.agent_key))
-        existing_keys = set(existing_res.scalars().all())
+        existing_res = await session.execute(select(AgentDefinition))
+        existing = {row.agent_key: row for row in existing_res.scalars().all()}
 
         created = 0
         for key, agent in agents.items():
-            if key in existing_keys:
+            if key in existing:
+                # Refresh code-owned metadata on upgrade. Preserve owner enable
+                # choices, saved config and execution history.
+                definition = existing[key]
+                definition.name = getattr(agent, 'display_name', key)
+                definition.description = getattr(agent, 'description', '')
+                definition.version = getattr(agent, 'version', '1.0.0')
+                definition.capabilities = list(getattr(agent, 'capabilities', []))
+                definition.input_schema = getattr(agent, 'input_schema', {})
+                definition.output_schema = getattr(agent, 'output_schema', {})
                 continue
             definition = AgentDefinition(
                 agent_key=key,
@@ -99,12 +117,13 @@ async def _seed_agents() -> None:
             session.add(definition)
             created += 1
 
+        await session.commit()
         if created:
-            await session.commit()
             logger.info("Seeded %d agent definitions into database", created)
 
 
 def _ensure_directories() -> None:
+    settings = get_settings()
     for path_str in (
         settings.content_root,
         settings.upload_dir,
@@ -117,35 +136,49 @@ def _ensure_directories() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle for Javo Agents local runtime."""
+    settings = get_settings()
     logger.info("Starting %s v%s", settings.app_name, settings.app_version)
     _ensure_directories()
 
-    # Initialize database & tables
-    init_engine()
-    await create_tables()
-    await _seed_agents()
+    # Register cleanup before each start, including partially failed starts.
+    # AsyncExitStack attempts all cleanups even if an earlier cleanup raises.
+    async with AsyncExitStack() as cleanup:
+        cleanup.push_async_callback(close_db)
+        init_engine()
+        await create_tables()
+        await migrate_legacy_credentials()
+        await _seed_agents()
 
-    # Start background services
-    resource_mgr = get_resource_manager()
-    resource_mgr.start_worker()
+        resource_mgr = get_resource_manager()
+        cleanup.push_async_callback(resource_mgr.stop_worker)
+        resource_mgr.start_worker()
 
-    scheduler.start()
+        cleanup.callback(scheduler.shutdown, wait=False)
+        scheduler.start(paused=resource_mgr._paused or resource_mgr._emergency_stopped)
 
-    watcher = get_content_watcher()
-    watcher.start_watching(settings.content_root)
+        watcher = get_content_watcher()
+        cleanup.callback(watcher.stop)
+        watcher.start_watching(settings.content_root)
 
-    try:
-        yield
-    finally:
-        logger.info("Shutting down %s", settings.app_name)
-        watcher.stop()
-        scheduler.shutdown(wait=False)
-        await resource_mgr.stop_worker()
-        await close_db()
+        cleanup.push_async_callback(timed_worker.stop)
+        await timed_worker.start()
+
+        cleanup.push_async_callback(agent_worker.stop)
+        await agent_worker.start()
+
+        cleanup.push_async_callback(workflow_worker.stop)
+        await workflow_worker.start()
+
+        try:
+            yield
+        finally:
+            logger.info("Shutting down %s", settings.app_name)
+
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    settings = get_settings()
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -153,15 +186,33 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    application.add_middleware(LocalHttpBoundary)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.allowed_origins + ["http://127.0.0.1:3000", "http://127.0.0.1:5173"],
+        allow_origins=settings.allowed_origins + ["http://127.0.0.1:3000", "http://127.0.0.1:5173", "null"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    application.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]', 'testserver'])
 
-    application.include_router(api_router)
+    @application.exception_handler(RequestValidationError)
+    async def private_validation_error(request, error):
+        # Pydantic input/context can otherwise echo API keys or private content.
+        details = [{"loc": item["loc"], "type": item["type"], "msg": item["msg"]}
+                   for item in error.errors()]
+        return JSONResponse(status_code=422, content={"detail": details})
+
+    # Both path forms use exactly the same handlers and authentication boundary.
+    application.include_router(api_router, dependencies=[Depends(require_local_owner)])
+    application.include_router(api_router, prefix="/api", dependencies=[Depends(require_local_owner)])
+    from app.api.routes.integrations import mcp_router
+    application.include_router(mcp_router)
+
+    @application.get("/auth/status", tags=["auth"])
+    async def auth_status() -> dict[str, bool]:
+        token = get_settings().owner_access_token
+        return {"configured": bool(token and len(token.get_secret_value()) >= 32)}
 
     @application.get("/", tags=["root"])
     async def root() -> dict[str, Any]:
@@ -176,6 +227,9 @@ def create_app() -> FastAPI:
     @application.websocket("/ws")
     @application.websocket("/ws/events")
     async def websocket_endpoint(websocket: WebSocket) -> None:
+        if not is_valid_owner_token(websocket.headers.get("authorization")):
+            await websocket.close(code=1008)
+            return
         await ws_manager.connect(websocket)
         try:
             await websocket.send_json({"event": "connected", "data": {"version": settings.app_version}})
@@ -191,6 +245,8 @@ def create_app() -> FastAPI:
                 else:
                     await websocket.send_json({"event": "ack", "data": msg})
         except WebSocketDisconnect:
+            pass
+        finally:
             ws_manager.disconnect(websocket)
 
     # Serve built local web dashboard when present (localhost-only by default via JAVO_HOST=127.0.0.1)

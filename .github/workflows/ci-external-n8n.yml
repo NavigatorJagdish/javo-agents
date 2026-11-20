@@ -1,0 +1,44 @@
+name: External n8n reviewed workflow acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci-external-n8n.yml'
+      - 'integrations/n8n-*.json'
+      - 'scripts/prepare-n8n-acceptance.py'
+      - 'scripts/verify-n8n-engine.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.3'
+      - name: Install Javo verification runtime
+        run: pip install -r services/local-runtime/requirements.txt
+      - name: Prepare external pinned engine without lifecycle scripts
+        run: python scripts/prepare-n8n-acceptance.py --prefix "$RUNNER_TEMP/javo-external-n8n"
+      - name: Execute original template approve and reject paths
+        run: python scripts/verify-n8n-engine.py --node "$(command -v node)" --n8n-root "$RUNNER_TEMP/javo-external-n8n"
+      - name: Retain external dependency and native provenance reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-n8n-audit-and-provenance
+          path: |
+            ${{ runner.temp }}/javo-external-n8n/dependency-audit.json
+            ${{ runner.temp }}/javo-external-n8n/native-provenance.json
+          if-no-files-found: ignore
+          retention-days: 7

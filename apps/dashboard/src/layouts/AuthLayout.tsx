@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { RouteContent } from '../components/RouteContent';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sun, Moon, ArrowLeft } from 'lucide-react';
 import { Logo, Button } from '@javo/design-system';
@@ -70,7 +71,7 @@ export const AuthLayout: React.FC = () => {
             <span className="font-semibold text-[#008CA8] dark:text-[#00E5FF]">
               Step {currentIdx + 1} of {SETUP_STEPS.length}: {SETUP_STEPS[currentIdx]?.label}
             </span>
-            <span className="text-slate-500 dark:text-slate-400">{pct}% complete</span>
+            <span className="text-slate-500 dark:text-slate-400">Guide position: {pct}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
             <div
@@ -101,7 +102,7 @@ export const AuthLayout: React.FC = () => {
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-8">
         <div className="w-full max-w-3xl">
-          <Outlet />
+          <RouteContent><Outlet /></RouteContent>
         </div>
       </main>
     </div>

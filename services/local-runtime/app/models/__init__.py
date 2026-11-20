@@ -61,6 +61,8 @@ from app.models.task import (
     TaskState,
 )
 from app.models.user import Device, DeviceType, User, UserRole
+from app.models.integration import IntegrationGrant, IntegrationProposal  # noqa: F401
+from app.models.studio import StudioJob, TrendSnapshot  # noqa: F401
 from app.models.workflow import (
     NodeType,
     Workflow,
@@ -68,6 +70,7 @@ from app.models.workflow import (
     WorkflowExecution,
     WorkflowExecutionStatus,
     WorkflowNode,
+    WorkflowNodeReview,  # noqa: F401
     WorkflowStatus,
 )
 
@@ -142,4 +145,9 @@ __all__ = [
     "Alert",
     "AlertSeverity",
     "AlertStatus",
+    "PublicationApproval",
+    "PublicationAttempt",
+    "PublicationTimer",
 ]
+
+from app.models.publication import PublicationApproval, PublicationAttempt, PublicationTimer

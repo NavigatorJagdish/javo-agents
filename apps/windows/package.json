@@ -7,8 +7,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.cjs",
     "start": "npm run build && electron .",
-    "dist:win": "npm run build && electron-builder --win --config electron-builder.yml"
+    "verify:package": "node scripts/verify-package.cjs",
+    "dist:win": "npm run build && npm run verify:package && electron-builder --win --publish never --config electron-builder.yml"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
@@ -16,7 +18,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "26.9.0",
     "typescript": "^5.6.3"
   }
 }

@@ -1,0 +1,11 @@
+{
+  "name": "Javo scoped runtime status (manual, read only)",
+  "nodes": [
+    {"id": "manual", "name": "Manual start", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [240, 300], "parameters": {}},
+    {"id": "status", "name": "Read Javo status", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [480, 300],
+      "parameters": {"method": "POST", "url": "http://127.0.0.1:8000/api/integrations/mcp", "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth", "sendBody": true, "specifyBody": "json", "jsonBody": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"javo_runtime_status\",\"arguments\":{}}}", "options": {"timeout": 10000}}}
+  ],
+  "connections": {"Manual start": {"main": [[{"node": "Read Javo status", "type": "main", "index": 0}]]}},
+  "active": false,
+  "settings": {"executionOrder": "v1"}
+}

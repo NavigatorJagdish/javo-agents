@@ -13,5 +13,8 @@ psutil>=6.1.0
 watchdog>=5.0.3
 python-multipart>=0.0.12
 websockets>=13.1
+sherpa-onnx==2.0.1
+numpy>=1.26,<3
+defusedxml>=0.7.1
 pytest>=8.3.0
 pytest-asyncio>=0.24.0

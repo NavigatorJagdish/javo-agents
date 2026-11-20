@@ -1,44 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Link } from 'react-router-dom';
 import { Shield } from 'lucide-react';
 import { SetupStepCard } from './SetupStepCard';
 
-export const PrivacyControls: React.FC = () => {
-  const [redactPii, setRedactPii] = useState(true);
-  const [localOnlyMedia, setLocalOnlyMedia] = useState(true);
-
-  return (
-    <SetupStepCard
-      title="Privacy Firewall Controls"
-      subtitle="Configure data classification and external egress boundaries."
-      icon={<Shield className="h-6 w-6" />}
-      prevPath="/setup/voice"
-      nextPath="/setup/diagnostics"
-    >
-      <label className="flex items-center justify-between p-4 rounded-xl bg-slate-100 dark:bg-[#0B1026]/80 border border-slate-200 dark:border-white/10 cursor-pointer">
-        <div>
-          <p className="text-sm font-semibold">Auto-Redact PII Before Cloud Calls</p>
-          <p className="text-xs text-slate-400">Strips emails, phone numbers, and tokens before Gemini calls.</p>
-        </div>
-        <input
-          type="checkbox"
-          checked={redactPii}
-          onChange={(e) => setRedactPii(e.target.checked)}
-          className="h-4 w-4 accent-[#00E5FF]"
-        />
-      </label>
-
-      <label className="flex items-center justify-between p-4 rounded-xl bg-slate-100 dark:bg-[#0B1026]/80 border border-slate-200 dark:border-white/10 cursor-pointer">
-        <div>
-          <p className="text-sm font-semibold">Keep Raw Media Local Only</p>
-          <p className="text-xs text-slate-400">Video analysis runs exclusively on local Whisper + Qwen VL.</p>
-        </div>
-        <input
-          type="checkbox"
-          checked={localOnlyMedia}
-          onChange={(e) => setLocalOnlyMedia(e.target.checked)}
-          className="h-4 w-4 accent-[#00E5FF]"
-        />
-      </label>
-    </SetupStepCard>
-  );
-};
+export const PrivacyControls: React.FC = () => <SetupStepCard title="Privacy and recovery boundaries" subtitle="Review the protections that are implemented and what still needs work." icon={<Shield className="h-6 w-6" />} prevPath="/setup/voice" nextPath="/setup/diagnostics">
+  <p className="text-sm">The local runtime requires its owner credential. AI requests pass through the existing privacy checks; paid cloud execution is disabled. Provider and migrated social credentials use encrypted storage.</p>
+  <p className="text-sm">Account names, brand rules, content and other database records are not covered by whole-database encryption. Unknown legacy text may still contain sensitive data. Avoid putting secrets in captions, brand rules or prompts.</p>
+  <p className="text-sm text-slate-500">Database snapshots omit separate credential stores, keys, usage accounting and media. Complete encrypted profile recovery and export/deletion tools still need implementation. This guide does not change privacy settings.</p>
+  <Link to="/settings" className="text-cyan-600 dark:text-cyan-300 underline">Open provider and backup settings</Link>
+</SetupStepCard>;

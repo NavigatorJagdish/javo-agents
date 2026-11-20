@@ -1,5 +1,12 @@
 # Official Social Media APIs Guide (YouTube, Instagram Professional, Facebook Pages)
 
+> Historical planning notes, not a working connection guide for this build.
+> Official OAuth/client setup, persisted state, callback validation and capability
+> discovery are incomplete. Accounts returns501 for sign-in initiation; the
+> callback instructions below cannot currently connect an account. Consult
+> [current account and credential boundaries](../SOCIAL_ACCOUNTS.md). Recheck
+> official platform requirements before implementing a live connector.
+
 Javo Agents **only integrates with official platform APIs** using user-authorized OAuth 2.0 tokens. Unofficial scraping or password login automation is strictly unsupported.
 
 ---

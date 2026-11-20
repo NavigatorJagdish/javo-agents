@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import event
 
 from app.config import get_settings
 
@@ -26,6 +27,12 @@ def _get_engine():
         echo=settings.database_echo,
         connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
     )
+    if engine.dialect.name == 'sqlite':
+        @event.listens_for(engine.sync_engine, 'connect')
+        def protect_deleted_values(connection, record):
+            cursor = connection.cursor()
+            cursor.execute('PRAGMA secure_delete=ON')
+            cursor.close()
     return engine
 
 

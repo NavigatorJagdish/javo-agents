@@ -1,25 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Link } from 'react-router-dom';
 import { Mic } from 'lucide-react';
-import { WaveformVisualizer, Button } from '@javo/design-system';
 import { SetupStepCard } from './SetupStepCard';
 
-export const VoiceSetup: React.FC = () => {
-  const [testing, setTesting] = useState(false);
-
-  return (
-    <SetupStepCard
-      title="Voice Mode & Whisper STT"
-      subtitle="Verify your studio microphone and neural TTS output."
-      icon={<Mic className="h-6 w-6" />}
-      prevPath="/setup/telegram"
-      nextPath="/setup/privacy"
-    >
-      <div className="p-5 rounded-xl bg-slate-100 dark:bg-[#0B1026]/80 border border-slate-200 dark:border-white/10 flex flex-col items-center gap-4">
-        <WaveformVisualizer active={testing} bars={24} height={48} />
-        <Button size="sm" variant="secondary" onClick={() => setTesting(!testing)}>
-          {testing ? 'Stop Mic Test' : 'Test Microphone Input'}
-        </Button>
-      </div>
-    </SetupStepCard>
-  );
-};
+export const VoiceSetup: React.FC = () => <SetupStepCard title="Companion and local voice setup" subtitle="Select installed local speech models and test a short sample in Voice." icon={<Mic className="h-6 w-6" />} prevPath="/setup/telegram" nextPath="/setup/privacy">
+  <p className="text-sm">The companion accepts typed English, Hindi and Hinglish messages. Supported runtime commands use the real control handlers; AI text requires an available configured model and a resumed runtime.</p>
+  <p className="text-sm text-slate-500">Voice supports local Kokoro speech presets/effects and Whisper transcript review when their models are installed and selected. Wake word and voice-model training remain unavailable. This guide does not request microphone access or certify language quality.</p>
+  <Link to="/voice" className="text-cyan-600 dark:text-cyan-300 underline">Open companion and voice studio</Link>
+</SetupStepCard>;

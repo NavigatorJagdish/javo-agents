@@ -1,0 +1,3 @@
+# Optional developer clients; keep these out of the small desktop runtime.
+langgraph==1.2.22
+mcp==2.3.0

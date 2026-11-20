@@ -7,6 +7,9 @@ import hashlib
 import io
 import json
 import logging
+import re
+import sqlite3
+import time
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,9 +29,55 @@ class BackupService:
         settings = get_settings()
         self.backup_dir = Path(backup_dir or settings.backup_dir)
         self.backup_dir.mkdir(parents=True, exist_ok=True)
-        raw_secret = encryption_key or settings.encryption_key or settings.secret_key
+        raw_secret = encryption_key or settings.encryption_key
+        if not raw_secret:
+            raise ValueError("Configure a persistent backup encryption key before creating or restoring backups")
         derived = base64.urlsafe_b64encode(hashlib.sha256(raw_secret.encode()).digest())
         self._fernet = Fernet(derived)
+
+    def _backup_path(self, name: str) -> Path:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+\.jbackup", name):
+            raise ValueError("Invalid backup filename")
+        target = self.backup_dir / name
+        if target.is_symlink() or target.resolve().parent != self.backup_dir.resolve():
+            raise ValueError("Unsafe backup path")
+        return target
+
+    def _write_archive(self, raw_bytes: bytes, label: str, included_files: list[str]) -> dict:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", label):
+            raise ValueError("Invalid backup label")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        backup_name = f"javo_backup_{label}_{timestamp}.jbackup"
+        dest_path = self._backup_path(backup_name)
+        encrypted = self._fernet.encrypt(raw_bytes)
+        # Exclusive creation prevents overwriting an earlier checkpoint.
+        with dest_path.open("xb") as handle:
+            handle.write(encrypted)
+        checksum = hashlib.sha256(raw_bytes).hexdigest()
+        dest_path.with_suffix(".jbackup.sha256").write_text(checksum, encoding="utf-8")
+        return {"backup_file": backup_name, "path": str(dest_path), "size_bytes": len(encrypted),
+                "checksum": checksum, "files": included_files,
+                "created_at": datetime.now(timezone.utc).isoformat()}
+
+    def create_sqlite_backup(self, database_path: str | Path) -> dict:
+        """Online snapshot, including committed WAL content, without a plaintext temp file."""
+        source = Path(database_path).resolve()
+        if not source.is_file():
+            raise FileNotFoundError("Database file is unavailable")
+        with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True, timeout=5) as conn:
+            with sqlite3.connect(":memory:") as snapshot:
+                deadline = time.monotonic() + 10
+                def progress(status, remaining, total):
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("SQLite snapshot exceeded its deadline")
+                conn.backup(snapshot, pages=256, progress=progress, sleep=0.05)
+                data = snapshot.serialize()
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            info = tarfile.TarInfo(source.name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        return self._write_archive(buf.getvalue(), "sqlite", [source.name])
 
     def create_backup(
         self,
@@ -36,19 +85,16 @@ class BackupService:
         label: str = "manual",
     ) -> dict[str, Any]:
         """Bundle database and selected directories into an encrypted .jbackup archive."""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        backup_name = f"javo_backup_{label}_{timestamp}.jbackup"
-        dest_path = self.backup_dir / backup_name
-
         targets = [Path(p) for p in (include_paths or ["javo_agents.db", "scheduler_jobs.db"])]
         buf = io.BytesIO()
         included_files: list[str] = []
 
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             for target in targets:
-                if target.exists():
-                    tar.add(target, arcname=target.name)
-                    included_files.append(target.name)
+                if not target.exists() or target.is_symlink():
+                    raise ValueError("Backup input is missing or linked")
+                tar.add(target, arcname=target.name)
+                included_files.append(target.name)
 
             manifest = {
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -61,31 +107,14 @@ class BackupService:
             info.size = len(manifest_bytes)
             tar.addfile(info, io.BytesIO(manifest_bytes))
 
-        raw_bytes = buf.getvalue()
-        checksum = hashlib.sha256(raw_bytes).hexdigest()
-        encrypted = self._fernet.encrypt(raw_bytes)
-        dest_path.write_bytes(encrypted)
-
-        meta_path = dest_path.with_suffix(".jbackup.sha256")
-        meta_path.write_text(checksum, encoding="utf-8")
-
-        logger.info("Created encrypted backup %s (%d files)", dest_path, len(included_files))
-        return {
-            "backup_file": backup_name,
-            "path": str(dest_path),
-            "size_bytes": len(encrypted),
-            "checksum": checksum,
-            "files": included_files,
-            "created_at": manifest["created_at"],
-        }
+        return self._write_archive(buf.getvalue(), label, included_files)
 
     def verify_backup(self, backup_name: str) -> dict[str, Any]:
         """Decrypt and verify integrity of a backup file against its SHA-256 checksum."""
-        target = self.backup_dir / backup_name
-        if not target.exists():
-            return {"valid": False, "error": "Backup file not found"}
-
         try:
+            target = self._backup_path(backup_name)
+            if not target.exists():
+                return {"valid": False, "error": "Backup file not found"}
             encrypted = target.read_bytes()
             decrypted = self._fernet.decrypt(encrypted)
             actual_hash = hashlib.sha256(decrypted).hexdigest()
@@ -107,21 +136,42 @@ class BackupService:
         if not verification.get("valid"):
             raise ValueError(f"Backup verification failed: {verification.get('error')}")
 
-        target = self.backup_dir / backup_name
+        target = self._backup_path(backup_name)
         decrypted = self._fernet.decrypt(target.read_bytes())
         dest = Path(restore_dir)
+        if dest.is_symlink() or (dest.exists() and any(dest.iterdir())):
+            raise ValueError("Restore requires an empty staging directory; stop runtime before offline installation")
         dest.mkdir(parents=True, exist_ok=True)
 
         extracted: list[str] = []
         with tarfile.open(fileobj=io.BytesIO(decrypted), mode="r:gz") as tar:
-            for member in tar.getmembers():
+            members = tar.getmembers()
+            seen = set()
+            total = 0
+            for member in members:
+                name = member.name
+                member_path = (dest / name).resolve()
+                if (not (member.isfile() or member.isdir()) or "\\" in name or ":" in name
+                        or name.startswith("/") or ".." in Path(name).parts
+                        or not member_path.is_relative_to(dest.resolve())
+                        or name.casefold() in seen):
+                    raise ValueError("Unsafe path or member in backup archive")
+                seen.add(name.casefold())
+                total += member.size
+                if len(seen) > 10000 or total > 512 * 1024 * 1024:
+                    raise ValueError("Backup exceeds staging restore limits")
+            # Validate the complete member list before writing any files.
+            for member in members:
                 if member.name == "manifest.json":
                     continue
-                # Prevent path traversal
                 member_path = (dest / member.name).resolve()
-                if not str(member_path).startswith(str(dest.resolve())):
-                    raise ValueError(f"Unsafe path in backup archive: {member.name}")
-                tar.extract(member, path=dest)
+                if member.isdir():
+                    member_path.mkdir(parents=True, exist_ok=True)
+                else:
+                    member_path.parent.mkdir(parents=True, exist_ok=True)
+                    with member_path.open("xb") as target_file:
+                        import shutil
+                        shutil.copyfileobj(tar.extractfile(member), target_file)
                 extracted.append(member.name)
 
         logger.info("Restored backup %s (%d items)", backup_name, len(extracted))

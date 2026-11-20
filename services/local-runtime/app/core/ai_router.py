@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 from enum import Enum
 from typing import Any, Optional
 
 import httpx
 
 from app.config import get_settings
+from app.core.usage_ledger import UsageLedger
+from app.services import provider_settings
 from app.core.privacy_firewall import DataClassification, get_privacy_firewall
 
 logger = logging.getLogger(__name__)
@@ -31,130 +35,44 @@ class AIResponse:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
-    cost_usd: float = 0.0
+    cost_usd: float | None = None
+    usage_reported: bool = False
     latency_ms: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class UsageTracker:
-    daily_spend_usd: float = 0.0
-    monthly_spend_usd: float = 0.0
-    total_requests: int = 0
-    total_tokens: int = 0
-    last_reset_day: str = ""
-    last_reset_month: str = ""
-    provider_counts: dict[str, int] = field(default_factory=dict)
-
-    def maybe_reset(self) -> None:
-        now = datetime.now(timezone.utc)
-        day_str = now.strftime("%Y-%m-%d")
-        month_str = now.strftime("%Y-%m")
-        if self.last_reset_day != day_str:
-            self.daily_spend_usd = 0.0
-            self.last_reset_day = day_str
-        if self.last_reset_month != month_str:
-            self.monthly_spend_usd = 0.0
-            self.last_reset_month = month_str
-
-
-# Approximate USD cost per 1K tokens
-MODEL_COSTS_PER_1K: dict[str, tuple[float, float]] = {
-    "ollama": (0.0, 0.0),
-    "gemini-2.0-flash": (0.0001, 0.0004),
-    "gemini-1.5-flash": (0.000075, 0.0003),
-    "gemini-1.5-pro": (0.00125, 0.005),
-    "gpt-4o-mini": (0.00015, 0.0006),
-    "gpt-4o": (0.0025, 0.01),
-}
 
 
 class AIRouter:
     """Routes AI requests across Ollama, Gemini, and OpenAI-compatible providers."""
 
     def __init__(self):
-        self.usage = UsageTracker()
-        self._provider_overrides: dict[str, dict[str, Any]] = {}
+        pass  # Accounting is shared through the durable profile ledger.
 
     def configure_provider(self, provider: str, config: dict[str, Any]) -> None:
-        """Update runtime configuration for an AI provider."""
-        self._provider_overrides[provider] = {
-            **self._provider_overrides.get(provider, {}),
-            **config,
-        }
-        logger.info("Configured AI provider override for %s", provider)
+        """Persist configuration using the same policy as the owner API."""
+        provider_settings.update_provider(provider, config)
+
+    def _ledger(self) -> UsageLedger:
+        settings = provider_settings.get_settings()
+        path = settings.usage_ledger_path or str(Path(settings.provider_config_path).with_name('usage-ledger.sqlite'))
+        return UsageLedger(path)
 
     def get_provider_status(self) -> dict[str, Any]:
-        """Return configured providers and usage metrics."""
-        settings = get_settings()
-        self.usage.maybe_reset()
-        return {
-            "default_provider": settings.default_ai_provider,
-            "providers": {
-                "ollama": {
-                    "enabled": True,
-                    "base_url": self._provider_overrides.get("ollama", {}).get(
-                        "base_url", settings.ollama_base_url
-                    ),
-                    "model": self._provider_overrides.get("ollama", {}).get(
-                        "model", settings.ollama_default_model
-                    ),
-                    "local": True,
-                },
-                "gemini": {
-                    "enabled": bool(
-                        self._provider_overrides.get("gemini", {}).get("api_key")
-                        or settings.gemini_api_key
-                    ),
-                    "model": self._provider_overrides.get("gemini", {}).get(
-                        "model", settings.gemini_model
-                    ),
-                    "local": False,
-                },
-                "openai": {
-                    "enabled": bool(
-                        self._provider_overrides.get("openai", {}).get("api_key")
-                        or settings.openai_api_key
-                    ),
-                    "base_url": self._provider_overrides.get("openai", {}).get(
-                        "base_url", settings.openai_base_url
-                    ),
-                    "model": self._provider_overrides.get("openai", {}).get(
-                        "model", settings.openai_model
-                    ),
-                    "local": False,
-                },
-            },
-            "usage": {
-                "daily_spend_usd": round(self.usage.daily_spend_usd, 6),
-                "monthly_spend_usd": round(self.usage.monthly_spend_usd, 6),
-                "daily_budget_usd": settings.ai_daily_budget,
-                "monthly_budget_usd": settings.ai_monthly_budget,
-                "total_requests": self.usage.total_requests,
-                "total_tokens": self.usage.total_tokens,
-                "provider_counts": self.usage.provider_counts,
-            },
-        }
+        settings = provider_settings.effective()["settings"]
+        providers = {item["name"]: {**item, "local": item["name"] == "ollama"}
+                     for item in provider_settings.metadata()}
+        usage = self._ledger().summary()
+        usage.update(daily_budget_usd=settings["ai_daily_budget"], monthly_budget_usd=settings["ai_monthly_budget"])
+        return {"default_provider": settings["default_ai_provider"], "providers": providers, "usage": usage}
 
     def _check_budget(self, provider: str) -> None:
-        settings = get_settings()
-        self.usage.maybe_reset()
         if provider == AIProvider.OLLAMA.value:
-            return  # Local inference is zero-cost
-        if self.usage.daily_spend_usd >= settings.ai_daily_budget:
-            raise RuntimeError(
-                f"Daily AI budget exceeded (${self.usage.daily_spend_usd:.4f} / ${settings.ai_daily_budget:.2f})"
-            )
-        if self.usage.monthly_spend_usd >= settings.ai_monthly_budget:
-            raise RuntimeError(
-                f"Monthly AI budget exceeded (${self.usage.monthly_spend_usd:.4f} / ${settings.ai_monthly_budget:.2f})"
-            )
+            return
+        # Configuration/environment values are not authorization to spend. No
+        # current price schedule or paid activation has been approved/verified.
+        raise RuntimeError("Cloud budget execution is disabled pending verified pricing and explicit paid authorization")
 
-    def _estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int, provider: str) -> float:
-        if provider == AIProvider.OLLAMA.value:
-            return 0.0
-        in_rate, out_rate = MODEL_COSTS_PER_1K.get(model, (0.0005, 0.0015))
-        return (prompt_tokens / 1000.0) * in_rate + (completion_tokens / 1000.0) * out_rate
+    def _estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int, provider: str) -> float | None:
+        return 0.0 if provider == AIProvider.OLLAMA.value else None
 
     async def generate(
         self,
@@ -168,9 +86,14 @@ class AIRouter:
         fallback_to_local: bool = True,
     ) -> AIResponse:
         """Route a text generation request with privacy firewall and budget checks."""
-        settings = get_settings()
-        chosen_provider = provider or settings.default_ai_provider
-        max_tok = max_tokens or settings.max_tokens_per_request
+        settings = provider_settings.effective()["settings"]
+        chosen_provider = provider or settings["default_ai_provider"]
+        if chosen_provider not in provider_settings.PROVIDERS:
+            raise ValueError("Unsupported AI provider")
+        chosen_model = model
+        if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1):
+            raise ValueError("Requested max tokens must be a positive integer")
+        max_tok = min(max_tokens or settings["max_tokens_per_request"], settings["max_tokens_per_request"])
 
         # Enforce privacy firewall before egress
         firewall = get_privacy_firewall()
@@ -187,6 +110,7 @@ class AIRouter:
                     decision.reason,
                 )
                 chosen_provider = AIProvider.OLLAMA.value
+                chosen_model = None
             else:
                 raise PermissionError(f"Privacy firewall blocked AI egress: {decision.reason}")
 
@@ -204,47 +128,50 @@ class AIRouter:
             if fallback_to_local and chosen_provider != AIProvider.OLLAMA.value:
                 logger.warning("Budget exceeded for %s; falling back to local ollama", chosen_provider)
                 chosen_provider = AIProvider.OLLAMA.value
+                chosen_model = None
             else:
                 raise
 
+        config = self._provider_config(chosen_provider)
+        request_id = str(uuid4())
+        ledger = self._ledger()
+        # Persist intent before any provider call. A storage failure prevents
+        # inference; no process-local counter can replace the durable record.
+        if not ledger.reserve(request_id, chosen_provider, chosen_model or config["model"]):
+            raise RuntimeError("AI request ID is already recorded; duplicate dispatch blocked")
         start = time.perf_counter()
         try:
             if chosen_provider == AIProvider.OLLAMA.value:
                 resp = await self._call_ollama(
-                    sanitized_prompt, sanitized_system, model, temperature, max_tok
+                    sanitized_prompt, sanitized_system, chosen_model, temperature, max_tok
                 )
             elif chosen_provider == AIProvider.GEMINI.value:
                 resp = await self._call_gemini(
-                    sanitized_prompt, sanitized_system, model, temperature, max_tok
+                    sanitized_prompt, sanitized_system, chosen_model, temperature, max_tok
                 )
             elif chosen_provider == AIProvider.OPENAI.value:
                 resp = await self._call_openai(
-                    sanitized_prompt, sanitized_system, model, temperature, max_tok
+                    sanitized_prompt, sanitized_system, chosen_model, temperature, max_tok
                 )
             else:
-                raise ValueError(f"Unsupported AI provider: {chosen_provider}")
-        except Exception as exc:
-            if fallback_to_local and chosen_provider != AIProvider.OLLAMA.value:
-                logger.warning("Provider %s failed (%s); falling back to ollama", chosen_provider, exc)
-                resp = await self._call_ollama(
-                    sanitized_prompt, sanitized_system, None, temperature, max_tok
-                )
-            else:
-                raise
-
+                raise ValueError("Unsupported AI provider")
+        except (Exception, asyncio.CancelledError):
+            ledger.fail(request_id)
+            raise
         resp.latency_ms = round((time.perf_counter() - start) * 1000, 2)
-        self._record_usage(resp)
+        # Cloud execution is deliberately disabled. The supported local API
+        # charge is known zero; missing token counts remain explicitly unknown.
+        ledger.settle(request_id, prompt_tokens=resp.prompt_tokens if resp.usage_reported else None,
+                      completion_tokens=resp.completion_tokens if resp.usage_reported else None,
+                      cost_microusd=0)
         return resp
 
-    def _record_usage(self, resp: AIResponse) -> None:
-        self.usage.maybe_reset()
-        self.usage.total_requests += 1
-        self.usage.total_tokens += resp.total_tokens
-        self.usage.daily_spend_usd += resp.cost_usd
-        self.usage.monthly_spend_usd += resp.cost_usd
-        self.usage.provider_counts[resp.provider] = (
-            self.usage.provider_counts.get(resp.provider, 0) + 1
-        )
+    def _provider_config(self, provider: str) -> dict:
+        config = provider_settings.effective()["providers"][provider]
+        if not config["enabled"]:
+            raise RuntimeError("Selected AI provider is disabled")
+        provider_settings._validate_url(provider, config["base_url"])
+        return config
 
     async def _call_ollama(
         self,
@@ -255,7 +182,7 @@ class AIRouter:
         max_tokens: int,
     ) -> AIResponse:
         settings = get_settings()
-        override = self._provider_overrides.get("ollama", {})
+        override = self._provider_config("ollama")
         base_url = override.get("base_url", settings.ollama_base_url).rstrip("/")
         chosen_model = model or override.get("model", settings.ollama_default_model)
 
@@ -280,8 +207,10 @@ class AIRouter:
             data = res.json()
 
         content = data.get("message", {}).get("content", "")
-        prompt_tokens = int(data.get("prompt_eval_count", 0))
-        completion_tokens = int(data.get("eval_count", 0))
+        usage_reported = all(isinstance(data.get(key), int) and not isinstance(data[key], bool)
+                             and 0 <= data[key] <= 10**15 for key in ("prompt_eval_count", "eval_count"))
+        prompt_tokens = data["prompt_eval_count"] if usage_reported else 0
+        completion_tokens = data["eval_count"] if usage_reported else 0
         return AIResponse(
             content=content,
             provider=AIProvider.OLLAMA.value,
@@ -290,6 +219,7 @@ class AIRouter:
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
             cost_usd=0.0,
+            usage_reported=usage_reported,
             raw=data,
         )
 
@@ -302,15 +232,16 @@ class AIRouter:
         max_tokens: int,
     ) -> AIResponse:
         settings = get_settings()
-        override = self._provider_overrides.get("gemini", {})
-        api_key = override.get("api_key") or settings.gemini_api_key
+        self._check_budget("gemini")
+        override = self._provider_config("gemini")
+        api_key = override.get("api_key")
         if not api_key:
             raise RuntimeError("Gemini API key is not configured")
         chosen_model = model or override.get("model", settings.gemini_model)
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{chosen_model}:generateContent?key={api_key}"
+            f"{chosen_model}:generateContent"
         )
         body: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -323,7 +254,7 @@ class AIRouter:
             body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            res = await client.post(url, json=body)
+            res = await client.post(url, json=body, headers={"x-goog-api-key": api_key})
             res.raise_for_status()
             data = res.json()
 
@@ -355,8 +286,9 @@ class AIRouter:
         max_tokens: int,
     ) -> AIResponse:
         settings = get_settings()
-        override = self._provider_overrides.get("openai", {})
-        api_key = override.get("api_key") or settings.openai_api_key
+        self._check_budget("openai")
+        override = self._provider_config("openai")
+        api_key = override.get("api_key")
         if not api_key:
             raise RuntimeError("OpenAI API key is not configured")
         base_url = override.get("base_url", settings.openai_base_url).rstrip("/")
@@ -401,7 +333,7 @@ class AIRouter:
     async def check_ollama_health(self) -> dict[str, Any]:
         """Check if local Ollama daemon is reachable and list loaded models."""
         settings = get_settings()
-        base_url = self._provider_overrides.get("ollama", {}).get(
+        base_url = self._provider_config("ollama").get(
             "base_url", settings.ollama_base_url
         ).rstrip("/")
         try:
