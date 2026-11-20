@@ -18,6 +18,10 @@ from app.core.control_state import ControlState, ControlStateStore
 logger = logging.getLogger(__name__)
 
 
+class WorkAdmissionRefused(RuntimeError):
+    """No operation was queued or started; capacity/control refused admission."""
+
+
 @dataclass
 class SystemMetrics:
     cpu_percent: float
@@ -141,7 +145,7 @@ class ResourceManager:
             raise ValueError("Task ID is empty or already queued/running")
         allowed, reason = self.can_accept_work()
         if not allowed:
-            raise RuntimeError(reason)
+            raise WorkAdmissionRefused(reason)
         if not self._workers or not any(not w.done() for w in self._workers):
             self.start_worker()
         future = asyncio.get_running_loop().create_future()

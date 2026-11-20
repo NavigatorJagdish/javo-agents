@@ -89,6 +89,12 @@ interrupts supported running operations and prevents late success overwrites.
 Archiving prevents/interrupts execution; definition pause holds queued work.
 Use explicit cancellation when a reviewed snapshot should never run later.
 
+If capacity changes between claiming a run and resource admission, an operation
+that was never invoked returns to the saved queue within its existing deadline.
+An exception after invocation fails unconfirmed and never triggers automatic
+replay. A typed admission refusal and an explicit invocation marker keep these
+cases distinct; CPU/RAM/pause limits are preserved.
+
 An OS lease prevents competing workflow dispatchers for one database. Queued
 reviewed runs survive restart; interrupted runs become failed/unconfirmed and
 are not automatically replayed. Graceful shutdown cancels owned active work.

@@ -17,7 +17,7 @@ from app import database as db
 from app.config import get_settings
 from app.core.ai_router import get_ai_router
 from app.core.local_identity import LOCAL_OWNER, OWNER_IDS
-from app.core.resource_manager import get_resource_manager
+from app.core.resource_manager import get_resource_manager, WorkAdmissionRefused
 from app.core.runtime_lease import RuntimeLease
 from app.models.security import AuditAction, AuditLog
 from app.models.workflow import (
@@ -401,10 +401,15 @@ class WorkflowWorker:
     async def _one(self, claim):
         key, value = claim
         self._active_id = key
+        started = False
+        async def admitted():
+            nonlocal started
+            started = True
+            return await self._invoke(key, value)
         try:
             self._operation = asyncio.create_task(
                 get_resource_manager().submit_task(
-                    "workflow-" + key, lambda: self._invoke(key, value)
+                    "workflow-" + key, admitted
                 )
             )
             await asyncio.wait_for(self._operation, timeout=180)
@@ -415,11 +420,18 @@ class WorkflowWorker:
                 raise
         except ReviewWait:
             pass  # Durable WAITING_APPROVAL releases this resource task.
+        except WorkAdmissionRefused:
+            if started:
+                # A refusal raised inside actual work is not proof it did not run.
+                await self._finish(key, State.FAILED, 'An admitted operation failed; no automatic replay')
+            else:
+                await self._defer_unstarted(key, value)
         except RunCancelled:
             await self._finish(
                 key, State.CANCELLED, "Execution cancelled, archived or no longer authorized"
             )
-        except Exception:
+        except Exception as error:
+            logger.warning('Local workflow segment failed (%s)', type(error).__name__)
             await self._finish(
                 key,
                 State.FAILED,
@@ -427,6 +439,24 @@ class WorkflowWorker:
             )
         finally:
             self._operation = self._active_id = None
+
+    async def _defer_unstarted(self, key, value):
+        """Close claim/admission race without replaying an invoked operation."""
+        async with db.async_session_factory() as session:
+            await session.execute(text('BEGIN IMMEDIATE'))
+            row = await session.get(Run, key)
+            if row and row.status == State.RUNNING and saved_run(row) == value:
+                workflow = await session.get(Workflow, row.workflow_id)
+                if (get_resource_manager()._emergency_stopped or not workflow or
+                        workflow.user_id not in OWNER_IDS or workflow.status == WorkflowStatus.ARCHIVED):
+                    row.status, row.error = State.CANCELLED, 'Work cancelled before admission'
+                    row.completed_at = datetime.now(timezone.utc)
+                elif datetime.fromisoformat(value['deadline']) <= datetime.now(timezone.utc):
+                    row.status, row.error = State.FAILED, 'Queued run expired before admission'
+                    row.completed_at = datetime.now(timezone.utc)
+                else:
+                    row.status = State.QUEUED
+            await session.commit()
 
     async def _run(self):
         while True:

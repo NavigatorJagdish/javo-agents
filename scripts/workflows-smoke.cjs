@@ -111,6 +111,15 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'Workflows',exact:true}).click();
     await page.getByLabel('Saved workflow',{exact:true}).selectOption(branchId);
     await page.getByRole('button',{name:'Open saved workflow',exact:true}).click();
+    const outcomeDeadline=Date.now()+30000;
+    let continued;
+    do {
+      continued=await(await page.request.get(base+'/api/workflows/'+branchId+'/executions',{headers})).json();
+      assert(!continued.some(r=>r.status==='failed'||r.status==='cancelled'),'Continuation refused: '+JSON.stringify(continued.map(r=>({status:r.status,error:r.error,current_node_id:r.current_node_id}))));
+      if(continued[0]?.status==='completed')break;
+      await new Promise(resolve=>setTimeout(resolve,250));
+    } while(Date.now()<outcomeDeadline);
+    assert.equal(continued[0]?.status,'completed','Saved continuation status: '+continued[0]?.status);
     await page.getByText('Run: completed · revision 1',{exact:true}).waitFor();
     const actualRuns=await(await page.request.get(base+'/api/workflows/'+branchId+'/executions',{headers})).json();
     const events=actualRuns[0].execution_log.filter(e=>e.event==='completed');

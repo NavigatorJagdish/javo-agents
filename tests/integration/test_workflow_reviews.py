@@ -380,3 +380,57 @@ def test_orphaned_legacy_wait_is_failed_on_restart_without_execution(owner_runti
         result = client.get("/api/workflows/executions/" + run["id"]).json()
         assert result["status"] == "failed" and "missing owner-review" in result["error"]
         assert not model
+
+
+def test_capacity_change_after_claim_defers_unstarted_work_without_replaying(
+    owner_runtime, model, monkeypatch
+):
+    from app.core.resource_manager import ResourceManager, WorkAdmissionRefused
+
+    original = ResourceManager.submit_task
+    attempts = []
+
+    async def admission(self, key, factory):
+        attempts.append(key)
+        if len(attempts) == 1:
+            raise WorkAdmissionRefused("Synthetic capacity change before admission")
+        return await original(self, key, factory)
+
+    monkeypatch.setattr(ResourceManager, "submit_task", admission)
+    factory, _ = owner_runtime
+    with factory() as client:
+        run = enqueue(client, create(client, graph(gate=False)))
+        client.post("/api/security/resume")
+        result = wait(client, run, "completed")
+        assert len(attempts) == 2 and len(model) == 1
+        assert (
+            len(
+                [
+                    e
+                    for e in result["execution_log"]
+                    if e["event"] == "completed" and e["node_type"] == "ai_prompt"
+                ]
+            )
+            == 1
+        )
+
+
+def test_refusal_raised_inside_admitted_work_is_failed_without_automatic_retry(
+    owner_runtime, monkeypatch
+):
+    from app.core.ai_router import AIRouter
+    from app.core.resource_manager import WorkAdmissionRefused
+
+    calls = []
+
+    async def generate(self, *args, **kwargs):
+        calls.append(1)
+        raise WorkAdmissionRefused("Synthetic error inside invoked work")
+
+    monkeypatch.setattr(AIRouter, "generate", generate)
+    factory, _ = owner_runtime
+    with factory() as client:
+        run = enqueue(client, create(client, graph(gate=False)))
+        client.post("/api/security/resume")
+        result = wait(client, run, "failed")
+        assert len(calls) == 1 and "no automatic replay" in result["error"]
