@@ -49,3 +49,20 @@ Other types can be saved for planning and are rejected before enqueue.
 Retries, automatic triggers, voice/media nodes and live publishing require
 implementation and independent acceptance. The n8n
 template's control nodes do not make those native Javo nodes executable.
+
+## Independent engine acceptance
+
+The optional External n8n reviewed workflow acceptance CI job installs pinned
+n8n2.48.7 outside the checkout, suppresses all upstream lifecycle scripts and
+loads only seven core node types. It uses the official SQLite release binding,
+records whether a vendor digest was available, retains dependency-audit reports
+and refuses to proceed with critical findings. Remaining findings are not waived
+by an engine pass. This independently licensed runtime is never an app payload.
+
+`scripts/verify-n8n-engine.py` imports the original template with a disposable
+scoped client credential and isolated Javo profile. It exercises actual approval,
+bounded status polling, result verification and rejection without dispatch. It
+uses no owner credentials, live social/email action, cloud model or paid service.
+A green engine check proves those paths on that runner; it does not certify
+every n8n node, production security or readiness on an8GB laptop. Run one heavy
+external tool at a time; the laptop's interrupted install remains unverified.
