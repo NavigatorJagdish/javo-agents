@@ -64,12 +64,14 @@ def test_binary_speech_transcript_review_and_runtime_guards(owner_runtime, tmp_p
         client.put('/api/voice/configuration', json={'tts_model_dir': str(tts), 'asr_model_dir': str(asr)})
         assert client.post('/api/voice/tts', json={'text': 'Hello'}).status_code == 409
         assert client.post('/api/security/resume').status_code == 200
-        output = client.post('/api/voice/tts', json={'text': 'Hello', 'voice': 'hf_alpha', 'effect': 'echo'})
+        output = client.post('/api/voice/tts', json={'text': 'Hello', 'voice': 'hf_alpha', 'effect': 'echo','emotion':'happy','emotion_strength':0.8})
         assert output.status_code == 200, output.text
         assert output.content.startswith(b'RIFF') and output.headers['cache-control'] == 'no-store'
         assert calls[-1]['speaker'] == 31 and calls[-1]['effect'] == 'echo'
+        assert calls[-1]['emotion']=='happy' and calls[-1]['emotion_strength']==0.8
         assert not Path(calls[-1]['output']).exists()
-        for data in [{'text': ' '}, {'text': 'x', 'voice': 'unknown'}, {'text': 'x', 'effect': 'shell'}, {'text': 'x', 'speed': 4}, {'text': 'x'*801}]:
+        for data in [{'text': ' '}, {'text': 'x', 'voice': 'unknown'}, {'text': 'x', 'effect': 'shell'}, {'text': 'x', 'speed': 4}, {'text': 'x'*801},
+                     {'text':'x','emotion':'exec'}, {'text':'x','emotion_strength':1.1}, {'text':'x','emotion_strength':True}, {'text':'x','speed':True}]:
             assert client.post('/api/voice/tts', json=data).status_code == 422
         assert client.post('/api/voice/transcribe', files={'file': ('bad.wav', b'not audio')}).status_code == 422
         result = client.post('/api/voice/transcribe', files={'file': ('clip.wav', wav())}, data={'language': 'hi'})
@@ -157,3 +159,29 @@ async def test_actual_speech_process_tree_is_killed_on_cancel(monkeypatch, tmp_p
                     process.kill()
             except psutil.NoSuchProcess:
                 pass
+
+
+def test_companion_only_labels_uninvoked_capacity_refusals_safe_to_retry(owner_runtime, monkeypatch):
+    from app.core.resource_manager import get_resource_manager, WorkAdmissionRefused
+    from app.core.ai_router import AIRouter
+    create,_=owner_runtime
+    with create() as client:
+        client.post('/api/security/resume')
+        manager=get_resource_manager()
+        monkeypatch.setattr(manager,'can_accept_work',lambda:(False,'Synthetic CPU busy'))
+        payload={'transcript':'Write synthetic advice'}
+        first=client.post('/api/voice/command',json=payload)
+        assert first.status_code==503 and first.headers['x-javo-admission']=='not-started'
+        monkeypatch.setattr(manager,'can_accept_work',lambda:(True,'OK'))
+        original=manager.submit_task
+        async def refused(key,factory):
+            raise WorkAdmissionRefused('Synthetic capacity race before invocation')
+        monkeypatch.setattr(manager,'submit_task',refused)
+        second=client.post('/api/voice/command',json=payload)
+        assert second.status_code==503 and second.headers['x-javo-admission']=='not-started'
+        monkeypatch.setattr(manager,'submit_task',original)
+        async def invoked(self,*args,**kwargs):
+            raise WorkAdmissionRefused('Synthetic refusal inside an invoked operation')
+        monkeypatch.setattr(AIRouter,'generate',invoked)
+        third=client.post('/api/voice/command',json=payload)
+        assert third.status_code==503 and 'x-javo-admission' not in third.headers

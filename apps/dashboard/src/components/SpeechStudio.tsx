@@ -3,7 +3,7 @@ import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {Button, Card} from '@javo/design-system';
 import {ApiError, apiMediaRequest, apiRequest} from '../api/client';
 
-interface Capabilities { text_to_speech: boolean; speech_to_text: boolean; message: string; voices: {id: string; name: string; language: string}[]; effects: string[] }
+interface Capabilities { text_to_speech: boolean; speech_to_text: boolean; message: string; voices: {id: string; name: string; language: string}[]; effects: string[]; emotions?: string[] }
 interface Configuration {tts_model_dir: string; asr_model_dir: string; pronunciations?: Record<string,string>}
 export function errorText(error: unknown) {
   const detail = error instanceof ApiError ? (error.detail as {detail?: unknown})?.detail : null;
@@ -29,6 +29,7 @@ export const SpeechStudio: React.FC<{onTranscript?: (text: string) => void}> = (
   const [configuration, setConfiguration] = useState<Configuration>({tts_model_dir: '', asr_model_dir: ''});
   const [text, setText] = useState('Hello! Welcome to Javo. Let’s create something useful today.');
   const [voice, setVoice] = useState('af_heart'); const [speed, setSpeed] = useState(1); const [effect, setEffect] = useState('natural');
+  const [emotion,setEmotion]=useState('neutral');const [strength,setStrength]=useState(0.6);
   const [recognition, setRecognition] = useState('auto'); const [transcript, setTranscript] = useState('');
   const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const [recording, setRecording] = useState(false);
   const [audio, setAudio] = useState(''); const audioUrl = useRef(''); const controller = useRef<AbortController | null>(null);
@@ -100,10 +101,13 @@ export const SpeechStudio: React.FC<{onTranscript?: (text: string) => void}> = (
       <label className="text-sm">Effect<select aria-label="Speech effect" className={style} value={effect} disabled={busy} onChange={e => setEffect(e.target.value)}>{(cfg?.effects ?? ['natural']).map(e => <option key={e}>{e}</option>)}</select></label>
       <label className="text-sm">Speed {speed.toFixed(2)}×<input aria-label="Speech speed" type="range" min="0.75" max="1.5" step="0.05" value={speed} disabled={busy} onChange={e => setSpeed(Number(e.target.value))}/></label>
     </div>
+    <div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Tone preset<select aria-label="Speech tone" className={style} value={emotion} disabled={busy} onChange={e=>setEmotion(e.target.value)}>{(cfg?.emotions??['neutral']).map(name=><option key={name} value={name}>{name==='playful'?'Playful / teasing':name==='laugh'?'Laugh-like rhythmic effect':name}</option>)}</select></label><label className="text-sm">Tone intensity {Math.round(strength*100)}%<input aria-label="Speech tone intensity" type="range" min="0" max="1" step="0.1" value={strength} disabled={busy} onChange={e=>setStrength(Number(e.target.value))}/></label></div>
+    <p className="text-xs">These presets adjust pace, pitch and energy; they are not a trained emotion model. Laugh-like adds rhythm. For spoken “ha-ha”, add the syllables below and review the text; natural laughter and custom voice training need a compatible expressive model and authorized recordings.</p>
+    <Button variant="ghost" disabled={busy||text.length>792} onClick={()=>setText(current=>current.length<=792?'Ha, ha! '+current:current)}>Add visible laugh syllables</Button>
     <label className="block text-sm">Text to speak<textarea aria-label="Text to speak" className={style} rows={3} maxLength={800} value={text} onChange={e => setText(e.target.value)}/></label>
     <p className="text-xs">Deep/bright effects shift pitch and duration together. Hindi presets work best with Devanagari; mixed Hinglish pronunciation needs review.</p>
     <Button disabled={busy || !cfg?.text_to_speech || !text.trim()} onClick={() => void perform(async signal => {
-      const response = await apiMediaRequest('/api/voice/tts', {method: 'POST', signal, headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text, voice, speed, effect})});
+      const response = await apiMediaRequest('/api/voice/tts', {method: 'POST', signal, headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text, voice, speed, effect,emotion,emotion_strength:strength})});
       const blob = await response.blob(); if (!live.current || signal.aborted) return;
       URL.revokeObjectURL(audioUrl.current); audioUrl.current = URL.createObjectURL(blob); setAudio(audioUrl.current); setNotice('Audio generated locally. Play or download the AI voice.');
     })}>Generate voice</Button>

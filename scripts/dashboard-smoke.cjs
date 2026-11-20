@@ -50,12 +50,25 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading', { name: 'Javo companion', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Start push to talk' }).count(), 0);
     const conversation = page.getByRole('log', { name: 'Companion conversation' });
-    await page.getByLabel('Companion message', { exact: true }).fill('Write a short test caption');
-    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    async function sendAdvice(text) {
+      for(let attempt=0;attempt<3;attempt++){
+        await page.getByLabel('Companion message',{exact:true}).fill(text);
+        const submitted=page.waitForResponse(r=>r.url().endsWith('/api/voice/command')&&r.request().method()==='POST');
+        await page.getByRole('button',{name:'Send',exact:true}).click();
+        const response=await submitted;
+        if(response.status()===503&&response.headers()['x-javo-admission']==='not-started'){
+          await page.waitForFunction(expected=>document.querySelector('[aria-label="Companion message"]')?.value===expected,text);
+          await new Promise(resolve=>setTimeout(resolve,1000));
+          continue;
+        }
+        assert.equal(response.status(),200,'Companion advice refused; no retry of an invoked or uncertain operation');return;
+      }
+      throw new Error('Companion admission remained busy after three explicit no-work-started retries');
+    }
+    await sendAdvice('Write a short test caption');
     await conversation.getByText('Fixture assistant reply; previous turns: 0', { exact: true }).waitFor();
     await conversation.getByText(/AI advice · ollama/).waitFor();
-    await page.getByLabel('Companion message', { exact: true }).fill('Make the draft shorter');
-    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await sendAdvice('Make the draft shorter');
     await conversation.getByText('Fixture assistant reply; previous turns: 2', { exact: true }).waitFor();
     assert(!(await page.evaluate(() => JSON.stringify(localStorage))).includes('short test caption'));
     await page.getByRole('button', { name: 'Emergency stop', exact: true }).click();
@@ -70,8 +83,7 @@ const assert = require('node:assert/strict');
     await conversation.getByText('Runtime result · resumed', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Clear conversation', exact: true }).click();
     assert.equal(await conversation.getByText(/Fixture assistant reply/).count(), 0);
-    await page.getByLabel('Companion message', { exact: true }).fill('Start a fresh test draft');
-    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await sendAdvice('Start a fresh test draft');
     await conversation.getByText('Fixture assistant reply; previous turns: 0', { exact: true }).waitFor();
     await page.getByLabel('Companion provider', { exact: true }).selectOption('gemini');
     assert.equal(await conversation.getByText(/Fixture assistant reply/).count(), 0, 'Provider change retained local context');

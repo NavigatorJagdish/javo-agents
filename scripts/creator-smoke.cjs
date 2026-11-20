@@ -30,12 +30,17 @@ const {randomUUID} = require('node:crypto');
     // Browser fixtures avoid downloading models inside a UI test.
     await page.route('**/api/voice/capabilities',async route=>{const response=await route.fetch();const body=await response.json();await route.fulfill({json:{...body,text_to_speech:true,speech_to_text:true}});});
     let wave=Buffer.alloc(44+3200);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVE',8);wave.write('fmt ',12);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(3200,40);
-    await page.route('**/api/voice/tts',route=>route.fulfill({contentType:'audio/wav',body:wave}));
+    let requestedVoice;
+    await page.route('**/api/voice/tts',route=>{requestedVoice=route.request().postDataJSON();return route.fulfill({contentType:'audio/wav',body:wave});});
     await page.route('**/api/voice/transcribe',route=>route.fulfill({json:{text:'Synthetic reviewed browser transcript.'}}));
     await page.reload(); await auth();
     await page.getByLabel('Speech effect').selectOption('radio');
+    await page.getByLabel('Speech tone',{exact:true}).selectOption('playful');
+    await page.getByRole('button',{name:'Add visible laugh syllables',exact:true}).click();
+    assert((await page.getByLabel('Text to speak',{exact:true}).inputValue()).startsWith('Ha, ha! '));
     await page.getByRole('button',{name:'Generate voice',exact:true}).click();
     await page.getByLabel('Generated AI voice').waitFor();
+    assert.equal(requestedVoice.emotion,'playful');assert(requestedVoice.text.startsWith('Ha, ha! '));
     await page.waitForFunction(()=>document.querySelector('audio')?.readyState>=1);
     await page.getByLabel('Upload speech WAV').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wave});
     await page.getByLabel('Review transcript',{exact:true}).waitFor();

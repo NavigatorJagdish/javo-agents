@@ -14,6 +14,14 @@ is approximate; this is neither a trained custom voice nor a promised imitation
 of another service. Wake word, streamed conversation and voice training remain
 unimplemented. Mindhub assets/code/service were not copied or connected.
 
+Nine original prosody presets are available: neutral, happy, curious, playful/
+teasing, funny, angry, calm, sad and laugh-like, with adjustable intensity.
+They modify pace, pitch and energy; they are not a trained emotional model or
+natural laughter. The optional laugh-syllable button visibly adds editable
+“Ha, ha!” text. Deep/bright now preserve a standard WAV sample rate so the
+recognizer accepts the format. Own-voice and permission-backed other-voice
+training remain pending an authorized dataset, reviewed model and real testing.
+
 Install the optional models outside the checkout/app bundle:
 
 ```powershell
@@ -42,7 +50,7 @@ measured samples, not conversational latency, physical-microphone or naturalness
 certification. Repeat explicitly using:
 
 ```powershell
-python scripts/verify-local-speech.py --model-root D:/openaiprojects/local-models/speech --output-dir D:/openaiprojects/voice-acceptance
+python scripts/verify-local-speech.py --model-root D:/openaiprojects/local-models/speech --output-dir D:/openaiprojects/voice-acceptance --tones
 ```
 
 The standalone frozen Windows engine also passed actual neural HTTP acceptance

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import security
 from app.core.ai_router import get_ai_router
-from app.core.resource_manager import get_resource_manager
+from app.core.resource_manager import get_resource_manager, WorkAdmissionRefused
 from app.database import get_session
 from app.services import speech
 from app.core.provider_store import VaultUnavailable
@@ -58,8 +58,10 @@ class TTSRequest(BaseModel):
     text: str = Field(min_length=1, max_length=800)
     language: Literal['en', 'hi', 'hinglish'] = 'en'
     voice: str = 'af_heart'
-    speed: float = Field(default=1.0, ge=0.75, le=1.5, allow_inf_nan=False)
+    speed: float = Field(default=1.0, ge=0.75, le=1.5, allow_inf_nan=False, strict=True)
     effect: Literal['natural', 'radio', 'echo', 'deep', 'bright'] = 'natural'
+    emotion: Literal['neutral','happy','curious','playful','funny','angry','calm','sad','laugh'] = 'neutral'
+    emotion_strength: float = Field(default=0.6, ge=0, le=1, allow_inf_nan=False, strict=True)
 
 
 @router.get("/capabilities")
@@ -152,7 +154,7 @@ async def process_voice_command(
             'Insufficient RAM headroom': 'Not enough free memory for AI text. Close unused applications or unload an idle model, then retry. Runtime memory safeguards are still enabled.',
             'Execution queue is full': 'The local work queue is full. Wait for current work to finish or cancel a queued task, then retry.',
         }.get(reason, 'The runtime is busy or unavailable. Wait for current CPU work to finish and check runtime controls before retrying.')
-        raise HTTPException(503, guidance)
+        raise HTTPException(503, guidance, headers={'X-Javo-Admission':'not-started','Retry-After':'1'})
     prompt = json.dumps({"previous_turns": [turn.model_dump() for turn in body.history],
                          "user_message": text}, ensure_ascii=False)
     system = (
@@ -162,14 +164,22 @@ async def process_voice_command(
         "Never claim you executed an action or know live analytics. Do not invent runtime status. "
         "For runtime controls tell the user to use the explicit controls in this interface."
     )
-    try:
-        response = await _await_connected(request, manager.submit_task(
-            f"companion-{uuid4()}", lambda: get_ai_router().generate(
+    invoked = False
+    async def admitted_text():
+        nonlocal invoked
+        invoked = True
+        return await get_ai_router().generate(
                 prompt, system_prompt=system, provider=body.provider, fallback_to_local=False,
-            ),
-        ))
+            )
+    try:
+        response = await _await_connected(request, manager.submit_task(f"companion-{uuid4()}", admitted_text))
     except HTTPException:
         raise
+    except WorkAdmissionRefused:
+        if invoked:
+            raise HTTPException(503, 'AI text failed after invocation. No completed response is certified; no automatic retry was performed.') from None
+        raise HTTPException(503, 'AI text admission is busy. Your draft can be retried after capacity becomes available.',
+            headers={'X-Javo-Admission':'not-started','Retry-After':'1'}) from None
     except Exception as exc:
         # Provider errors can embed URLs/credentials; expose only a fixed diagnostic.
         logger.warning("Text companion failed (%s)", type(exc).__name__)
@@ -189,7 +199,7 @@ async def text_to_speech(body: TTSRequest, request: Request):
     if not body.text.strip():
         raise HTTPException(422, 'Enter text to speak')
     try:
-        data = await _await_connected(request, speech.synthesize(body.text, body.voice, body.speed, body.effect))
+        data = await _await_connected(request, speech.synthesize(body.text, body.voice, body.speed, body.effect, body.emotion, body.emotion_strength))
         return Response(data, media_type='audio/wav', headers={'Cache-Control': 'no-store',
             'Content-Disposition': 'attachment; filename="javo-ai-voice.wav"'})
     except HTTPException:

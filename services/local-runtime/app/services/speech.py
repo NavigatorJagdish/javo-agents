@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.config import get_settings
 from app.core.provider_store import ProviderVault, VaultUnavailable
 from app.core.resource_manager import get_resource_manager
+from app.services.prosody import PROFILES
 
 VOICES = [
     {'id': 'af_heart', 'speaker': 3, 'language': 'en', 'name': 'Heart · English'},
@@ -91,6 +92,8 @@ def capabilities():
             'history_storage': 'tab-memory-only', 'engine': 'Kokoro int8 / Whisper tiny · local CPU',
             'generation_verified': False, 'voices': VOICES,
             'effects': ['natural', 'radio', 'echo', 'deep', 'bright'],
+            'emotions': list(PROFILES),
+            'emotion_mode': 'Original prosody effects; not a trained emotion model or natural laughter',
             'message': 'Model files indicate readiness only. Speech is AI-generated. Review transcripts before sending. Hindi pronunciation uses an approximate original frontend; voice-model training is not enabled.'}
 
 
@@ -162,7 +165,7 @@ async def _stop_worker(process):
     await asyncio.wait_for(process.wait(), 5)
 
 
-async def synthesize(text, voice, speed, effect):
+async def synthesize(text, voice, speed, effect, emotion='neutral', emotion_strength=0.6):
     if not engine_compatible():
         raise HTTPException(501, 'Install the reviewed sherpa2 speech engine first. Legacy GPL frontend packages are not used by Javo.')
     cfg = configuration()
@@ -177,7 +180,8 @@ async def synthesize(text, voice, speed, effect):
             output = Path(folder) / 'speech.wav'
             result = await run_worker({'operation': 'tts', 'model_dir': cfg['tts_model_dir'],
                 'text': text, 'speaker': selected['speaker'], 'language': selected['language'],
-                'speed': speed, 'effect': effect, 'output': str(output), 'pronunciations': cfg['pronunciations']})
+                'speed': speed, 'effect': effect, 'emotion': emotion, 'emotion_strength': emotion_strength,
+                'output': str(output), 'pronunciations': cfg['pronunciations']})
             if not output.is_file() or output.stat().st_size > 8 * 1024 * 1024 or not 0 < result['seconds'] <= 90:
                 raise RuntimeError('Speech output exceeded its bound')
             return output.read_bytes()

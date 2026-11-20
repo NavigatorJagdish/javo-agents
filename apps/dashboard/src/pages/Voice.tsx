@@ -57,6 +57,7 @@ export const Voice: React.FC = () => {
       if (!mounted.current) return;
       if (controller.signal.aborted) setNotice('Request cancelled. Check runtime status for any control changes.');
       else {
+        if(error instanceof ApiError&&error.status===503)setInput(current=>current||clean);
         const detail = error instanceof ApiError ? (error.detail as { detail?: unknown })?.detail : null;
         setNotice(typeof detail === 'string' ? detail : 'Runtime unavailable. Connect to the local runtime and retry.');
       }

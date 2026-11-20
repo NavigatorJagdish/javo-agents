@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--model-root', required=True, type=Path)
     parser.add_argument('--output-dir', required=True, type=Path)
+    parser.add_argument('--tones', action='store_true', help='Also verify real prosody-tone WAVs; this is not trained emotion or natural-laughter acceptance')
     args = parser.parse_args()
     with isolated_runtime() as (_, request):
         cfg = {'tts_model_dir': str((args.model_root/'kokoro-int8-multi-lang-v1_0').resolve()),
@@ -24,13 +25,18 @@ def main():
         request('/api/security/resume', {})
         args.output_dir.mkdir(parents=True, exist_ok=True)
         evidence = []
-        for label, voice, text, effect in [('english', 'af_heart', 'Hello, welcome to Javo. Let us create something useful today.', 'natural'),
+        samples = [('english', 'af_heart', 'Hello, welcome to Javo. Let us create something useful today.', 'natural'),
                                            ('hindi', 'hf_alpha', 'नमस्ते, जावो में आपका स्वागत है। आइए कुछ नया बनाते हैं।', 'natural'),
-                                           ('radio', 'am_adam', 'This is Javo studio. Your creative work starts here.', 'radio')]:
+                                           ('radio', 'am_adam', 'This is Javo studio. Your creative work starts here.', 'radio')]
+        if args.tones:
+            samples += [(tone,'af_heart','Ha, ha! That is a funny idea.' if tone=='laugh' else 'Let us try a new creative idea today.','deep' if tone=='curious' else 'natural') for tone in ['happy','curious','angry','laugh']]
+        for label, voice, text, effect in samples:
             started = time.monotonic()
-            data = request('/api/voice/tts', {'text': text, 'voice': voice, 'effect': effect}, raw=True)
+            tone=label if label in {'happy','curious','angry','laugh'} else 'neutral'
+            data = request('/api/voice/tts', {'text': text, 'voice': voice, 'effect': effect,'emotion':tone,'emotion_strength':0.7}, raw=True)
             with wave.open(io.BytesIO(data)) as audio:
                 assert audio.getnchannels() == 1 and audio.getnframes() > 1000
+                assert audio.getframerate() in {16000,22050,24000,44100,48000}
                 duration = audio.getnframes()/audio.getframerate()
             (args.output_dir/('javo-'+label+'.wav')).write_bytes(data)
             evidence.append({'sample': label, 'seconds': round(time.monotonic()-started, 3), 'audio_seconds': round(duration, 3), 'bytes': len(data)})
@@ -52,6 +58,8 @@ def main():
             'recognition_marker': 'REAL_LOCAL_WHISPER_REVIEW_ROUNDTRIP_OK', 'recognition': recognition,
             'production_resource_admission': True, 'cloud_execution': False,
             'physical_microphone_verified': False, 'voice_training': False}))
+        if args.tones:
+            print('REAL_NEURAL_VOICE_PROSODY_TONE_WAVS_OK; original effects, not trained emotion/natural-laughter proof')
 
 
 if __name__ == '__main__':

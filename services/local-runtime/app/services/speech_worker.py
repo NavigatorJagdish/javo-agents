@@ -19,6 +19,8 @@ def main():
     root = Path(value['model_dir'])
     if value['operation'] == 'tts':
         from app.services.hindi_frontend import pronounce
+        from app.services.prosody import apply, pace
+        emotion, strength = value.get('emotion','neutral'), value.get('emotion_strength',0.6)
         # Native sherpa2 lexicon frontend: no espeak/piper module or data loaded.
         lexicon = dict(value.get('pronunciations', {'javo': 'dʒɑːvoʊ'}))
         for word in re.findall(r'[\u0900-\u097f]+', value['text']):
@@ -39,7 +41,7 @@ def main():
         if not config.validate():
             raise ValueError('Speech configuration unavailable')
         engine = sherpa_onnx.OfflineTts(config)
-        audio = engine.generate(value['text'], sid=value['speaker'], speed=value['speed'])
+        audio = engine.generate(value['text'], sid=value['speaker'], speed=value['speed']*pace(emotion,strength))
         samples = np.asarray(audio.samples, dtype=np.float32)
         rate = audio.sample_rate
         # Original DSP effects, clearly distinct from model/voice training.
@@ -53,8 +55,7 @@ def main():
             mixed[:len(samples)] += samples
             mixed[delay:] += samples * 0.25
             samples = mixed
-        elif effect in {'deep', 'bright'}:
-            rate = round(rate * (0.88 if effect == 'deep' else 1.12))
+        samples = apply(samples,rate,emotion,strength,effect)
         peak = float(np.max(np.abs(samples))) if len(samples) else 0
         if peak > 0.99:
             samples *= 0.99 / peak

@@ -75,3 +75,16 @@ or network permissions. Official OAuth, authenticated device/Telegram transport,
 complete encrypted profile recovery, all action budgets, signed distribution,
 general workflow side effects and public-service load/abuse testing remain open.
 No external email, social action, paid model or remote deployment was activated.
+# Separate external n8n audit follow-up
+
+The optional external n8n2.48.7 installation is outside the source/application
+bundle and uses a separately verified official Node24.22.3 archive. It does not
+inherit Javo's earlier clean dependency results. Initial npm audit reported141
+dependency entries (30critical,67high,42moderate,2low), including propagated
+parent findings. These are not141 independent exploitable defects. Critical
+leaf findings include fast-xml-parser, form-data and tar. No owner data or live
+service is connected. Lifecycle scripts remain disabled. A nonbreaking lockfile
+repair and integrity reinstall are in progress; actual engine acceptance and
+a fresh audit are required before recommending activation. Do not use npm's
+suggested force downgrade to an obsolete n8n release as a security fix.
+
