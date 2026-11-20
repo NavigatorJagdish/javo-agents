@@ -42,8 +42,10 @@ node scripts/verify-n8n-templates.cjs
 ```
 
 Native Javo exposes16 node definitions with honest execution availability through
-`/api/workflows/node-types`. Only Trigger, local AI Prompt, Delay and End execute
-today. Other types can be saved for planning and are rejected before enqueue.
-Native branches, retries, automatic triggers, approval nodes, voice/media nodes
-and live publishing require implementation and independent acceptance. The n8n
+`/api/workflows/node-types`. Trigger, local AI Prompt, Delay, Condition, Approval
+and End execute today. Native conditions choose one safe data-only branch;
+approval gates save the actual draft and release the worker until owner review.
+Other types can be saved for planning and are rejected before enqueue.
+Retries, automatic triggers, voice/media nodes and live publishing require
+implementation and independent acceptance. The n8n
 template's control nodes do not make those native Javo nodes executable.

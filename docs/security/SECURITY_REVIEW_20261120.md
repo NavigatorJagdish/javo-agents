@@ -58,6 +58,16 @@ a full native dependency/model license audit before commercial distribution.
 
 ## Residual work
 
+Native review-gate follow-up: owner-only checkpoint decisions now bind actual
+draft/input/definition and completed events, recheck revision/hash/expiry and
+serialize the decision with continuation queueing. Client grants have no review
+privilege. Waiting releases the resource task and survives restart; completed
+steps do not replay. Changed/tampered/expired/cancelled/foreign checkpoints are
+covered by actual API/SQLite regressions. Branch conditions use bounded data
+predicates without regex/eval, preserve scalar types and return false for
+missing comparison fields. These hashes detect accidental changes; they do not
+protect a database against an attacker who can rewrite its contents and hashes.
+
 Keep the API loopback-only and never share the owner token with external tools.
 Framework runtimes require independent isolation, version/dependency review and
 acceptance; this bridge does not constrain a separately started program's shell

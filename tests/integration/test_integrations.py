@@ -145,7 +145,7 @@ def test_all_native_node_definitions_and_templates_are_truthful(owner_runtime):
     with create() as client:
         nodes = client.get('/api/workflows/node-types').json()
         assert len(nodes) == 16
-        assert {n['node_type'] for n in nodes if n['execution_available']} == {'trigger', 'ai_prompt', 'delay', 'end'}
+        assert {n['node_type'] for n in nodes if n['execution_available']} == {'trigger', 'ai_prompt', 'delay', 'condition', 'approval', 'end'}
         for template in client.get('/api/workflows/templates').json():
             created = client.post('/api/workflows/', json=template)
             assert created.status_code == 201, created.text

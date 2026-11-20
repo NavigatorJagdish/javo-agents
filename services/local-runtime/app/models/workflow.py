@@ -138,3 +138,19 @@ class WorkflowRevision(Base):
     fingerprint: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     definition: Mapped[Dict[str, Any]] = mapped_column(sa.JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, server_default=func.now(), nullable=False)
+
+
+class WorkflowNodeReview(Base):
+    """Durable owner decision for one exact run checkpoint; never an external grant."""
+    __tablename__ = 'workflow_node_reviews'
+    __table_args__ = (sa.UniqueConstraint('execution_id', 'node_id'),)
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True, default=lambda: str(uuid4()))
+    execution_id: Mapped[str] = mapped_column(sa.String(36), ForeignKey('workflow_executions.id'), nullable=False, index=True)
+    node_id: Mapped[str] = mapped_column(sa.String(36), nullable=False)
+    status: Mapped[str] = mapped_column(sa.String(20), default='pending', nullable=False)
+    revision: Mapped[int] = mapped_column(sa.Integer, default=1, nullable=False)
+    checkpoint: Mapped[Dict[str, Any]] = mapped_column(sa.JSON, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(sa.DateTime, nullable=True)

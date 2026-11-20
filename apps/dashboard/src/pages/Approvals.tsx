@@ -3,6 +3,7 @@ import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {Button, Card, Modal} from '@javo/design-system';
 import {apiRequest} from '../api/client';
 import {errorText} from '../components/SpeechStudio';
+import {NativeWorkflowReviews} from '../components/NativeWorkflowReviews';
 
 interface Proposal {id: string; title: string; status: string; revision: number; execution_id: string | null; expires_at: string; payload: {workflow_id: string; expected_revision: number; fingerprint: string; trigger_data: Record<string,unknown>}}
 export const Approvals: React.FC = () => {
@@ -17,6 +18,7 @@ export const Approvals: React.FC = () => {
   }
   return <section className="space-y-5"><h1 className="text-3xl font-bold">Review inbox</h1><p>Actual saved requests from scoped integration clients. Approval queues the exact supported local-text workflow; it does not resume the runtime, publish or authorize other actions.</p>
     <p className="text-sm">Content preview approvals remain in Content. Email drafts, paid actions, arbitrary code and broader approval types are not connected here.</p>
+    <NativeWorkflowReviews/>
     {inbox.isError && <p role="alert">Review inbox unavailable. <button onClick={() => void inbox.refetch()}>Retry</button></p>}
     {inbox.data?.length === 0 && <Card>No saved integration proposals. Clients can propose a saved executable workflow after receiving an explicit grant.</Card>}
     {inbox.data?.map(item => <Card key={item.id}><div className="space-y-3"><h2 className="font-semibold">{item.title}</h2><p>{item.status} · revision {item.revision}</p><p className="text-xs break-all">Workflow {item.payload.workflow_id} · saved revision {item.payload.expected_revision} · expires {new Date(item.expires_at).toLocaleString()}</p>{item.execution_id && <p className="text-xs break-all">Actual run: {item.execution_id}. Review its final status in Workflows.</p>}{item.status === 'pending' && <div className="flex gap-3"><Button disabled={busy} onClick={() => setReview(item)}>Review {item.title}</Button><Button variant="ghost" disabled={busy} onClick={() => void decide(item,'reject')}>Reject {item.title}</Button></div>}</div></Card>)}

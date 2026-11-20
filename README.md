@@ -43,7 +43,9 @@ saved provider forms and an explicit loopback model-list check. It no longer
 certifies unavailable audio, Telegram or platform connections.
 The [workflow editor](docs/WORKFLOWS.md) saves graphs with revision history,
 conflict recovery and reviewed manual local-text runs. Supported paths use
-Trigger, local AI Prompt, Delay and End; other catalog nodes remain save-only.
+Trigger, local AI Prompt, Delay, Condition, Approval and End. Conditions choose
+one branch; saved owner checkpoints release the worker and continue after review
+without replaying completed model calls. Other catalog nodes remain save-only.
 See [best use and reproduced bug fixes](docs/BEST_USE_AND_BUG_REVIEW.md).
 External tools use [scoped reviewed integrations](docs/CREATOR_AND_INTEGRATIONS.md)
 and original [n8n workflow templates](docs/N8N_WORKFLOWS.md). Catalog entries are

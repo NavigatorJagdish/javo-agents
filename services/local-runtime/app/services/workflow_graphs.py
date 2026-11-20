@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -162,11 +163,67 @@ def snapshot(workflow):
     }
 
 
-SUPPORTED_NODES = {"trigger", "ai_prompt", "delay", "end"}
+SUPPORTED_NODES = {"trigger", "ai_prompt", "delay", "condition", "approval", "end"}
+
+
+class Condition(Input):
+    model_config = ConfigDict(extra='forbid', strict=True, allow_inf_nan=False)
+    source: Literal['input', 'previous_output'] = 'input'
+    field: str = Field(default='', max_length=320)
+    operator: Literal['equals', 'not_equals', 'contains', 'exists']
+    value: str | bool | int | float | None = None
+
+    @model_validator(mode='after')
+    def check_field(self):
+        if self.source == 'input' and (not self.field or len(self.field.split('.')) > 8 or
+                any(not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,39}', key) for key in self.field.split('.'))):
+            raise ValueError('Condition needs a bounded dotted JSON field')
+        if self.source == 'previous_output' and self.field:
+            raise ValueError('Previous-output conditions do not use a field path')
+        if isinstance(self.value, str) and len(self.value) > 1024:
+            raise ValueError('Condition value is too long')
+        if self.operator == 'contains' and not isinstance(self.value, str):
+            raise ValueError('Contains needs a text value')
+        return self
+
+
+def condition_result(config, input_data, previous):
+    """Data-only predicate. A branch never grants permission or executes code."""
+    rule = Condition.model_validate(config)
+    found, actual = True, previous
+    if rule.source == 'input':
+        actual = input_data
+        for key in rule.field.split('.'):
+            if not isinstance(actual, dict) or key not in actual:
+                found = False
+                break
+            actual = actual[key]
+    if rule.operator == 'exists':
+        return found
+    if not found:
+        return False
+    if rule.operator == 'contains':
+        return isinstance(actual, str) and rule.value in actual
+    equal = type(actual) is type(rule.value) and actual == rule.value
+    return equal if rule.operator == 'equals' else not equal
+
+
+def conditional_review_template():
+    ids = [str(uuid4()) for _ in range(5)]
+    kinds = [('trigger', 'Manual start', {}),
+        ('condition', 'Generate requested?', {'source':'input','field':'generate','operator':'equals','value':True}),
+        ('ai_prompt', 'Draft caption', {'prompt':'Draft a short original caption from the supplied brief for owner review.','provider':'ollama','max_tokens':128}),
+        ('approval', 'Review actual draft', {'instructions':'Read the actual generated draft and supplied facts before approving continuation.'}),
+        ('end', 'End', {})]
+    return Definition(name='Conditional draft with owner review', description='Provide generate=true and a verified brief. False skips drafting; true waits for owner review.',
+        nodes=[Node(id=ids[i],node_type=kind,label=label,config=config,is_entry_point=i==0,
+            position_x=30+i*240,position_y=180 if i==4 else 80) for i,(kind,label,config) in enumerate(kinds)],
+        edges=[Edge(source_node_id=ids[a],target_node_id=ids[b],condition=condition)
+            for a,b,condition in [(0,1,None),(1,2,'true'),(1,4,'false'),(2,3,None),(3,4,None)]]).model_dump(mode='json')
 
 
 def execution_plan(definition):
-    """Only explicit manual linear local-text flows; unsupported nodes fail before enqueue."""
+    """Bounded manual DAG; conditions select one path, with no parallel fan-out."""
     graph = Definition.model_validate(definition)
     if graph.status != "draft":
         raise ValueError("Only a saved draft can be manually run in this build")
@@ -177,32 +234,38 @@ def execution_plan(definition):
     entries = [n for n in graph.nodes if n.is_entry_point]
     if len(entries) != 1 or entries[0].node_type != NodeType.TRIGGER:
         raise ValueError("Choose exactly one manual Trigger as the starting node")
-    successors = {}
+    successors = {node.id: [] for node in graph.nodes}
     incoming = dict.fromkeys((n.id for n in graph.nodes), 0)
     for edge in graph.edges:
-        if edge.condition:
-            raise ValueError("Conditional edges are not supported by the current executor")
-        if edge.source_node_id in successors:
-            raise ValueError("Branch execution is not yet supported; use a single connected path")
-        successors[edge.source_node_id] = edge.target_node_id
+        successors[edge.source_node_id].append(edge)
         incoming[edge.target_node_id] += 1
-    if any(count > 1 for count in incoming.values()) or incoming[entries[0].id]:
-        raise ValueError("Use a single connected path without joins")
+    if incoming[entries[0].id]:
+        raise ValueError("Manual Trigger cannot have incoming connections")
     node_map = {n.id: n for n in graph.nodes}
-    order = []
-    current = entries[0].id
-    while current:
-        node = node_map[current]
-        order.append(node)
-        current = successors.get(current)
-    if len(order) != len(graph.nodes) or order[-1].node_type != NodeType.END:
-        raise ValueError("Connect all nodes into one path ending with End")
-    if any(n.node_type == NodeType.TRIGGER for n in order[1:]) or any(
-        n.node_type == NodeType.END for n in order[:-1]
-    ):
-        raise ValueError("Trigger must be first and End must be last")
-    total_wait, ai_count = 0, 0
+    order, visited = [], set()
+    def walk(key):
+        if key in visited:
+            return
+        visited.add(key)
+        order.append(node_map[key])
+        for edge in successors[key]:
+            walk(edge.target_node_id)
+    walk(entries[0].id)
+    if len(visited) != len(graph.nodes):
+        raise ValueError("Connect every node to the manual Trigger")
+    if sum(n.node_type == NodeType.TRIGGER for n in order) != 1:
+        raise ValueError("Only one manual Trigger is supported")
+    total_wait, ai_count, approvals = 0, 0, 0
     for node in order:
+        outgoing = successors[node.id]
+        if node.node_type == NodeType.END:
+            if outgoing:
+                raise ValueError('End cannot have outgoing connections')
+        elif node.node_type == NodeType.CONDITION:
+            if len(outgoing) != 2 or {e.condition for e in outgoing} != {'true', 'false'}:
+                raise ValueError('Condition needs exactly one true and one false connection')
+        elif len(outgoing) != 1 or outgoing[0].condition:
+            raise ValueError('Each ordinary node needs one unconditional connection')
         config = node.config or {}
         if node.node_type in {NodeType.TRIGGER, NodeType.END}:
             if config:
@@ -228,6 +291,12 @@ def execution_plan(definition):
             tokens = config.get("max_tokens", 256)
             if type(tokens) is not int or not 1 <= tokens <= 1024:
                 raise ValueError("AI Prompt token limit must be between1 and1024")
-    if total_wait > 30 or ai_count > 3:
-        raise ValueError("A run supports at most30seconds of delay and three AI prompts")
+        elif node.node_type == NodeType.CONDITION:
+            Condition.model_validate(config)
+        elif node.node_type == NodeType.APPROVAL:
+            approvals += 1
+            if set(config) != {'instructions'} or not isinstance(config['instructions'], str) or not 1 <= len(config['instructions'].strip()) <= 2000:
+                raise ValueError('Approval needs review instructions up to2000 characters')
+    if total_wait > 30 or ai_count > 3 or approvals > 3:
+        raise ValueError("A run supports at most30seconds of delay, three AI prompts and three review gates")
     return order

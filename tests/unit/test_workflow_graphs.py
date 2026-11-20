@@ -4,6 +4,7 @@ from copy import deepcopy
 import pytest
 
 from app.services.workflow_graphs import Definition, execution_plan
+from app.services.workflow_graphs import Condition, condition_result
 
 
 def graph():
@@ -70,3 +71,30 @@ def test_delays_and_json_are_finite_bounded_and_not_code():
     value["nodes"][1]["config"] = {"prompt": "Text", "max_tokens": float("nan")}
     with pytest.raises(ValueError):
         Definition.model_validate(value)
+
+
+def test_conditions_are_data_only_missing_fields_fail_closed_and_scalar_types_are_explicit():
+    assert condition_result(
+        {"field": "brand.language", "operator": "equals", "value": "hi"},
+        {"brand": {"language": "hi"}},
+        "",
+    )
+    assert not condition_result(
+        {"field": "missing", "operator": "not_equals", "value": "approved"}, {}, ""
+    )
+    assert not condition_result(
+        {"field": "ready", "operator": "equals", "value": True}, {"ready": 1}, ""
+    )
+    assert condition_result(
+        {"source": "previous_output", "operator": "contains", "value": "literal(.*)"},
+        {},
+        "Only literal(.*) data",
+    )
+    for config in [
+        {"field": "__class__", "operator": "equals"},
+        {"field": "a", "operator": "exec", "value": "x"},
+        {"field": "a", "operator": "contains", "value": 42},
+        {"source": "previous_output", "field": "ignored", "operator": "exists"},
+    ]:
+        with pytest.raises(ValueError):
+            Condition.model_validate(config)

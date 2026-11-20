@@ -260,7 +260,7 @@ async def emergency_stop(
 
     await session.execute(update(WorkflowExecution).where(
         WorkflowExecution.workflow_id.in_(select(Workflow.id).where(Workflow.user_id.in_(OWNER_IDS))),
-        WorkflowExecution.status.in_([WorkflowExecutionStatus.QUEUED, WorkflowExecutionStatus.RUNNING]),
+        WorkflowExecution.status.in_([WorkflowExecutionStatus.QUEUED, WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.WAITING_APPROVAL]),
     ).values(status=WorkflowExecutionStatus.CANCELLED, completed_at=now, error='Cancelled by emergency stop'))
 
     session.add(

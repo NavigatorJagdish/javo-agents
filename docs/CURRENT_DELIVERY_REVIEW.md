@@ -22,7 +22,7 @@ in [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 | Reviewed integrations | Eleven pinned references, scoped grants, exact saved-graph owner review, own-result reads and actual LangGraph/MCP/stdio compatibility | Full upstream runtimes are not all installed/verified;17-node n8n template needs separate engine acceptance |
 | Local model smoke | Real small Qwen model through companion/router/worker/usage ledger, with saved counts after restart | One synthetic prompt on this host; not multilingual quality, sustained load or full hardware acceptance |
 | Setup | Measured hardware/service data, real provider saves, explicit bounded loopback model-list check, honest capability guidance | A guide finish or listed model is not a product/model performance certificate |
-| Workflows | Saved validated graphs, revisions/restore/copy, concurrent-edit protection and durable reviewed manual local-text runs with actual receipts/cancellation/restart handling | Only one connected manual Trigger → local AI Prompt/Delay → End path; remaining catalog nodes, triggers, branches, retries and general approvals are unavailable |
+| Workflows | Revisioned graphs, conflicts/restore/copy, actual local runs, data-only conditional branches and durable mid-run owner review with continuation without replay | Six executable types; automatic triggers, retries, live actions and broader approvals remain unavailable |
 | Recovery | Authenticated encrypted database snapshots and tested offline staging | Separate credentials/keys, usage ledger, media and complete profile recovery are not covered |
 | Skills | Two built-in deterministic skills and permission/timeout/trust checks | AST/subprocess checks are not a hardened OS sandbox for arbitrary downloaded code |
 
@@ -31,7 +31,7 @@ in [draft PR #5](https://github.com/NavigatorJagdish/javo-agents/pull/5).
 | Priority | Work remaining | Acceptance evidence needed |
 | --- | --- | --- |
 | 1 | Official YouTube/Meta OAuth, persisted state/PKCE/callback validation, discovered scopes/capabilities and encrypted grant lifecycle | Real authorized test accounts, denied/revoked/expired scopes, restart/cancel cases and owner-approved publication with independently checked remote receipt |
-| 1 | Extend the verified manual workflow subset to automatic triggers, branching/conditions/retries, remaining node types and shared approvals | Real bounded execution per node, permissions/deadlines/budgets, restart-safe side-effect handling and independently checked results |
+| 1 | Extend the verified conditional/reviewed workflow subset to automatic triggers, retries, remaining node types and broader action approvals | Real bounded execution per node, permissions/deadlines/budgets, restart-safe side-effect handling and independently checked results |
 | 1 | General approval inbox and action-policy layer shared by UI, companion, Telegram and workflows | Durable approve/edit/reject/reschedule decisions; changed content/permission invalidates approval; no UI-only success |
 | 1 | Complete encrypted profile backup/recovery/export/deletion | Same/new-machine key recovery, consistent multi-store snapshot, interrupted migration/rollback and actual restored user records |
 | 2 | Source-backed analytics, experiments, reporting and remaining specialists | Real provenance/time windows/unknowns, account isolation and useful end-to-end outputs; no fabricated growth or revenues |

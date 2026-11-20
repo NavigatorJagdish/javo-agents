@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBeforeUnload, useBlocker } from "react-router-dom";
+import { Link, useBeforeUnload, useBlocker } from "react-router-dom";
 import {
   ReactFlow,
   Background,
@@ -69,10 +69,10 @@ type Run = {
     node_id: string;
     event: string;
     node_type: string;
-    output?: { text?: string; actions_executed?: boolean };
+    output?: { text?: string; actions_executed?: boolean; matched?: boolean; decision?: string };
   }[];
 };
-const supported = new Set(["trigger", "ai_prompt", "delay", "end"]);
+const supported = new Set(["trigger", "ai_prompt", "delay", "condition", "approval", "end"]);
 const kinds = [
   "trigger",
   "ai_prompt",
@@ -167,6 +167,7 @@ export const Workflows: React.FC = () => {
   const [configs, setConfigs] = useState<Record<string, string>>({});
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
+  const [branch, setBranch] = useState('true');
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [review, setReview] = useState(false);
@@ -316,6 +317,10 @@ export const Workflows: React.FC = () => {
           }
         : kind === "delay"
           ? { seconds: 1 }
+          : kind === 'condition'
+            ? {source:'input',field:'generate',operator:'equals',value:true}
+          : kind === 'approval'
+            ? {instructions:'Review the saved draft before continuing.'}
           : {};
     setNodes((previous) => [
       ...previous,
@@ -392,6 +397,22 @@ export const Workflows: React.FC = () => {
     setSelected(ai);
     setDirty(true);
   }
+  function conditionalTemplate() {
+    const ids=Array.from({length:5},()=>crypto.randomUUID());
+    const specs=[
+      {kind:'trigger',label:'Manual start',config:{}},
+      {kind:'condition',label:'Generate requested?',config:{source:'input',field:'generate',operator:'equals',value:true}},
+      {kind:'ai_prompt',label:'Draft caption',config:{prompt:'Draft a short original caption from the supplied brief for owner review.',provider:'ollama',max_tokens:128}},
+      {kind:'approval',label:'Review actual draft',config:{instructions:'Read the actual generated draft and supplied facts before approving continuation.'}},
+      {kind:'end',label:'End',config:{}},
+    ];
+    setSaved(null);setSelectedSaved('');setName('Conditional draft with owner review');setDescription('Choose one path from explicit input, then review the actual draft.');setStatus('draft');
+    setNodes(specs.map((spec,i)=>({id:ids[i],type:'workflow',position:{x:30+i*240,y:i===4?180:80},data:{...spec,entry:i===0}})));
+    const connections:[[number,number,string|null],[number,number,string|null],[number,number,string|null],[number,number,string|null],[number,number,string|null]]=[[0,1,null],[1,2,'true'],[1,4,'false'],[2,3,null],[3,4,null]];
+    setEdges(connections.map(([from,to,condition])=>({id:crypto.randomUUID(),source:ids[from],target:ids[to],label:condition??undefined,data:{condition}})));
+    setConfigs(Object.fromEntries(specs.map((spec,i)=>[ids[i],JSON.stringify(spec.config,null,2)])));
+    setTrigger(JSON.stringify({generate:true,brief:'Use only these supplied verified facts.'},null,2));setSelected(ids[1]);setDirty(true);setError('');setNotice('');
+  }
   function connect(connection: Connection) {
     const from = connection.source,
       to = connection.target;
@@ -412,8 +433,10 @@ export const Workflows: React.FC = () => {
       setError("These nodes are already connected.");
       return;
     }
+    const condition = nodes.find(n=>n.id===from)?.data.kind==='condition' ? branch : null;
+    if(condition&&edges.some(e=>e.source===from&&e.data?.condition===condition)) {setError('This condition already has a '+condition+' connection. Remove it before replacing it.');return;}
     setEdges((previous) =>
-      addEdge({ ...connection, id: crypto.randomUUID() }, previous),
+      addEdge({ ...connection, id: crypto.randomUUID(), data:{condition},label:condition??undefined }, previous),
     );
     setDirty(true);
     setError("");
@@ -517,7 +540,7 @@ export const Workflows: React.FC = () => {
       <h1 className="text-3xl font-bold">Workflows</h1>
       <p className="text-sm">
         Save and reopen real graphs with revision history. Manual runs support
-        one connected path of Trigger, local AI Prompt, Delay and End. Other
+        manual paths using Trigger, local AI Prompt, Delay, Condition, Approval and End. Other
         nodes can be saved for planning; they do not execute. Generated text
         never publishes or performs an action.
       </p>
@@ -573,6 +596,7 @@ export const Workflows: React.FC = () => {
         </Button>
         <Button variant="secondary" disabled={busy} onClick={()=>guard(()=>template('hindi'))}>Use Hindi voice script template</Button>
         <Button variant="secondary" disabled={busy} onClick={()=>guard(()=>template('trends'))}>Use trend ideas template</Button>
+        <Button variant="secondary" disabled={busy} onClick={()=>guard(conditionalTemplate)}>Use conditional review template</Button>
       </div>
       {list.isError && (
         <p role="alert">
@@ -895,6 +919,7 @@ export const Workflows: React.FC = () => {
                   AI Prompt: prompt, provider="ollama", max_tokens (1–1024).
                   Delay: seconds (0–30). Trigger/End: empty object. Do not put
                   credentials in graph configuration.
+                  Conditions read bounded input fields or previous output using equals, not_equals, contains or exists. Approval requires review instructions.
                 </p>
                 <Button
                   variant="danger"
@@ -954,6 +979,7 @@ export const Workflows: React.FC = () => {
                 ))}
               </select>
             </Field>
+            {nodes.find(n=>n.id===source)?.data.kind==='condition'&&<Field label="Connection branch"><select className={inputClass} value={branch} onChange={e=>setBranch(e.target.value)}><option value="true">True</option><option value="false">False</option></select></Field>}
             <Button
               size="sm"
               disabled={!source || !target || edges.length >= 128}
@@ -976,6 +1002,7 @@ export const Workflows: React.FC = () => {
                 <span className="break-all">
                   {nodes.find((node) => node.id === edge.source)?.data.label} →{" "}
                   {nodes.find((node) => node.id === edge.target)?.data.label}
+                  {typeof edge.data?.condition==='string'?' · '+edge.data.condition:''}
                 </span>
                 <Button
                   size="sm"
@@ -1094,7 +1121,7 @@ export const Workflows: React.FC = () => {
             <p className="text-xs break-all">{item.id}</p>
             <p className="text-sm">{item.message}</p>
             {item.error && <p className="text-sm text-red-500">{item.error}</p>}
-            {["queued", "running"].includes(item.status) && (
+            {["queued", "running", "waiting_approval"].includes(item.status) && (
               <Button
                 size="sm"
                 onClick={() =>
@@ -1110,12 +1137,15 @@ export const Workflows: React.FC = () => {
                 Cancel run
               </Button>
             )}
+            {item.status==='waiting_approval'&&<Link to="/approvals" className="underline text-sm">Open saved checkpoint in Review inbox</Link>}
             {item.execution_verified &&
               item.execution_log.map((event, index) => (
                 <div className="text-sm" key={index}>
                   <p>
                     {title(event.node_type)} · {event.event}
                   </p>
+                  {typeof event.output?.matched==='boolean'&&<p>Chosen branch: {event.output.matched?'true':'false'}</p>}
+                  {event.output?.decision&&<p>Owner review: {event.output.decision}</p>}
                   {event.output?.text && (
                     <pre className="whitespace-pre-wrap break-words rounded bg-slate-100 dark:bg-slate-950 p-3">
                       {event.output.text}

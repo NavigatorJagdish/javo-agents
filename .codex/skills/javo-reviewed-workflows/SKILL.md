@@ -19,8 +19,11 @@ any retry. Approval is not completion.
 
 Validate prepared n8n graphs with `node scripts/verify-n8n-templates.cjs` from
 the checkout root. Report this as template contracts, not external engine
-acceptance. Native Javo execution supports Trigger/local AI Prompt/Delay/End;
+acceptance. Native Javo execution supports Trigger/local AI Prompt/Delay/Condition/Approval/End;
 read `/api/workflows/node-types` before proposing any other node.
+Conditions select a single data-only branch. Mid-run owner reviews bind the
+actual draft/input/definition, release the worker and resume completed checkpoints
+without replay. Scoped client tokens cannot decide these reviews.
 
 Keep heavyweight agents/models in separate environments; start one at a time
 on small hardware. Do not bypass runtime headroom/pause/emergency checks to

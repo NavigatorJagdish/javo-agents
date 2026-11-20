@@ -1,8 +1,9 @@
-# Saved workflows and manual local drafting — 18 November 2026
+# Saved workflows and reviewed local drafting — 20 November 2026
 
 Workflows now saves/reopens real graphs, keeps definition revisions and runs a
-bounded subset through an actual durable worker. It does not activate automatic
-triggers, social publishing, approvals, notifications or every catalog node.
+bounded subset through an actual durable worker. Conditions and mid-run owner
+review now execute. Automatic triggers, social publishing, notifications and
+remaining catalog node types still need their own implementations.
 
 ## Saved definitions
 
@@ -33,16 +34,27 @@ attacker able to rewrite the database and its hashes.
 
 ## Supported manual execution
 
-An executable draft has exactly one manual Trigger, a single connected path,
-and a final End. Supported intermediate nodes are local AI Prompt and Delay.
-Branches/joins/conditional edges and other node types fail before enqueueing.
-Advanced nodes are visibly labelled save-only in the editor.
+An executable draft has exactly one manual Trigger and a connected acyclic
+graph whose paths terminate at End. Ordinary nodes have one unconditional next
+step. A Condition has exactly one `true` and one `false` edge and chooses a
+single path. Paths may converge; parallel fan-out is unavailable. Disconnected,
+ambiguous or incomplete branches fail before enqueueing. Unsupported node types
+are visibly labelled save-only in the editor.
 
 - Trigger and End: empty configuration object.
 - AI Prompt: `prompt` (1–8000characters), `provider: "ollama"`, optional
   `max_tokens` (integer1–1024, further bounded by saved provider settings).
 - Delay: `seconds` (finite number0–30). Total configured wait is at most30s;
   at most three AI prompts per run.
+- Condition: `source` (`input` or `previous_output`), `field` (bounded dotted
+  dictionary path for input, empty for previous output), `operator` (`equals`,
+  `not_equals`, `contains`, `exists`) and optional scalar `value`. Comparisons
+  preserve scalar types; boolean true differs from number1/string"true".
+  Missing input fields return false for comparisons, including not_equals.
+  Contains is literal text, never regex/code. Conditions grant no permissions.
+- Approval: `instructions` (1–2000characters). At most three gates per graph.
+  It stores the actual previous output/input/definition and waits for owner
+  review. Counts/limits apply to all nodes, including unselected branches.
 
 Review sends the saved revision/fingerprint and a bounded JSON trigger object.
 The server creates a queued receipt with a fixed graph/authorization snapshot,
@@ -58,6 +70,18 @@ failed run, never a successful fallback message. Successful-run counts exclude
 old prototype receipts. Historic raw counters remain separately reported.
 
 The saved queue is bounded, and only one active run per workflow is accepted.
+Waiting review runs count toward these bounds. Human review releases the shared
+worker so other eligible workflows can run. The Review inbox displays the actual
+draft and exact saved definition/input. Owner approval checks checkpoint hash,
+revision, expiry, unchanged saved graph and current run/ownership before queueing
+continuation. It does not resume the runtime. Reject/cancel/emergency stop
+prevents continuation. Scoped integration tokens cannot decide native reviews.
+Review decisions expire after24hours. After explicit approval, dispatch has a
+fresh five-minute deadline. An expired wait cannot be approved; reject/cancel it
+and inspect a fresh run. Completed model/delay nodes are reconstructed from the
+saved chosen path and are not invoked again after review or queued restart.
+Interrupted RUNNING segments still fail unconfirmed instead of replaying.
+
 Runs expire five minutes after enqueueing when checked for dispatch; an admitted
 run has a180s lifetime. Resource limits are unchanged. Pause holds between nodes;
 it does not undo work already in flight. Owner cancellation/emergency stop
@@ -87,6 +111,11 @@ An explicit supported manual run replaces the old visual animation/fake running
 receipt. Planning nodes remain available without pretending to execute them.
 
 ## Evidence and limitations
+
+Use **Use conditional review template**, supply `generate: true` and a verified
+`brief` in the manual run input. True drafts and waits for owner review; false
+reaches End without a model call or review gate. The Connections inspector lets
+you choose true/false edges explicitly. Waiting receipts link to Review inbox.
 
 Integration tests use actual HTTP/SQLite/worker/control/restart behavior and
 labelled synthetic model text. They cover save/restore/conflict, owner and ID

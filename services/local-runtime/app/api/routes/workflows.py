@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import Field, ValidationError
@@ -216,7 +217,7 @@ async def node_types():
     from app.services.workflow_graphs import SUPPORTED_NODES
     defaults = {'trigger': {}, 'end': {}, 'ai_prompt': {'prompt': 'Draft a short original caption from the supplied brief.', 'provider': 'ollama', 'max_tokens': 256},
                 'delay': {'seconds': 1}, 'schedule': {'cron': '0 9 * * *', 'timezone': 'Asia/Kolkata'},
-                'condition': {'field': 'review_status', 'equals': 'approved'}, 'approval': {'mode': 'owner_review'},
+                'condition': {'source': 'input', 'field': 'generate', 'operator': 'equals', 'value': True}, 'approval': {'instructions': 'Review the actual saved draft before continuing.'},
                 'retry': {'max_attempts': 2}, 'error_handler': {'mode': 'stop_and_report'}}
     return [{'node_type': kind.value, 'execution_available': kind.value in SUPPORTED_NODES,
              'default_config': defaults.get(kind.value, {}), 'owner_review_required': True,
@@ -241,7 +242,43 @@ async def workflow_templates():
                 {'id': middle, 'node_type': 'ai_prompt', 'label': name, 'position_x': 300, 'position_y': 90, 'config': {'prompt': prompt, 'provider': 'ollama', 'max_tokens': 256}},
                 {'id': end, 'node_type': 'end', 'label': 'Saved text result', 'position_x': 570, 'position_y': 90, 'config': {}}],
             'edges': [{'source_node_id': first, 'target_node_id': middle}, {'source_node_id': middle, 'target_node_id': end}]})
+    from app.services.workflow_graphs import conditional_review_template
+    result.append(conditional_review_template())
     return result
+
+
+@router.get('/approvals')
+async def node_reviews(session=Depends(get_session)):
+    from app.models.workflow import WorkflowNodeReview, WorkflowExecutionStatus
+    from app.services.workflow_reviews import utc
+    rows = (await session.execute(select(WorkflowNodeReview, WorkflowExecution, Workflow).join(
+        WorkflowExecution, WorkflowExecution.id == WorkflowNodeReview.execution_id).join(
+        Workflow, Workflow.id == WorkflowExecution.workflow_id).where(Workflow.user_id.in_(OWNER_IDS)).order_by(
+        WorkflowNodeReview.created_at.desc()).limit(100))).all()
+    return [{'id': review.id, 'workflow_name': workflow.name, 'execution_id': run.id,
+        'node_id': review.node_id, 'status': review.status, 'revision': review.revision,
+        'execution_status': run.status.value, 'expires_at': utc(review.expires_at),
+        'waiting': run.status == WorkflowExecutionStatus.WAITING_APPROVAL and review.status == 'pending'}
+        for review, run, workflow in rows]
+
+
+@router.get('/approvals/{review_id}')
+async def node_review_preview(review_id: str, session=Depends(get_session)):
+    from app.services.workflow_reviews import inspect
+    await session.execute(text('BEGIN'))
+    return (await inspect(session, review_id))[2]
+
+
+class NodeReviewDecision(Input):
+    expected_revision: int = Field(ge=1, strict=True)
+    fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+    decision: Literal['approve', 'reject']
+
+
+@router.post('/approvals/{review_id}/decision')
+async def node_review_decision(review_id: str, body: NodeReviewDecision, session=Depends(get_session)):
+    from app.services.workflow_reviews import decide
+    return await decide(session, review_id, body.expected_revision, body.fingerprint, body.decision)
 
 
 @router.get("/{workflow_id}")

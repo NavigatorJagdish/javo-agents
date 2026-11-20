@@ -2,6 +2,21 @@
 
 Current review: 20 November 2026. This is an unfinished rebuild, not a production release.
 
+## Native conditional paths and durable owner checkpoints
+
+Conditions now select one explicit true/false path using bounded JSON/text
+predicates. Approval nodes store the actual draft/input/definition, release the
+worker, survive restart and queue continuation after an owner-only, revisioned,
+hash-bound decision. Completed model/delay nodes do not replay. Cancellation,
+emergency stop, changed graph, expired/tampered review and foreign ownership
+refuse continuation. Six native types execute; broader automatic triggers,
+retries, action nodes and general platform approvals remain open.
+
+Initial new branch/review contracts26passed; existing workflow regressions18passed;
+real Chrome passed NATIVE_CONDITION_REVIEW_ACTUAL_DRAFT_CONTINUATION_NO_REPLAY_FALSE_BRANCH_SKIP_OK.
+Model text is a labelled fixture in these checks. Later exact-source CI results
+are recorded in the current delivery memory; earlier CI is not substituted.
+
 ## Voice, studio and reviewed integration increment
 
 See [creator/integration evidence](CREATOR_AND_INTEGRATIONS.md),

@@ -70,6 +70,7 @@ from app.models.workflow import (
     WorkflowExecution,
     WorkflowExecutionStatus,
     WorkflowNode,
+    WorkflowNodeReview,  # noqa: F401
     WorkflowStatus,
 )
 

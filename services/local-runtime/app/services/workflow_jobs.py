@@ -26,8 +26,10 @@ from app.models.workflow import (
     WorkflowExecutionStatus as State,
     WorkflowStatus,
     NodeType,
+    WorkflowNodeReview,
 )
-from app.services.workflow_graphs import bounded_json, execution_plan, fingerprint
+from app.services.workflow_graphs import bounded_json, execution_plan, fingerprint, condition_result
+from app.services.workflow_reviews import ReviewWait, at_gate, completed_events
 
 logger = logging.getLogger(__name__)
 AUTHORIZATION = {
@@ -93,13 +95,13 @@ async def enqueue(session, workflow, definition, revision, input_data, *, commit
     if revision < 1:
         raise HTTPException(409, "Save and review this legacy definition before running")
     count = await session.scalar(
-        select(func.count()).select_from(Run).where(Run.status.in_([State.QUEUED, State.RUNNING]))
+        select(func.count()).select_from(Run).where(Run.status.in_([State.QUEUED, State.RUNNING, State.WAITING_APPROVAL]))
     )
     if count >= get_settings().max_queue_size:
         raise HTTPException(429, "Saved workflow execution queue is full")
     if await session.scalar(
         select(Run.id)
-        .where(Run.workflow_id == workflow.id, Run.status.in_([State.QUEUED, State.RUNNING]))
+        .where(Run.workflow_id == workflow.id, Run.status.in_([State.QUEUED, State.RUNNING, State.WAITING_APPROVAL]))
         .limit(1)
     ):
         raise HTTPException(409, "This workflow already has a queued or running execution")
@@ -140,7 +142,7 @@ async def enqueue(session, workflow, definition, revision, input_data, *, commit
 async def cancel(session, run):
     changed = await session.execute(
         update(Run)
-        .where(Run.id == run.id, Run.status.in_([State.QUEUED, State.RUNNING]))
+        .where(Run.id == run.id, Run.status.in_([State.QUEUED, State.RUNNING, State.WAITING_APPROVAL]))
         .values(
             status=State.CANCELLED,
             completed_at=datetime.now(timezone.utc),
@@ -179,6 +181,13 @@ class WorkflowWorker:
             self._lease = RuntimeLease(path + ".workflow-worker.lock")
             self._lease.acquire()
         async with db.async_session_factory() as session:
+            await session.execute(update(Run).where(
+                Run.status == State.WAITING_APPROVAL,
+                ~select(WorkflowNodeReview.id).where(
+                    WorkflowNodeReview.execution_id == Run.id,
+                    WorkflowNodeReview.status == 'pending').exists(),
+            ).values(status=State.FAILED, completed_at=datetime.now(timezone.utc),
+                error='Legacy or missing owner-review checkpoint; no continuation was run'))
             await session.execute(
                 update(Run)
                 .where(Run.status == State.RUNNING)
@@ -276,8 +285,35 @@ class WorkflowWorker:
             await asyncio.sleep(0.1)
 
     async def _invoke(self, run_id, value):
+        plan = execution_plan(value['definition'])
+        nodes = {node.id: node for node in plan}
+        outgoing = {node.id: [] for node in plan}
+        for edge in value['definition']['edges']:
+            outgoing[edge['source_node_id']].append(edge)
+        async with db.async_session_factory() as session:
+            stored = await session.get(Run, run_id)
+            completed = completed_events(stored)
         previous = ""
-        for node in execution_plan(value["definition"]):
+        current, step = plan[0].id, 0
+        while current:
+            node = nodes[current]
+            # Reconstruct the chosen path from durable completed events. No
+            # completed AI/delay node is invoked again after owner approval.
+            if step < len(completed):
+                event = completed[step]
+                if event.get('node_id') != current or event.get('node_type') != node.node_type.value:
+                    raise ValueError('Saved checkpoint path changed')
+                result = event.get('output')
+                if not isinstance(result, dict):
+                    raise ValueError('Missing completed-node output')
+                await self._checkpoint(run_id, value)
+                if node.node_type == NodeType.AI_PROMPT:
+                    previous = result['text']
+                if node.node_type == NodeType.CONDITION and result.get('matched') is not condition_result(node.config, value['input'], previous):
+                    raise ValueError('Saved branch decision changed')
+                current = self._next(node, outgoing[current], result)
+                step += 1
+                continue
             await self._checkpoint(run_id, value, node=node)
             result = {"status": "completed"}
             config = node.config or {}
@@ -310,7 +346,24 @@ class WorkflowWorker:
             elif node.node_type == NodeType.DELAY:
                 await asyncio.sleep(config["seconds"])
                 result = {"waited_seconds": config["seconds"]}
+            elif node.node_type == NodeType.CONDITION:
+                result = {'matched': condition_result(config, value['input'], previous), 'actions_executed': False}
+            elif node.node_type == NodeType.APPROVAL:
+                result = await at_gate(run_id, value, node, previous)
             await self._checkpoint(run_id, value, node=node, output=result)
+            current = self._next(node, outgoing[current], result)
+            step += 1
+        if step < len(completed):
+            raise ValueError('Saved checkpoint extends beyond this path')
+
+    @staticmethod
+    def _next(node, edges, result):
+        if node.node_type == NodeType.END:
+            return None
+        if node.node_type == NodeType.CONDITION:
+            branch = 'true' if result['matched'] else 'false'
+            return next(edge['target_node_id'] for edge in edges if edge.get('condition') == branch)
+        return edges[0]['target_node_id']
 
     async def _finish(self, run_id, state, error=None):
         async with db.async_session_factory() as session:
@@ -360,6 +413,8 @@ class WorkflowWorker:
             await self._finish(key, State.CANCELLED, "Execution cancelled or runtime shutting down")
             if self._closing:
                 raise
+        except ReviewWait:
+            pass  # Durable WAITING_APPROVAL releases this resource task.
         except RunCancelled:
             await self._finish(
                 key, State.CANCELLED, "Execution cancelled, archived or no longer authorized"
