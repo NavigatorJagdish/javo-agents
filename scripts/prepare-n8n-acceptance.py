@@ -8,7 +8,7 @@ import platform
 import shutil
 import subprocess
 import tarfile
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 from verification_runtime import ROOT, clean_environment
 
@@ -51,6 +51,16 @@ def main():
         raise ValueError('External n8n version changed')
     if 'Sustainable Use License' not in (installed/'LICENSE.md').read_text(encoding='utf-8'):
         raise ValueError('Review changed external license')
+    audit=subprocess.run([*npm_command,'audit','--json','--registry=https://registry.npmjs.org','--userconfig='+str(empty_config)],
+                         cwd=prefix,env=env,capture_output=True,text=True,timeout=120)
+    report=json.loads(audit.stdout)
+    counts=report.get('metadata',{}).get('vulnerabilities')
+    if not isinstance(counts,dict):
+        raise ValueError('No completed external dependency audit')
+    (prefix/'dependency-audit.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    print('EXTERNAL_N8N_AUDIT_COUNTS '+json.dumps(counts),flush=True)
+    if counts.get('critical',0):
+        raise ValueError('Critical dependency findings remain; refuse engine acceptance')
     sqlite=prefix/'node_modules/sqlite3'
     if json.loads((sqlite/'package.json').read_text(encoding='utf-8'))['version']!='5.1.7':
         raise ValueError('Review changed native SQLite dependency')
@@ -58,18 +68,18 @@ def main():
     if not target or platform.machine().lower() not in {'amd64','x86_64'}:
         raise ValueError('Native acceptance currently supports Windows/Linux x64 only')
     name='sqlite3-v5.1.7-napi-v6-'+target+'-x64.tar.gz'
-    api='https://api.github.com/repos/TryGhost/node-sqlite3/releases/tags/v5.1.7'
-    with urlopen(Request(api,headers={'User-Agent':'Javo-external-acceptance'}),timeout=30) as response:
-        release=json.load(response)
-    asset=next(a for a in release['assets'] if a['name']==name)
     url='https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/'+name
-    if asset['browser_download_url']!=url or not 0<asset['size']<3*1024*1024:
-        raise ValueError('Unexpected official native release asset')
+    # Observed integrity pins from independent HTTPS release downloads, not
+    # vendor-published checksums. Avoid unauthenticated shared-runner API limits.
+    size,expected={
+        'win32':(1005116,'7a55f7adb5fc3126156c56253511ec5ac38110531281ecbafbe71244555e93ce'),
+        'linux':(1091820,'6d1f7a95e5aca90db1fd6a2839380a021d5ee23d46f2d7c520ded094da813fed'),
+    }[target]
     with urlopen(url,timeout=60) as response:
-        data=response.read(asset['size']+1)
+        data=response.read(size+1)
     digest=hashlib.sha256(data).hexdigest()
-    if len(data)!=asset['size'] or (asset.get('digest') and asset['digest']!='sha256:'+digest):
-        raise ValueError('Native archive differs from official release metadata')
+    if len(data)!=size or digest!=expected:
+        raise ValueError('Native archive differs from the reviewed release integrity pin')
     with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
         members=archive.getmembers()
         if len(members)!=1 or not members[0].isfile() or members[0].name!='build/Release/node_sqlite3.node' or members[0].size>8*1024*1024:
@@ -81,18 +91,9 @@ def main():
         raise ValueError('Existing native binding differs; retained for review')
     binary.write_bytes(content)
     subprocess.run([node,'-e',"require('sqlite3');console.log('EXTERNAL_SQLITE_IMPORT_OK')"],cwd=prefix,env=env,check=True,timeout=30)
-    audit=subprocess.run([*npm_command,'audit','--json','--registry=https://registry.npmjs.org','--userconfig='+str(empty_config)],
-                         cwd=prefix,env=env,capture_output=True,text=True,timeout=120)
-    report=json.loads(audit.stdout)
-    counts=report.get('metadata',{}).get('vulnerabilities')
-    if not isinstance(counts,dict):
-        raise ValueError('No completed external dependency audit')
-    (prefix/'dependency-audit.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     (prefix/'native-provenance.json').write_text(json.dumps({'url':url,'sha256':digest,
-        'vendor_digest_available':bool(asset.get('digest')),'scripts_executed':False,'bundled_with_javo':False},indent=2),encoding='utf-8')
-    print('EXTERNAL_N8N_AUDIT_COUNTS '+json.dumps(counts),flush=True)
-    if counts.get('critical',0):
-        raise ValueError('Critical dependency findings remain; refuse engine acceptance')
+        'vendor_digest_available':False,'digest_source':'Observed independent release download; not vendor-published',
+        'scripts_executed':False,'bundled_with_javo':False},indent=2),encoding='utf-8')
     print('EXTERNAL_N8N_PREPARED_FOR_ISOLATED_ACCEPTANCE; remaining audit findings are not cleared',flush=True)
 
 
