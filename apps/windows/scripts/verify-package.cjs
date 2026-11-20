@@ -51,7 +51,7 @@ function verifyPackage(projectDir) {
   const sourceRoot = path.join(root, 'services/local-runtime');
   const sourceNames = listFiles(path.join(sourceRoot, 'app'))
     .filter(name => name.endsWith('.py')).map(name => `app/${name}`)
-    .concat(['desktop_entry.py', 'pyproject.toml', 'requirements.txt']).sort();
+    .concat(['app/services/integration_catalog.json', 'desktop_entry.py', 'pyproject.toml', 'requirements.txt']).sort();
   if (!manifest.source_files
       || JSON.stringify(sourceNames) !== JSON.stringify(Object.keys(manifest.source_files).sort())) {
     throw new Error('Runtime source manifest is outdated or incomplete; rebuild the bundle.');

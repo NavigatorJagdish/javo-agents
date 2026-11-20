@@ -45,6 +45,13 @@ certification. Repeat explicitly using:
 python scripts/verify-local-speech.py --model-root D:/openaiprojects/local-models/speech --output-dir D:/openaiprojects/voice-acceptance
 ```
 
+The standalone frozen Windows engine also passed actual neural HTTP acceptance
+in CI run44708574949: English6.172s, Hindi6.797s, radio6.062s; Whisper1.016s and
+1.187s. These faster numbers describe that CI runner. The same run later caught
+a packaging manifest mismatch for the new catalog data; engine acceptance does
+not certify the subsequent installer steps. The verifier now includes and checks
+the catalog hash, with missing/tampered-catalog regressions.
+
 ## Images, videos and trends
 
 Creation studio saves encrypted local ComfyUI settings. Its fixed native graphs
